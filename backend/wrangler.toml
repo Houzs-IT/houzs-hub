@@ -20,10 +20,12 @@ run_worker_first = ["/api/*"]
 
 # Supabase Postgres, reached through Hyperdrive. The connection string (with the
 # database password) lives in the Hyperdrive config in Cloudflare, not here.
+# Query caching is switched off on that config: a ticket read straight after a
+# write must not come back stale.
 # localConnectionString is the throwaway Postgres from the README, for wrangler dev.
 [[hyperdrive]]
 binding = "HYPERDRIVE"
-id = "HYPERDRIVE_ID_PENDING"
+id = "b69ab87887944295afe3f39134e6434d"
 localConnectionString = "postgres://postgres:postgres@127.0.0.1:54329/postgres"
 
 [[r2_buckets]]
