@@ -8,6 +8,8 @@ import { usePoll } from "../lib/usePoll";
 type Stats = { active_by_system: Record<string, number>; my_active: number };
 type Ctx = {
   me: Developer;
+  // After the user renames themselves, so the sidebar and assignee lists follow.
+  setMe: (me: Developer) => void;
   developers: Developer[];
   systems: SystemRow[];
   stats: Stats;
@@ -44,7 +46,7 @@ function NavItem({ to, icon, label, count }: { to: string; icon: ReactNode; labe
 }
 
 export default function Layout() {
-  const [base, setBase] = useState<Omit<Ctx, "stats" | "version" | "refresh"> | null>(null);
+  const [base, setBase] = useState<Omit<Ctx, "stats" | "version" | "refresh" | "setMe"> | null>(null);
   const [stats, setStats] = useState<Stats>({ active_by_system: {}, my_active: 0 });
   const [version, setVersion] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -67,12 +69,17 @@ export default function Layout() {
   usePoll(loadStats, 30_000);
 
   const refresh = useCallback(() => setVersion((v) => v + 1), []);
+  const setMe = useCallback(
+    (me: Developer) =>
+      setBase((b) => b && { ...b, me, developers: b.developers.map((d) => (d.id === me.id ? { ...d, name: me.name } : d)) }),
+    [],
+  );
 
   if (error) return <div className="p-10 text-center text-loz-red-ink">{error}</div>;
   if (!base) return <div className="p-10 text-center text-ink-subtlest">Loading...</div>;
 
   return (
-    <HubContext.Provider value={{ ...base, stats, version, refresh }}>
+    <HubContext.Provider value={{ ...base, stats, version, refresh, setMe }}>
       <div className="flex h-full">
         <aside className="relative flex w-60 shrink-0 flex-col bg-sidebar">
           <div className="pointer-events-none absolute right-0 top-0 h-full w-px bg-gradient-to-b from-transparent via-accent/35 to-transparent" />

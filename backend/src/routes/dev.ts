@@ -44,6 +44,25 @@ dev.get("/me", (c) => {
   return c.json({ developer: { id, name, email, username, role } });
 });
 
+// Display name only. Old ticket comments keep the name they were written under.
+dev.patch("/me", async (c) => {
+  const b = (await c.req.json().catch(() => ({}))) as { name?: unknown };
+  const name = typeof b.name === "string" ? b.name.trim() : "";
+  if (!name || name.length > 60) return c.json({ error: "Display name must be 1 to 60 characters" }, 400);
+  const [dev] = await getDb(c.env)
+    .update(schema.developers)
+    .set({ name })
+    .where(eq(schema.developers.id, c.get("developer").id))
+    .returning({
+      id: schema.developers.id,
+      name: schema.developers.name,
+      email: schema.developers.email,
+      username: schema.developers.username,
+      role: schema.developers.role,
+    });
+  return c.json({ developer: dev });
+});
+
 dev.post("/me/password", async (c) => {
   const me = c.get("developer");
   const b = (await c.req.json().catch(() => ({}))) as { current?: unknown; next?: unknown };
