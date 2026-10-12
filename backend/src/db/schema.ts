@@ -13,6 +13,9 @@ export const TICKET_STATUSES = [
   "rejected",
 ] as const;
 
+export const ROLES = ["admin", "developer"] as const;
+
+export type Role = (typeof ROLES)[number];
 export type TicketType = (typeof TICKET_TYPES)[number];
 export type TicketPriority = (typeof TICKET_PRIORITIES)[number];
 export type TicketStatus = (typeof TICKET_STATUSES)[number];
@@ -46,6 +49,7 @@ export const developers = pgTable("developers", {
   passwordHash: text("password_hash"),
   failedLogins: integer("failed_logins").notNull().default(0),
   lockedUntil: text("locked_until"),
+  role: text("role").$type<Role>().notNull().default("developer"),
 });
 
 export const tickets = pgTable("tickets", {

@@ -2,7 +2,8 @@ export type Status = "open" | "in_progress" | "on_hold" | "testing" | "waiting_r
 export type Priority = "urgent" | "high" | "medium" | "low";
 export type TicketType = "bug" | "development";
 
-export type Developer = { id: number; name: string; email: string; username?: string | null };
+export type Role = "admin" | "developer";
+export type Developer = { id: number; name: string; email: string; username?: string | null; role?: Role };
 export type SystemRow = { code: string; name: string; active: number };
 
 export type TicketRow = {

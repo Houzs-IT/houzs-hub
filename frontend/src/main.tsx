@@ -4,8 +4,10 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import Layout from "./components/Layout";
 import BoardPage from "./pages/BoardPage";
 import IssuePage from "./pages/IssuePage";
+import AccountPage from "./pages/AccountPage";
 import ListPage from "./pages/ListPage";
 import LoginPage from "./pages/LoginPage";
+import UsersPage from "./pages/UsersPage";
 import "./index.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
@@ -19,6 +21,8 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
           <Route path="/board" element={<BoardPage />} />
           <Route path="/queue" element={<ListPage queue />} />
           <Route path="/tickets/:code" element={<IssuePage />} />
+          <Route path="/users" element={<UsersPage />} />
+          <Route path="/account" element={<AccountPage />} />
           <Route path="*" element={<Navigate to="/tickets" replace />} />
         </Route>
       </Routes>

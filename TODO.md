@@ -21,8 +21,8 @@ Phase 1 = ticketing only. System Health / Dashboard / AI usage billing come late
 ## Open questions
 
 - [ ] Domain for the hub — later (suggestion: `hub.it-houzs.dev`).
-- [ ] Accounts for Samuel, YH, Laphii, Zaim (need their emails) via `user:set`.
-- [ ] Change-password page (for now the script resets it).
+- [ ] First admin via `user:set ... --admin`, then the rest from the Users page.
+- [x] Roles (admin, developer), Users page, My account change password (2026-10-12)
 - [ ] 2990s stack — no local repo yet.
 - [ ] SLA hours per priority (Urgent / High / Medium / Low).
 

@@ -1,6 +1,6 @@
-import { KanbanSquare, List, LogOut, Moon, Sun, UserCheck } from "lucide-react";
+import { KanbanSquare, List, LogOut, Moon, Sun, UserCheck, Users } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { api, type Developer, type SystemRow } from "../api/client";
 import { useTheme } from "../lib/theme";
 import { usePoll } from "../lib/usePoll";
@@ -106,16 +106,24 @@ export default function Layout() {
                 count={stats.active_by_system[s.code] ?? 0}
               />
             ))}
+
+            {/* Only hides the link; the API itself refuses non-admins. */}
+            {base.me.role === "admin" && (
+              <>
+                <div className="px-2.5 pb-1 pt-5 text-[9.5px] font-bold uppercase tracking-brand text-sidebar-ink-muted">Admin</div>
+                <NavItem to="/users" icon={<Users className="h-4 w-4" />} label="Users" />
+              </>
+            )}
           </nav>
 
           <div className="mt-auto flex items-center gap-2.5 border-t border-[var(--sidebar-border)] px-4 py-3">
             <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--sidebar-active)] text-[10px] font-bold uppercase text-accent-bright shadow-[inset_0_0_0_1px_rgba(161,106,46,0.25)]">
               {base.me.name.slice(0, 2)}
             </span>
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-[12px] font-semibold text-sidebar-ink">{base.me.name}</div>
+            <Link to="/account" className="group min-w-0 flex-1" title="My account and password">
+              <div className="truncate text-[12px] font-semibold text-sidebar-ink group-hover:text-accent-bright">{base.me.name}</div>
               <div className="truncate text-[10px] text-sidebar-ink-muted">{base.me.email}</div>
-            </div>
+            </Link>
             <button
               onClick={toggle}
               className="grid h-8 w-8 place-items-center rounded-md text-sidebar-ink-muted transition-colors hover:bg-[var(--sidebar-hover)] hover:text-accent-bright"

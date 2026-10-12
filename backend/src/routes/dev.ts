@@ -10,6 +10,7 @@ import {
   type TicketStatus,
 } from "../db/schema";
 import { devAuth } from "../middleware/devAuth";
+import { MIN_PASSWORD, hashPassword, verifyPassword } from "../services/crypto";
 import {
   ACTIVE_STATUSES,
   InputError,
@@ -23,6 +24,7 @@ import {
   validateFiles,
 } from "../services/tickets";
 import type { DevApp } from "../types";
+import admin from "./admin";
 
 const dev = new Hono<DevApp>();
 dev.use("*", devAuth);
@@ -35,9 +37,29 @@ dev.onError((err, c) => {
 const t = schema.tickets;
 const PAGE_SIZE = 50;
 
+dev.route("/admin", admin);
+
 dev.get("/me", (c) => {
-  const { id, name, email, username } = c.get("developer");
-  return c.json({ developer: { id, name, email, username } });
+  const { id, name, email, username, role } = c.get("developer");
+  return c.json({ developer: { id, name, email, username, role } });
+});
+
+dev.post("/me/password", async (c) => {
+  const me = c.get("developer");
+  const b = (await c.req.json().catch(() => ({}))) as { current?: unknown; next?: unknown };
+  const current = typeof b.current === "string" ? b.current : "";
+  const next = typeof b.next === "string" ? b.next : "";
+  if (!me.passwordHash || !(await verifyPassword(current, me.passwordHash))) {
+    return c.json({ error: "Your current password is wrong" }, 400);
+  }
+  if (next.length < MIN_PASSWORD || next.length > 200) {
+    return c.json({ error: `The new password needs at least ${MIN_PASSWORD} characters` }, 400);
+  }
+  await getDb(c.env)
+    .update(schema.developers)
+    .set({ passwordHash: await hashPassword(next) })
+    .where(eq(schema.developers.id, me.id));
+  return c.json({ ok: true });
 });
 
 dev.get("/developers", async (c) => {

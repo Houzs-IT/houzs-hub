@@ -31,16 +31,27 @@ npm run dev:frontend     # :5180, proxies /api to :8787
 ## Developer accounts
 
 Developers sign in at `/login` with their username or email plus a password.
-There is no sign-up page. Create an account or reset a password with:
+There is no sign-up page. Two roles:
+
+- **Admin**: everything below, plus the **Users** page (add people, reset
+  passwords, change roles, switch accounts off or on). An admin cannot change
+  their own role or switch themselves off.
+- **Developer**: tickets only.
+
+Everyone can change their own password on **My account** (click your name in
+the sidebar). Five wrong passwords lock an account for 15 minutes; an admin
+reset clears the lock. Switching someone off signs them out at once; a password
+reset does not end sessions they already have.
+
+The first admin is made once from the command line. It prints a random password
+once, for the database `DATABASE_URL` points at (the script prints which):
 
 ```bash
-npm --prefix backend run user:set -- samuel@gmail.com samuel
+npm --prefix backend run user:set -- you@gmail.com yourname --admin
 ```
 
-It prints a new random password once, for the database `DATABASE_URL` points
-at (the script prints which). The username is optional on a reset. Five wrong
-passwords lock the account for 15 minutes; running the script again also clears
-the lock. To block someone, set `developers.active = 0`.
+The same script (without `--admin`) still works as a fallback for creating or
+resetting any account.
 
 ## First deploy
 
