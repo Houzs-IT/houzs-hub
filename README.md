@@ -48,6 +48,14 @@ set `developers.active = 0`.
    Hookka as `IT_HUB_API_KEY`.
 8. `npm --prefix backend run user:set -- <email> <username>` for each developer.
 
+## Deploys after the first
+
+`.github/workflows/deploy.yml` type-checks and builds every pull request. A merge
+to `main` then applies pending migrations and deploys the Worker. It needs the
+repository secret `CLOUDFLARE_API_TOKEN` (Workers Scripts, Workers Routes, R2 and
+D1 edit on the account in `backend/wrangler.toml`). Secrets such as
+`SESSION_SECRET` stay in Cloudflare and are not touched by a deploy.
+
 ## System API (`/api/v1/sys`)
 
 Headers on every call: `Authorization: Bearer <key>`, `X-Reporter-Id: <user id in that system>`.
