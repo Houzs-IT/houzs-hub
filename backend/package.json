@@ -1,0 +1,23 @@
+{
+  "name": "houzs-it-hub-backend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "npm run typecheck && wrangler deploy",
+    "typecheck": "tsc --noEmit -p .",
+    "db:migrate": "node scripts/migrate.mjs",
+    "db:migrate:local": "node scripts/migrate.mjs --local",
+    "key:issue": "node scripts/issue-api-key.mjs"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.45.2",
+    "hono": "^4.12.14"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261006.1",
+    "drizzle-kit": "^0.31.10",
+    "typescript": "^5.7.0",
+    "wrangler": "^4.90.0"
+  }
+}

@@ -1,0 +1,167 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Houzs Century Theme C "Ink & Petrol" tokens as RGB channels (alpha-capable).
+   Light = 1:1 with Houzs-Century-ERP tailwind.config.js. Dark is the hub's own
+   variant of the same family; neither Century nor Connect ships one. */
+:root {
+  color-scheme: light;
+  --canvas: 238 240 236;
+  --surface: 255 255 255;
+  --surface-2: 244 246 243;
+  --surface-dim: 227 230 224;
+  --raised: 255 255 255;
+  --raised-hover: 250 251 249;
+  --overlay: 255 255 255;
+  --border: 214 217 210;
+  --border-subtle: 227 230 224;
+  --border-strong: 194 198 189;
+  --ink: 17 20 15;
+  --ink-secondary: 65 69 57;
+  --ink-muted: 118 123 110;
+  --ink-disabled: 154 160 147;
+  --primary: 22 105 95;
+  --primary-hover: 12 63 57;
+  --primary-soft: 225 239 237;
+  --primary-soft-hover: 205 228 224;
+  --primary-on: 255 255 255;
+  --primary-ink: 12 63 57;
+  --accent: 161 106 46;
+  --accent-soft: 243 236 224;
+  --accent-bright: 216 168 90;
+  --accent-ink: 90 58 20;
+  --sidebar: 19 32 28;
+  --sidebar-ink: 231 234 228;
+  --sidebar-ink-muted: 140 150 138;
+  --loz-grey: 232 234 229;
+  --loz-grey-ink: 118 123 110;
+  --loz-blue: 227 239 252;
+  --loz-blue-ink: 21 101 192;
+  --loz-green: 226 240 233;
+  --loz-green-ink: 47 138 91;
+  --loz-yellow: 246 239 217;
+  --loz-yellow-ink: 110 77 18;
+  --loz-orange: 251 231 222;
+  --loz-orange-ink: 166 71 30;
+  --loz-purple: 243 229 246;
+  --loz-purple-ink: 106 27 154;
+  --loz-red: 248 234 234;
+  --loz-red-ink: 178 58 58;
+  --note: 246 239 217;
+  --note-line: 217 180 90;
+  --shadow-stone: 0 1px 0 rgba(17, 24, 16, 0.04), 0 4px 18px -8px rgba(17, 24, 16, 0.12);
+  --shadow-overlay: 0 0 0 1px rgba(17, 20, 15, 0.08), 0 12px 32px rgba(34, 31, 32, 0.12), 0 2px 6px rgba(34, 31, 32, 0.06);
+  --sidebar-border: rgba(231, 234, 228, 0.12);
+  --sidebar-hover: rgba(231, 234, 228, 0.06);
+  --sidebar-active: rgba(22, 105, 95, 0.22);
+}
+
+.dark {
+  color-scheme: dark;
+  --canvas: 13 19 17;
+  --surface: 21 29 26;
+  --surface-2: 27 37 33;
+  --surface-dim: 35 47 42;
+  --raised: 27 37 33;
+  --raised-hover: 33 45 40;
+  --overlay: 30 41 37;
+  --border: 45 58 52;
+  --border-subtle: 35 47 42;
+  --border-strong: 64 80 72;
+  --ink: 231 234 228;
+  --ink-secondary: 188 195 183;
+  --ink-muted: 140 150 138;
+  --ink-disabled: 95 104 93;
+  --primary: 64 170 156;
+  --primary-hover: 101 194 181;
+  --primary-soft: 20 52 47;
+  --primary-soft-hover: 26 69 62;
+  --primary-on: 9 20 18;
+  --primary-ink: 140 214 203;
+  --accent: 216 168 90;
+  --accent-soft: 58 44 24;
+  --accent-bright: 216 168 90;
+  --accent-ink: 232 199 146;
+  --sidebar: 10 17 15;
+  --sidebar-ink: 231 234 228;
+  --sidebar-ink-muted: 140 150 138;
+  --loz-grey: 40 52 47;
+  --loz-grey-ink: 176 184 172;
+  --loz-blue: 20 42 72;
+  --loz-blue-ink: 138 180 248;
+  --loz-green: 19 49 38;
+  --loz-green-ink: 111 207 151;
+  --loz-yellow: 59 47 14;
+  --loz-yellow-ink: 240 201 106;
+  --loz-orange: 61 34 19;
+  --loz-orange-ink: 240 163 127;
+  --loz-purple: 47 28 61;
+  --loz-purple-ink: 211 154 230;
+  --loz-red: 61 23 23;
+  --loz-red-ink: 241 154 154;
+  --note: 42 36 18;
+  --note-line: 138 109 36;
+  --shadow-stone: 0 1px 0 rgba(0, 0, 0, 0.3), 0 4px 18px -8px rgba(0, 0, 0, 0.6);
+  --shadow-overlay: 0 0 0 1px rgb(45 58 52), 0 12px 32px rgba(0, 0, 0, 0.5);
+  --sidebar-border: rgba(231, 234, 228, 0.08);
+  --sidebar-hover: rgba(231, 234, 228, 0.05);
+  --sidebar-active: rgba(64, 170, 156, 0.2);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-canvas font-sans text-[14px] text-ink antialiased;
+  font-feature-settings: normal;
+  text-rendering: optimizeLegibility;
+}
+
+.font-docno,
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+::selection {
+  background: rgb(var(--accent-soft));
+  color: rgb(var(--accent-ink));
+}
+
+@layer components {
+  /* Century Button: h-9, 13px semibold, petrol primary with border. */
+  .btn {
+    @apply inline-flex h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-4 text-[13px] font-semibold tracking-wide transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn border border-primary bg-primary text-primary-on shadow-sm hover:border-primary-hover hover:bg-primary-hover;
+  }
+  .btn-default {
+    @apply btn border border-line bg-surface text-ink hover:border-line-strong hover:bg-surface-dim;
+  }
+  .btn-subtle {
+    @apply btn bg-transparent text-ink-subtle hover:bg-surface-dim hover:text-ink;
+  }
+  .input {
+    @apply h-9 rounded-md border border-line bg-surface px-2.5 text-[13px] text-ink outline-none placeholder:text-ink-subtlest hover:border-line-strong focus:border-primary focus:ring-2 focus:ring-primary/20;
+  }
+  .inline-select {
+    @apply -mx-1.5 h-8 w-[calc(100%+12px)] cursor-pointer rounded-md border border-transparent bg-transparent px-1 text-[13px] text-ink outline-none hover:bg-surface-2 focus:border-primary focus:bg-surface;
+  }
+  .section-title {
+    @apply text-[10px] font-bold uppercase tracking-brand text-ink-subtle;
+  }
+  .eyebrow {
+    @apply text-[10px] font-bold uppercase tracking-brand text-accent;
+  }
+  /* Century Badge: rounded-full, uppercase, bold, soft tone. */
+  .pill {
+    @apply inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-[3px] text-[10px] font-bold uppercase leading-none tracking-wider;
+  }
+  .card {
+    @apply rounded-[10px] border border-line bg-surface shadow-stone;
+  }
+}
