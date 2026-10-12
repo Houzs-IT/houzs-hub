@@ -52,7 +52,7 @@ admin.post("/users", async (c) => {
   try {
     const [user] = await getDb(c.env)
       .insert(d)
-      .values({ email, username, name, role, passwordHash: await hashPassword(password) })
+      .values({ email, username, name, role, passwordHash: await hashPassword(password), mustChangePassword: 1 })
       .returning(USER_COLS);
     return c.json({ user, password }, 201);
   } catch (e) {
@@ -92,7 +92,7 @@ admin.post("/users/:id/reset-password", async (c) => {
   const password = randomPassword();
   const [user] = await getDb(c.env)
     .update(d)
-    .set({ passwordHash: await hashPassword(password), failedLogins: 0, lockedUntil: null })
+    .set({ passwordHash: await hashPassword(password), mustChangePassword: 1, failedLogins: 0, lockedUntil: null })
     .where(eq(d.id, id))
     .returning({ id: d.id });
   if (!user) return c.json({ error: "User not found" }, 404);

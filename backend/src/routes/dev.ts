@@ -40,8 +40,8 @@ const PAGE_SIZE = 50;
 dev.route("/admin", admin);
 
 dev.get("/me", (c) => {
-  const { id, name, email, username, role } = c.get("developer");
-  return c.json({ developer: { id, name, email, username, role } });
+  const { id, name, email, username, role, mustChangePassword } = c.get("developer");
+  return c.json({ developer: { id, name, email, username, role, mustChangePassword } });
 });
 
 // Display name only. Old ticket comments keep the name they were written under.
@@ -76,7 +76,7 @@ dev.post("/me/password", async (c) => {
   }
   await getDb(c.env)
     .update(schema.developers)
-    .set({ passwordHash: await hashPassword(next) })
+    .set({ passwordHash: await hashPassword(next), mustChangePassword: 0 })
     .where(eq(schema.developers.id, me.id));
   return c.json({ ok: true });
 });

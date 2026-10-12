@@ -50,6 +50,7 @@ export const developers = pgTable("developers", {
   failedLogins: integer("failed_logins").notNull().default(0),
   lockedUntil: text("locked_until"),
   role: text("role").$type<Role>().notNull().default("developer"),
+  mustChangePassword: integer("must_change_password").notNull().default(0),
 });
 
 export const tickets = pgTable("tickets", {

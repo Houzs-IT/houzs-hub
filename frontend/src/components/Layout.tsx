@@ -4,6 +4,7 @@ import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { api, type Developer, type SystemRow } from "../api/client";
 import { useTheme } from "../lib/theme";
 import { usePoll } from "../lib/usePoll";
+import FirstPasswordPage from "../pages/FirstPasswordPage";
 
 type Stats = { active_by_system: Record<string, number>; my_active: number };
 type Ctx = {
@@ -50,21 +51,27 @@ export default function Layout() {
   const [stats, setStats] = useState<Stats>({ active_by_system: {}, my_active: 0 });
   const [version, setVersion] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  // Set when the account still has a handed-out password; the server refuses
+  // everything but /me and /me/password until it is replaced.
+  const [firstLogin, setFirstLogin] = useState<string | null>(null);
   const { theme, toggle } = useTheme();
 
   useEffect(() => {
-    Promise.all([
-      api<{ developer: Developer }>("/me"),
-      api<{ developers: Developer[] }>("/developers"),
-      api<{ systems: SystemRow[] }>("/systems"),
-    ])
-      .then(([m, d, s]) => setBase({ me: m.developer, developers: d.developers, systems: s.systems }))
+    api<{ developer: Developer }>("/me")
+      .then(async ({ developer: me }) => {
+        if (me.mustChangePassword) return setFirstLogin(me.name);
+        const [d, s] = await Promise.all([
+          api<{ developers: Developer[] }>("/developers"),
+          api<{ systems: SystemRow[] }>("/systems"),
+        ]);
+        setBase({ me, developers: d.developers, systems: s.systems });
+      })
       .catch((e: Error) => setError(e.message));
   }, []);
 
   const loadStats = useCallback(() => {
-    api<Stats>("/tickets/stats").then(setStats).catch(() => {});
-  }, []);
+    if (base) api<Stats>("/tickets/stats").then(setStats).catch(() => {});
+  }, [base]);
   useEffect(loadStats, [loadStats, version]);
   usePoll(loadStats, 30_000);
 
@@ -75,6 +82,7 @@ export default function Layout() {
     [],
   );
 
+  if (firstLogin) return <FirstPasswordPage name={firstLogin} />;
   if (error) return <div className="p-10 text-center text-loz-red-ink">{error}</div>;
   if (!base) return <div className="p-10 text-center text-ink-subtlest">Loading...</div>;
 

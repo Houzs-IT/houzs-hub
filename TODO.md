@@ -23,6 +23,7 @@ Phase 1 = ticketing only. System Health / Dashboard / AI usage billing come late
 - [ ] Domain for the hub — later (suggestion: `hub.it-houzs.dev`).
 - [ ] First admin via `user:set ... --admin`, then the rest from the Users page.
 - [x] Roles (admin, developer), Users page, My account change password (2026-10-12)
+- [x] Change own display name; handed-out passwords must be replaced on first sign-in (2026-10-12)
 - [ ] 2990s stack — no local repo yet.
 - [ ] SLA hours per priority (Urgent / High / Medium / Low).
 

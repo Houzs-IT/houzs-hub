@@ -3,7 +3,14 @@ export type Priority = "urgent" | "high" | "medium" | "low";
 export type TicketType = "bug" | "development";
 
 export type Role = "admin" | "developer";
-export type Developer = { id: number; name: string; email: string; username?: string | null; role?: Role };
+export type Developer = {
+  id: number;
+  name: string;
+  email: string;
+  username?: string | null;
+  role?: Role;
+  mustChangePassword?: number;
+};
 export type SystemRow = { code: string; name: string; active: number };
 
 export type TicketRow = {

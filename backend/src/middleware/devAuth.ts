@@ -36,6 +36,12 @@ export const devAuth = createMiddleware<DevApp>(async (c, next) => {
   const db = getDb(c.env);
   const [dev] = await db.select().from(schema.developers).where(eq(schema.developers.id, id)).limit(1);
   if (!dev?.active) return c.json({ error: "Not signed in" }, 401);
+  // With a handed-out password, the only things allowed are reading who you
+  // are and setting your own password.
+  const path = c.req.path;
+  if (dev.mustChangePassword && !(path.endsWith("/me") && c.req.method === "GET") && !path.endsWith("/me/password")) {
+    return c.json({ error: "Choose your own password first", code: "must_change_password" }, 403);
+  }
   await db.update(schema.developers).set({ lastSeenAt: new Date().toISOString() }).where(eq(schema.developers.id, dev.id));
 
   c.set("developer", dev);

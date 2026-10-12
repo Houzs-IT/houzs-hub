@@ -38,9 +38,12 @@ There is no sign-up page. Two roles:
   their own role or switch themselves off.
 - **Developer**: tickets only.
 
-Everyone can change their own password on **My account** (click your name in
-the sidebar). Five wrong passwords lock an account for 15 minutes; an admin
-reset clears the lock. Switching someone off signs them out at once; a password
+Everyone can change their own password and display name on **My account**
+(click your name in the sidebar). A password handed out by an admin (new
+account or reset, from the Users page or the script) works for one sign-in
+only: the hub then asks the person to choose their own before showing anything
+else, so the admin never knows it. Five wrong passwords lock an account for
+15 minutes; an admin reset clears the lock. Switching someone off signs them out at once; a password
 reset does not end sessions they already have.
 
 The first admin is made once from the command line. It prints a random password

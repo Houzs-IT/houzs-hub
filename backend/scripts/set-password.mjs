@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Creates a developer or resets their password, against DATABASE_URL. A random
-// password is printed once; only its PBKDF2 hash is stored. Also clears any
-// login lockout.
+// password is printed once; only its PBKDF2 hash is stored. It works for one
+// sign-in: the hub then makes them choose their own. Also clears any lockout.
 //   node scripts/set-password.mjs samuel@gmail.com samuel
 //   node scripts/set-password.mjs you@gmail.com you --admin   first admin
 // The username is optional on a reset (the existing one is kept). Without
@@ -34,12 +34,13 @@ const { sql, target } = connect();
 let row;
 try {
   [row] = await sql`
-    INSERT INTO developers (email, name, username, password_hash, role)
-    VALUES (${email}, ${name}, ${username}, ${stored}, ${role ?? "developer"})
+    INSERT INTO developers (email, name, username, password_hash, role, must_change_password)
+    VALUES (${email}, ${name}, ${username}, ${stored}, ${role ?? "developer"}, 1)
     ON CONFLICT (email) DO UPDATE SET
       username = COALESCE(excluded.username, developers.username),
       role = COALESCE(${role}, developers.role),
       password_hash = excluded.password_hash,
+      must_change_password = 1,
       failed_logins = 0,
       locked_until = NULL
     RETURNING email, username, role`;
