@@ -13,7 +13,7 @@ Phase 1 = ticketing only. System Health / Dashboard / AI usage billing come late
 - First system to integrate: Hookka (staging first, then prod).
 - Systems call the hub server-to-server with a per-system API key. Reporter identity
   comes from the calling system's session, never from the browser.
-- Ticket code: `<SYS>-<0000>` per system: `HK-0001` Hookka, `HC-0001` Houzs Century, `2990-0001` 2990s. Type (Bug / Development / ...)
+- Ticket code: `<SYS>-<0000>` per system: `HK-0001` Hookka, `HC-0001` Houzs Century, `2990-0001` 2990s, `CONTS-0001` Conts. Type (Bug / Development / ...)
   is its own column, not in the code. Imported Sheet rows keep their old id in `legacy_code`.
 - Module name inside each system: "IT Support" (not "Service" — ERP-Houzs already uses
   Service for ASSR `/assr`, `service_cases.*`).
@@ -30,7 +30,7 @@ Phase 1 = ticketing only. System Health / Dashboard / AI usage billing come late
 
 - [x] Scaffold: Worker + Hono + Drizzle + D1 + R2; SPA served as Workers static assets
 - [x] 001_init.sql: systems, ticket_sequences, developers, tickets, ticket_events, ticket_attachments
-- [x] 002_systems.sql: HK, HC, 2990
+- [x] 002_systems.sql: HK, HC, 2990; 003_conts_system.sql: CONTS (2026-10-12)
 - [x] `scripts/issue-api-key.mjs`, `scripts/migrate.mjs` (against `DATABASE_URL`)
 - [x] `systemAuth` (Bearer key hash + X-Reporter-Id), `devAuth` (session cookie; was Access JWT until 2026-10-12)
 - [x] System API: create / list / unread-count / detail / replies / confirm / attachments
