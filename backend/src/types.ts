@@ -1,7 +1,7 @@
 import type { Developer } from "./db/schema";
 
 export interface Env {
-  DB: D1Database;
+  HYPERDRIVE: Hyperdrive;
   FILES: R2Bucket;
   ASSETS: Fetcher;
   // Signs the developer session cookie. `wrangler secret put SESSION_SECRET`;

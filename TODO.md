@@ -5,7 +5,7 @@ Phase 1 = ticketing only. System Health / Dashboard / AI usage billing come late
 
 ## Decisions (confirmed 2026-10-08)
 
-- Hub is a new repo + new Worker: Hono + D1 + R2 (same stack as ERP-Houzs).
+- Hub is a new repo + new Worker: Hono + Supabase Postgres via Hyperdrive + R2 (database changed from D1 on 2026-10-12 so developers can be given access to the hub's data alone).
 - Developer login: own `/login` page, username or email + password (changed 2026-10-12,
   replaces the earlier Cloudflare Access plan). Accounts and resets via
   `scripts/set-password.mjs`; no sign-up page. Signed HttpOnly session cookie, 7 days.
@@ -31,7 +31,7 @@ Phase 1 = ticketing only. System Health / Dashboard / AI usage billing come late
 - [x] Scaffold: Worker + Hono + Drizzle + D1 + R2; SPA served as Workers static assets
 - [x] 001_init.sql: systems, ticket_sequences, developers, tickets, ticket_events, ticket_attachments
 - [x] 002_systems.sql: HK, HC, 2990
-- [x] `scripts/issue-api-key.mjs`, `scripts/migrate.mjs` (`--local`)
+- [x] `scripts/issue-api-key.mjs`, `scripts/migrate.mjs` (against `DATABASE_URL`)
 - [x] `systemAuth` (Bearer key hash + X-Reporter-Id), `devAuth` (session cookie; was Access JWT until 2026-10-12)
 - [x] System API: create / list / unread-count / detail / replies / confirm / attachments
 - [x] Dev API: list + stats / detail / pickup / patch / comments (public | internal, optional status) / attachments

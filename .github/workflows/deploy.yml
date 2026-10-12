@@ -1,7 +1,7 @@
 name: Deploy
 
 # Pull requests: type-check and build only.
-# Push to main: the same checks, then pending D1 migrations, then the Worker.
+# Push to main: the same checks, then pending database migrations, then the Worker.
 on:
   pull_request:
   push:
@@ -57,5 +57,7 @@ jobs:
           path: frontend/dist
       # Migrations first: the new Worker may read columns they add.
       - run: npm --prefix backend run db:migrate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
       - run: npx wrangler deploy
         working-directory: backend

@@ -10,7 +10,6 @@
     "typecheck": "npm --prefix backend run typecheck && npm --prefix frontend run typecheck",
     "deploy": "npm run build && npm --prefix backend run deploy",
     "db:migrate": "npm --prefix backend run db:migrate",
-    "db:migrate:local": "npm --prefix backend run db:migrate:local",
     "install:all": "npm --prefix backend install && npm --prefix frontend install"
   }
 }

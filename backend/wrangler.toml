@@ -18,10 +18,13 @@ run_worker_first = ["/api/*"]
 
 # Secret (not a var): SESSION_SECRET, set with `wrangler secret put SESSION_SECRET`.
 
-[[d1_databases]]
-binding = "DB"
-database_name = "houzs-it-hub"
-database_id = "7ec016bb-471c-403b-b3a7-e56868e06e6a"
+# Supabase Postgres, reached through Hyperdrive. The connection string (with the
+# database password) lives in the Hyperdrive config in Cloudflare, not here.
+# localConnectionString is the throwaway Postgres from the README, for wrangler dev.
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "HYPERDRIVE_ID_PENDING"
+localConnectionString = "postgres://postgres:postgres@127.0.0.1:54329/postgres"
 
 [[r2_buckets]]
 binding = "FILES"
