@@ -1,10 +1,14 @@
 name = "houzs-it-hub"
+# Hello@houzscentury.com's Account. Pinned so a deploy from a machine signed in
+# to another Cloudflare account fails instead of landing there.
+account_id = "816e457307d7fa0491c2a08a72ad5dcd"
 main = "src/index.ts"
 compatibility_date = "2025-06-01"
 compatibility_flags = ["nodejs_compat"]
 
 # Serve on the custom domain only.
 workers_dev = false
+routes = [{ pattern = "support.houzscentury.com", custom_domain = true }]
 
 [assets]
 directory = "../frontend/dist"
@@ -17,7 +21,7 @@ run_worker_first = ["/api/*"]
 [[d1_databases]]
 binding = "DB"
 database_name = "houzs-it-hub"
-database_id = "4b7d5586-11b5-4756-ad6c-2ca256a08c88"
+database_id = "7ec016bb-471c-403b-b3a7-e56868e06e6a"
 
 [[r2_buckets]]
 binding = "FILES"
