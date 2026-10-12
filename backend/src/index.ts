@@ -1,6 +1,7 @@
 import { and, eq, lt } from "drizzle-orm";
 import { Hono } from "hono";
 import { getDb, schema } from "./db/client";
+import auth from "./routes/auth";
 import dev from "./routes/dev";
 import sys from "./routes/sys";
 import { addEvent, nowIso } from "./services/tickets";
@@ -9,6 +10,7 @@ import type { Env } from "./types";
 const app = new Hono<{ Bindings: Env }>();
 
 app.get("/api/health", (c) => c.json({ ok: true, service: "houzs-it-hub" }));
+app.route("/api/v1/auth", auth);
 app.route("/api/v1/sys", sys);
 app.route("/api/v1/dev", dev);
 app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));

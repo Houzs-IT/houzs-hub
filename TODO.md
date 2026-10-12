@@ -6,8 +6,9 @@ Phase 1 = ticketing only. System Health / Dashboard / AI usage billing come late
 ## Decisions (confirmed 2026-10-08)
 
 - Hub is a new repo + new Worker: Hono + D1 + R2 (same stack as ERP-Houzs).
-- Developer login: Cloudflare Access (Google / email OTP allow-list). Hub verifies the
-  `Cf-Access-Jwt-Assertion` JWT; no password code in the hub.
+- Developer login: own `/login` page, username or email + password (changed 2026-10-12,
+  replaces the earlier Cloudflare Access plan). Accounts and resets via
+  `scripts/set-password.mjs`; no sign-up page. Signed HttpOnly session cookie, 7 days.
 - Two-way messages: public replies (reporter sees) + internal notes (devs only).
 - First system to integrate: Hookka (staging first, then prod).
 - Systems call the hub server-to-server with a per-system API key. Reporter identity
@@ -20,7 +21,8 @@ Phase 1 = ticketing only. System Health / Dashboard / AI usage billing come late
 ## Open questions
 
 - [ ] Domain for the hub — later (suggestion: `hub.it-houzs.dev`).
-- [ ] Access — later. Allow list: Samuel, YH, Laphii, Zaim (need their emails).
+- [ ] Accounts for Samuel, YH, Laphii, Zaim (need their emails) via `user:set`.
+- [ ] Change-password page (for now the script resets it).
 - [ ] 2990s stack — no local repo yet.
 - [ ] SLA hours per priority (Urgent / High / Medium / Low).
 
@@ -30,7 +32,7 @@ Phase 1 = ticketing only. System Health / Dashboard / AI usage billing come late
 - [x] 001_init.sql: systems, ticket_sequences, developers, tickets, ticket_events, ticket_attachments
 - [x] 002_systems.sql: HK, HC, 2990
 - [x] `scripts/issue-api-key.mjs`, `scripts/migrate.mjs` (`--local`)
-- [x] `systemAuth` (Bearer key hash + X-Reporter-Id), `devAuth` (verifies Access JWT, not just the email header)
+- [x] `systemAuth` (Bearer key hash + X-Reporter-Id), `devAuth` (session cookie; was Access JWT until 2026-10-12)
 - [x] System API: create / list / unread-count / detail / replies / confirm / attachments
 - [x] Dev API: list + stats / detail / pickup / patch / comments (public | internal, optional status) / attachments
 - [x] Statuses follow the Sheet: Open, On Going, On Hold, Testing, Waiting Reporter, Done, Closed, Rejected
@@ -96,7 +98,7 @@ staging (`hookka-erp-staging-sg`), feature PR goes to staging first.
       Done. Columns: Developer, Progress, ID, Priority, Type, System, Issue Title, Description,
       Date and Time Issue Occurred, Submit Photo (Drive link), Reporter Name, Contact Number.
       Map Progress: blank -> open, On Going -> in_progress, On Hold, Testing, Done -> closed.
-- [ ] Deploy hub prod + Access policy
+- [ ] Deploy hub prod + `SESSION_SECRET` secret
 - [ ] Hookka prod
 - [ ] Then Houzs Century, 2990s using Hookka as the template
 - [ ] Retire the Google Form

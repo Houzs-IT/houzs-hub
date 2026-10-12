@@ -40,6 +40,10 @@ export const developers = sqliteTable("developers", {
   active: integer("active").notNull().default(1),
   createdAt: text("created_at"),
   lastSeenAt: text("last_seen_at"),
+  username: text("username"),
+  passwordHash: text("password_hash"),
+  failedLogins: integer("failed_logins").notNull().default(0),
+  lockedUntil: text("locked_until"),
 });
 
 export const tickets = sqliteTable("tickets", {

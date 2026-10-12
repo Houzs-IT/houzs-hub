@@ -4,10 +4,9 @@ export interface Env {
   DB: D1Database;
   FILES: R2Bucket;
   ASSETS: Fetcher;
-  ACCESS_TEAM_DOMAIN?: string;
-  ACCESS_AUD?: string;
-  // Local only (.dev.vars). Honoured only for localhost requests.
-  DEV_AUTH_EMAIL?: string;
+  // Signs the developer session cookie. `wrangler secret put SESSION_SECRET`;
+  // locally in .dev.vars.
+  SESSION_SECRET?: string;
 }
 
 export type SysVars = { systemCode: string; reporterId: string };

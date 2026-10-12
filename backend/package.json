@@ -8,7 +8,8 @@
     "typecheck": "tsc --noEmit -p .",
     "db:migrate": "node scripts/migrate.mjs",
     "db:migrate:local": "node scripts/migrate.mjs --local",
-    "key:issue": "node scripts/issue-api-key.mjs"
+    "key:issue": "node scripts/issue-api-key.mjs",
+    "user:set": "node scripts/set-password.mjs"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",

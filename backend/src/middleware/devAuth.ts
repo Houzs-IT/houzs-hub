@@ -1,41 +1,42 @@
 import { eq } from "drizzle-orm";
+import type { Context } from "hono";
+import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { createMiddleware } from "hono/factory";
+import { sign, verify } from "hono/jwt";
 import { getDb, schema } from "../db/client";
-import { verifyAccessJwt } from "../services/crypto";
-import type { DevApp } from "../types";
+import type { DevApp, Env } from "../types";
 
-function isLocal(url: string) {
-  const host = new URL(url).hostname;
-  return host === "localhost" || host === "127.0.0.1";
+const COOKIE = "hub_session";
+const SESSION_DAYS = 7;
+
+function secret(env: Env) {
+  if (!env.SESSION_SECRET) throw new Error("SESSION_SECRET is not set");
+  return env.SESSION_SECRET;
 }
 
-// Who may sign in is decided by the Access policy. Anyone who passes it gets
-// a developers row on first visit.
-export const devAuth = createMiddleware<DevApp>(async (c, next) => {
-  let email: string | null = null;
+// ponytail: stateless signed cookie, so one stolen session cannot be revoked on
+// its own before it expires. Setting developers.active = 0 cuts all of that
+// developer's sessions. Add a sessions table if per-session revoke is needed.
+export async function startSession(c: Context<{ Bindings: Env }>, developerId: number) {
+  const exp = Math.floor(Date.now() / 1000) + SESSION_DAYS * 86400;
+  const token = await sign({ sub: developerId, exp }, secret(c.env), "HS256");
+  setCookie(c, COOKIE, token, { httpOnly: true, secure: true, sameSite: "Lax", path: "/", maxAge: SESSION_DAYS * 86400 });
+}
 
-  if (c.env.DEV_AUTH_EMAIL && isLocal(c.req.url)) {
-    email = c.env.DEV_AUTH_EMAIL.toLowerCase();
-  } else {
-    const token = c.req.header("Cf-Access-Jwt-Assertion");
-    const team = c.env.ACCESS_TEAM_DOMAIN;
-    const aud = c.env.ACCESS_AUD;
-    if (token && team && aud) email = await verifyAccessJwt(token, team, aud);
-  }
-  if (!email) return c.json({ error: "Not signed in" }, 401);
+export function endSession(c: Context) {
+  deleteCookie(c, COOKIE, { path: "/", secure: true });
+}
+
+export const devAuth = createMiddleware<DevApp>(async (c, next) => {
+  const token = getCookie(c, COOKIE);
+  const payload = token ? await verify(token, secret(c.env), "HS256").catch(() => null) : null;
+  const id = Number(payload?.sub);
+  if (!Number.isInteger(id)) return c.json({ error: "Not signed in" }, 401);
 
   const db = getDb(c.env);
-  const now = new Date().toISOString();
-  let [dev] = await db.select().from(schema.developers).where(eq(schema.developers.email, email)).limit(1);
-  if (!dev) {
-    [dev] = await db
-      .insert(schema.developers)
-      .values({ email, name: email.split("@")[0], createdAt: now, lastSeenAt: now })
-      .returning();
-  } else {
-    if (!dev.active) return c.json({ error: "Developer disabled" }, 403);
-    await db.update(schema.developers).set({ lastSeenAt: now }).where(eq(schema.developers.id, dev.id));
-  }
+  const [dev] = await db.select().from(schema.developers).where(eq(schema.developers.id, id)).limit(1);
+  if (!dev?.active) return c.json({ error: "Not signed in" }, 401);
+  await db.update(schema.developers).set({ lastSeenAt: new Date().toISOString() }).where(eq(schema.developers.id, dev.id));
 
   c.set("developer", dev);
   await next();

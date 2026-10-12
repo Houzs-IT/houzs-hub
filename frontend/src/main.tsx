@@ -5,12 +5,14 @@ import Layout from "./components/Layout";
 import BoardPage from "./pages/BoardPage";
 import IssuePage from "./pages/IssuePage";
 import ListPage from "./pages/ListPage";
+import LoginPage from "./pages/LoginPage";
 import "./index.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <BrowserRouter>
       <Routes>
+        <Route path="/login" element={<LoginPage />} />
         <Route element={<Layout />}>
           <Route path="/" element={<Navigate to="/tickets" replace />} />
           <Route path="/tickets" element={<ListPage />} />

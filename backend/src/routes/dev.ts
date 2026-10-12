@@ -35,7 +35,10 @@ dev.onError((err, c) => {
 const t = schema.tickets;
 const PAGE_SIZE = 50;
 
-dev.get("/me", (c) => c.json({ developer: c.get("developer") }));
+dev.get("/me", (c) => {
+  const { id, name, email, username } = c.get("developer");
+  return c.json({ developer: { id, name, email, username } });
+});
 
 dev.get("/developers", async (c) => {
   const db = getDb(c.env);

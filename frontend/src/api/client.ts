@@ -2,7 +2,7 @@ export type Status = "open" | "in_progress" | "on_hold" | "testing" | "waiting_r
 export type Priority = "urgent" | "high" | "medium" | "low";
 export type TicketType = "bug" | "development";
 
-export type Developer = { id: number; name: string; email: string };
+export type Developer = { id: number; name: string; email: string; username?: string | null };
 export type SystemRow = { code: string; name: string; active: number };
 
 export type TicketRow = {
@@ -76,6 +76,12 @@ export class ApiError extends Error {
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(BASE + path, { credentials: "same-origin", ...init });
+  // Every page and poll goes through here, so this is the one place an expired
+  // session sends the user back to the login page.
+  if (res.status === 401) {
+    location.assign(`/login?next=${encodeURIComponent(location.pathname + location.search)}`);
+    return new Promise<T>(() => {});
+  }
   const data = (await res.json().catch(() => ({}))) as { error?: string };
   if (!res.ok) throw new ApiError(res.status, data.error ?? `Request failed (${res.status})`);
   return data as T;

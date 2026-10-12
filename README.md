@@ -6,22 +6,35 @@ One Cloudflare Worker (`backend/`) serves both the API and the developer portal 
 
 ```
 reporting system backend --Bearer key + X-Reporter-Id--> /api/v1/sys/*   (per-system API key)
-developer browser        --Cloudflare Access JWT-------> /api/v1/dev/*   + SPA
+developer browser        --session cookie (/login)----> /api/v1/dev/*   + SPA
 ```
 
 ## Local dev
 
 ```bash
 npm run install:all
-printf 'DEV_AUTH_EMAIL=you@houzs.local\n' > backend/.dev.vars
+printf 'SESSION_SECRET=any-long-random-string\n' > backend/.dev.vars
 npm run db:migrate:local
 npm --prefix backend run key:issue -- HK --local
+npm --prefix backend run user:set -- you@gmail.com yourname --local   # prints a password
 npm run build            # wrangler needs frontend/dist to exist
 npm run dev:backend      # :8787
 npm run dev:frontend     # :5180, proxies /api to :8787
 ```
 
-`DEV_AUTH_EMAIL` is only honoured for `localhost` / `127.0.0.1` requests.
+## Developer accounts
+
+Developers sign in at `/login` with their username or email plus a password.
+There is no sign-up page. Create an account or reset a password with:
+
+```bash
+npm --prefix backend run user:set -- samuel@gmail.com samuel
+```
+
+It prints a new random password once (add `--local` for the local DB). The
+username is optional on a reset. Five wrong passwords lock the account for
+15 minutes; running the script again also clears the lock. To block someone,
+set `developers.active = 0`.
 
 ## First deploy
 
@@ -29,15 +42,11 @@ npm run dev:frontend     # :5180, proxies /api to :8787
 2. `wrangler r2 bucket create houzs-it-hub`.
 3. `npm run db:migrate`.
 4. Add a custom domain for the Worker.
-5. Zero Trust > Access > Applications, self-hosted, on that domain:
-   - Allow policy: developer emails.
-   - Second application on path `/api/v1/sys` with a **Bypass** policy (systems
-     authenticate with their API key, not Access).
-   - Copy the team domain (`<team>.cloudflareaccess.com`) and the AUD tag into
-     `ACCESS_TEAM_DOMAIN` / `ACCESS_AUD` in `wrangler.toml`.
+5. `cd backend && npx wrangler secret put SESSION_SECRET` (a long random string).
 6. `npm run deploy`.
 7. `npm --prefix backend run key:issue -- HK` and store the printed key in
    Hookka as `IT_HUB_API_KEY`.
+8. `npm --prefix backend run user:set -- <email> <username>` for each developer.
 
 ## System API (`/api/v1/sys`)
 

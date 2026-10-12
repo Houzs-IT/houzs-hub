@@ -1,4 +1,4 @@
-import { KanbanSquare, List, Moon, Sun, UserCheck } from "lucide-react";
+import { KanbanSquare, List, LogOut, Moon, Sun, UserCheck } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { api, type Developer, type SystemRow } from "../api/client";
@@ -123,6 +123,14 @@ export default function Layout() {
               aria-label="Toggle theme"
             >
               {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </button>
+            <button
+              onClick={() => fetch("/api/v1/auth/logout", { method: "POST" }).finally(() => location.assign("/login"))}
+              className="grid h-8 w-8 place-items-center rounded-md text-sidebar-ink-muted transition-colors hover:bg-[var(--sidebar-hover)] hover:text-accent-bright"
+              title="Sign out"
+              aria-label="Sign out"
+            >
+              <LogOut className="h-4 w-4" />
             </button>
           </div>
         </aside>
