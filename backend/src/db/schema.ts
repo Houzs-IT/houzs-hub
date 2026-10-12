@@ -1,4 +1,4 @@
-import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { integer, pgTable, text } from "drizzle-orm/pg-core";
 
 export const TICKET_TYPES = ["bug", "development"] as const;
 export const TICKET_PRIORITIES = ["urgent", "high", "medium", "low"] as const;
@@ -20,7 +20,9 @@ export type Visibility = "public" | "internal";
 export type AuthorKind = "reporter" | "developer" | "system";
 export type EventKind = "created" | "comment" | "status" | "assign" | "priority" | "type";
 
-export const systems = sqliteTable("systems", {
+const id = () => integer("id").primaryKey().generatedByDefaultAsIdentity();
+
+export const systems = pgTable("systems", {
   code: text("code").primaryKey(),
   name: text("name").notNull(),
   apiKeyHash: text("api_key_hash"),
@@ -28,13 +30,13 @@ export const systems = sqliteTable("systems", {
   createdAt: text("created_at").notNull(),
 });
 
-export const ticketSequences = sqliteTable("ticket_sequences", {
+export const ticketSequences = pgTable("ticket_sequences", {
   systemCode: text("system_code").primaryKey(),
   nextN: integer("next_n").notNull(),
 });
 
-export const developers = sqliteTable("developers", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const developers = pgTable("developers", {
+  id: id(),
   email: text("email").notNull(),
   name: text("name").notNull(),
   active: integer("active").notNull().default(1),
@@ -46,8 +48,8 @@ export const developers = sqliteTable("developers", {
   lockedUntil: text("locked_until"),
 });
 
-export const tickets = sqliteTable("tickets", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const tickets = pgTable("tickets", {
+  id: id(),
   code: text("code").notNull(),
   legacyCode: text("legacy_code"),
   systemCode: text("system_code").notNull(),
@@ -76,8 +78,8 @@ export const tickets = sqliteTable("tickets", {
   updatedAt: text("updated_at").notNull(),
 });
 
-export const ticketEvents = sqliteTable("ticket_events", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const ticketEvents = pgTable("ticket_events", {
+  id: id(),
   ticketId: integer("ticket_id").notNull(),
   kind: text("kind").$type<EventKind>().notNull(),
   visibility: text("visibility").$type<Visibility>().notNull(),
@@ -90,8 +92,8 @@ export const ticketEvents = sqliteTable("ticket_events", {
   createdAt: text("created_at").notNull(),
 });
 
-export const ticketAttachments = sqliteTable("ticket_attachments", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const ticketAttachments = pgTable("ticket_attachments", {
+  id: id(),
   ticketId: integer("ticket_id").notNull(),
   eventId: integer("event_id").notNull(),
   r2Key: text("r2_key").notNull(),

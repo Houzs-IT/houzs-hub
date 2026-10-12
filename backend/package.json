@@ -7,13 +7,13 @@
     "deploy": "npm run typecheck && wrangler deploy",
     "typecheck": "tsc --noEmit -p .",
     "db:migrate": "node scripts/migrate.mjs",
-    "db:migrate:local": "node scripts/migrate.mjs --local",
     "key:issue": "node scripts/issue-api-key.mjs",
     "user:set": "node scripts/set-password.mjs"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",
-    "hono": "^4.12.14"
+    "hono": "^4.12.14",
+    "postgres": "^3.4.9"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261006.1",

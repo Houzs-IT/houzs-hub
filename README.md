@@ -2,7 +2,8 @@
 
 Central ticketing for Hookka (HK), Houzs Century (HC) and 2990s (2990).
 One Cloudflare Worker (`backend/`) serves both the API and the developer portal SPA
-(`frontend/dist` via Workers static assets). D1 for data, R2 for attachments.
+(`frontend/dist` via Workers static assets). Supabase Postgres for data (reached
+through Cloudflare Hyperdrive), R2 for attachments.
 
 ```
 reporting system backend --Bearer key + X-Reporter-Id--> /api/v1/sys/*   (per-system API key)
@@ -11,12 +12,17 @@ developer browser        --session cookie (/login)----> /api/v1/dev/*   + SPA
 
 ## Local dev
 
+Needs a local Postgres. The Worker reads it through `localConnectionString` in
+`backend/wrangler.toml`; the scripts read `DATABASE_URL` from `backend/.env`.
+
 ```bash
+docker run -d --name hub-pg -e POSTGRES_PASSWORD=postgres -p 54329:5432 postgres:17
 npm run install:all
 printf 'SESSION_SECRET=any-long-random-string\n' > backend/.dev.vars
-npm run db:migrate:local
-npm --prefix backend run key:issue -- HK --local
-npm --prefix backend run user:set -- you@gmail.com yourname --local   # prints a password
+printf 'DATABASE_URL=postgres://postgres:postgres@127.0.0.1:54329/postgres\n' > backend/.env
+npm run db:migrate
+npm --prefix backend run key:issue -- HK
+npm --prefix backend run user:set -- you@gmail.com yourname   # prints a password
 npm run build            # wrangler needs frontend/dist to exist
 npm run dev:backend      # :8787
 npm run dev:frontend     # :5180, proxies /api to :8787
@@ -31,16 +37,18 @@ There is no sign-up page. Create an account or reset a password with:
 npm --prefix backend run user:set -- samuel@gmail.com samuel
 ```
 
-It prints a new random password once (add `--local` for the local DB). The
-username is optional on a reset. Five wrong passwords lock the account for
-15 minutes; running the script again also clears the lock. To block someone,
-set `developers.active = 0`.
+It prints a new random password once, for the database `DATABASE_URL` points
+at (the script prints which). The username is optional on a reset. Five wrong
+passwords lock the account for 15 minutes; running the script again also clears
+the lock. To block someone, set `developers.active = 0`.
 
 ## First deploy
 
-1. `wrangler d1 create houzs-it-hub` and put the id in `backend/wrangler.toml`.
+1. Create a Supabase project. Create a Hyperdrive config in Cloudflare with its
+   connection string and put the config id in `backend/wrangler.toml`.
 2. `wrangler r2 bucket create houzs-it-hub`.
-3. `npm run db:migrate`.
+3. Put the Supabase session pooler string in `backend/.env` as `DATABASE_URL`
+   (gitignored), then `npm run db:migrate`.
 4. Add a custom domain for the Worker.
 5. `cd backend && npx wrangler secret put SESSION_SECRET` (a long random string).
 6. `npm run deploy`.
@@ -51,9 +59,10 @@ set `developers.active = 0`.
 ## Deploys after the first
 
 `.github/workflows/deploy.yml` type-checks and builds every pull request. A merge
-to `main` then applies pending migrations and deploys the Worker. It needs the
-repository secret `CLOUDFLARE_API_TOKEN` (Workers Scripts, Workers Routes, R2 and
-D1 edit on the account in `backend/wrangler.toml`). Secrets such as
+to `main` then applies pending migrations and deploys the Worker. It needs two
+repository secrets: `CLOUDFLARE_API_TOKEN` (the "Edit Cloudflare Workers" template
+on the account in `backend/wrangler.toml`) and `DATABASE_URL`
+(the Supabase session pooler string, for migrations). Secrets such as
 `SESSION_SECRET` stay in Cloudflare and are not touched by a deploy.
 
 ## System API (`/api/v1/sys`)

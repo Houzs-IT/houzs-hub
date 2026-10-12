@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, inArray, isNull, like, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
 import { Hono } from "hono";
 import { getDb, schema, type DB } from "../db/client";
 import {
@@ -83,13 +83,14 @@ function filterWhere(q: Record<string, string | undefined>, me: Developer, withS
       or(
         ids.length ? inArray(t.assigneeId, ids) : undefined,
         assignees.includes("none") ? isNull(t.assigneeId) : undefined,
-      ) ?? sql`0`,
+      ) ?? sql`false`,
     );
   }
 
   if (q.q?.trim()) {
     const term = `%${q.q.trim()}%`;
-    parts.push(or(like(t.code, term), like(t.legacyCode, term), like(t.title, term), like(t.reporterName, term)));
+    // ilike: Postgres like is case-sensitive, and the search box should not be.
+    parts.push(or(ilike(t.code, term), ilike(t.legacyCode, term), ilike(t.title, term), ilike(t.reporterName, term)));
   }
   if (withStatus && q.status && q.status !== "all") {
     const statuses = q.status === "active" ? [...ACTIVE_STATUSES] : pick(q.status, TICKET_STATUSES);
