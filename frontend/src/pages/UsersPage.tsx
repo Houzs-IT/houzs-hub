@@ -200,7 +200,7 @@ export default function UsersPage() {
             </tr>
           </thead>
           <tbody>
-            {!users && (
+            {!users && !error && (
               <tr>
                 <td colSpan={6} className="p-6 text-center text-ink-subtlest">
                   Loading...

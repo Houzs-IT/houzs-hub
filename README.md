@@ -65,7 +65,8 @@ resetting any account.
 6. `npm run deploy`.
 7. `npm --prefix backend run key:issue -- HK` and store the printed key in
    Hookka as `IT_HUB_API_KEY`.
-8. `npm --prefix backend run user:set -- <email> <username>` for each developer.
+8. `npm --prefix backend run user:set -- <email> <username> --admin` for the first admin;
+   everyone else is added from the Users page.
 
 ## Deploys after the first
 
