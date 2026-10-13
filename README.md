@@ -31,12 +31,21 @@ npm run dev:frontend     # :5180, proxies /api to :8787
 ## Developer accounts
 
 Developers sign in at `/login` with their username or email plus a password.
-There is no sign-up page. Two roles:
+There is no sign-up page. Everyone works tickets; what else they can do comes
+from their role, set on the **Roles** page:
 
-- **Admin**: everything below, plus the **Users** page (add people, reset
-  passwords, change roles, switch accounts off or on). An admin cannot change
-  their own role or switch themselves off.
-- **Developer**: tickets only.
+- **Manage users**: the **Users** page (add people, reset passwords, switch
+  accounts off or on).
+- **Manage roles**: the **Roles** page (add, rename and delete roles, tick their
+  permissions) and assigning roles and per-person overrides on the Users page.
+- **See Integrations**: whether each system is connected.
+
+**Admin** (all three) and **Developer** (none) are built in: they can be renamed
+but not deleted. On the Users page, **Permissions** sets Inherit, Allow or Deny
+per permission for one person; Deny always wins. Nobody can change their own
+role, overrides or on/off, and the hub refuses any change that would leave no
+active user able to manage roles. New permissions are added in
+`backend/src/services/perms.ts`.
 
 Everyone can change their own password and display name on **My account**
 (click your name in the sidebar). A password handed out by an admin (new

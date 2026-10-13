@@ -1,7 +1,7 @@
-import { ChevronDown, KanbanSquare, List, LogOut, Moon, Plug, Sun, UserCheck, Users } from "lucide-react";
+import { ChevronDown, KanbanSquare, List, LogOut, Moon, Plug, ShieldCheck, Sun, UserCheck, Users } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { api, json, type User, type SystemRow } from "../api/client";
+import { api, json, type Perm, type User, type SystemRow } from "../api/client";
 import { useTheme } from "../lib/theme";
 import { usePoll } from "../lib/usePoll";
 import FirstPasswordPage from "../pages/FirstPasswordPage";
@@ -16,6 +16,7 @@ const PAGE_NAMES: Record<string, string> = {
   "/users": "Users",
   "/account": "My account",
   "/integrations": "Integrations",
+  "/roles": "Roles",
 };
 
 // "/tickets?system=HK&selected=HK-12" -> "HK-12", "/board?system=HK" -> "Board · HK"
@@ -132,6 +133,7 @@ export default function Layout() {
     return u && u.id !== base!.me.id ? [{ ...u, page: p.page }] : [];
   });
 
+  const can = (...p: Perm[]) => p.some((x) => base?.me.perms?.includes(x));
   const itActive = Object.values(stats.active_by_system).reduce((a, n) => a + n, 0);
 
   if (firstLogin) return <FirstPasswordPage name={firstLogin} />;
@@ -191,12 +193,13 @@ export default function Layout() {
               </>
             )}
 
-            {/* Only hides the link; the API itself refuses non-admins. */}
-            {base.me.role === "admin" && (
+            {/* Only hides the links; each admin API route checks its own permission. */}
+            {can("users", "roles", "integrations") && (
               <>
                 <div className="px-2.5 pb-1 pt-5 text-[9.5px] font-bold uppercase tracking-brand text-sidebar-ink-muted">Admin</div>
-                <NavItem to="/users" icon={<Users className="h-4 w-4" />} label="Users" />
-                <NavItem to="/integrations" icon={<Plug className="h-4 w-4" />} label="Integrations" />
+                {can("users", "roles") && <NavItem to="/users" icon={<Users className="h-4 w-4" />} label="Users" />}
+                {can("roles") && <NavItem to="/roles" icon={<ShieldCheck className="h-4 w-4" />} label="Roles" />}
+                {can("integrations") && <NavItem to="/integrations" icon={<Plug className="h-4 w-4" />} label="Integrations" />}
               </>
             )}
           </nav>

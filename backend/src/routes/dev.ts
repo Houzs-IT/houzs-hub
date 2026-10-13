@@ -40,8 +40,8 @@ const PAGE_SIZE = 50;
 dev.route("/admin", admin);
 
 dev.get("/me", (c) => {
-  const { id, name, email, username, role, mustChangePassword } = c.get("user");
-  return c.json({ user: { id, name, email, username, role, mustChangePassword } });
+  const { id, name, email, username, role, roleName, perms, mustChangePassword } = c.get("user");
+  return c.json({ user: { id, name, email, username, role, roleName, perms, mustChangePassword } });
 });
 
 // Display name and/or email; send only what changes. An empty email clears it.
@@ -75,7 +75,7 @@ dev.patch("/me", async (c) => {
         username: schema.users.username,
         role: schema.users.role,
       });
-    return c.json({ user });
+    return c.json({ user: { ...user, roleName: me.roleName, perms: me.perms } });
   } catch (e) {
     if (isUniqueViolation(e)) return c.json({ error: "That email is already used by another account" }, 409);
     throw e;

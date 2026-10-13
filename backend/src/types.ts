@@ -1,4 +1,5 @@
 import type { User } from "./db/schema";
+import type { Perm } from "./services/perms";
 
 export interface Env {
   HYPERDRIVE: Hyperdrive;
@@ -10,7 +11,7 @@ export interface Env {
 }
 
 export type SysVars = { systemCode: string; reporterId: string };
-export type DevVars = { user: User };
+export type DevVars = { user: User & { roleName: string; perms: Perm[] } };
 
 export type SysApp = { Bindings: Env; Variables: SysVars };
 export type DevApp = { Bindings: Env; Variables: DevVars };

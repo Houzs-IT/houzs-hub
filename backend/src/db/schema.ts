@@ -13,9 +13,6 @@ export const TICKET_STATUSES = [
   "rejected",
 ] as const;
 
-export const ROLES = ["admin", "developer"] as const;
-
-export type Role = (typeof ROLES)[number];
 export type TicketType = (typeof TICKET_TYPES)[number];
 export type TicketPriority = (typeof TICKET_PRIORITIES)[number];
 export type TicketStatus = (typeof TICKET_STATUSES)[number];
@@ -50,9 +47,19 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash"),
   failedLogins: integer("failed_logins").notNull().default(0),
   lockedUntil: text("locked_until"),
-  role: text("role").$type<Role>().notNull().default("developer"),
+  // A roles.key. See services/perms.ts for how permissions are worked out.
+  role: text("role").notNull().default("developer"),
   mustChangePassword: integer("must_change_password").notNull().default(0),
   viewingPage: text("viewing_page"),
+  permAllow: text("perm_allow").notNull().default(""),
+  permDeny: text("perm_deny").notNull().default(""),
+});
+
+export const roles = pgTable("roles", {
+  key: text("key").primaryKey(),
+  name: text("name").notNull(),
+  permissions: text("permissions").notNull().default(""),
+  createdAt: text("created_at"),
 });
 
 export const tickets = pgTable("tickets", {

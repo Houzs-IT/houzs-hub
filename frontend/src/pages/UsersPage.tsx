@@ -1,7 +1,7 @@
-import { Copy, KeyRound, Plus, X } from "lucide-react";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { Copy, KeyRound, Plus, SlidersHorizontal, X } from "lucide-react";
+import { Fragment, useCallback, useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
-import { api, json, type Role } from "../api/client";
+import { api, json, type Perm, type PermDef, type RoleRow } from "../api/client";
 import { Avatar } from "../components/Bits";
 import { useHub } from "../components/Layout";
 import { fmtAgo } from "../lib/format";
@@ -11,13 +11,76 @@ type UserRow = {
   email: string | null;
   username: string | null;
   name: string;
-  role: Role;
+  role: string;
+  permAllow: Perm[];
+  permDeny: Perm[];
   active: number;
   lockedUntil: string | null;
   lastSeenAt: string | null;
 };
 
-const ROLE_LABEL: Record<Role, string> = { admin: "Admin", developer: "Developer" };
+type Override = "inherit" | "allow" | "deny";
+
+// One user's permissions on top of their role: Inherit follows the role,
+// Allow adds the permission, Deny takes it away even if the role has it.
+function Overrides({ u, role, defs, busy, onSave }: {
+  u: UserRow;
+  role: RoleRow | undefined;
+  defs: PermDef[];
+  busy: boolean;
+  onSave: (body: { permAllow: Perm[]; permDeny: Perm[] }) => void;
+}) {
+  const state = (p: Perm): Override => (u.permDeny.includes(p) ? "deny" : u.permAllow.includes(p) ? "allow" : "inherit");
+  function set(p: Perm, to: Override) {
+    const allow = u.permAllow.filter((x) => x !== p);
+    const deny = u.permDeny.filter((x) => x !== p);
+    if (to === "allow") allow.push(p);
+    if (to === "deny") deny.push(p);
+    onSave({ permAllow: allow, permDeny: deny });
+  }
+  return (
+    <div className="space-y-2 bg-surface-2 px-4 py-3">
+      {defs.map((d) => {
+        const fromRole = !!role?.permissions.includes(d.key);
+        const st = state(d.key);
+        const on = st === "allow" || (st === "inherit" && fromRole);
+        return (
+          <div key={d.key} className="flex flex-wrap items-center gap-3">
+            <div className="min-w-[12rem] flex-1">
+              <div className="text-[13px] font-semibold text-ink">{d.label}</div>
+              <div className="text-[11.5px] text-ink-subtlest">
+                {role?.name ?? u.role} {fromRole ? "has it" : "does not have it"} · result:{" "}
+                <span className={on ? "font-semibold text-loz-green-ink" : "font-semibold text-ink-subtle"}>{on ? "on" : "off"}</span>
+              </div>
+            </div>
+            <div className="inline-flex overflow-hidden rounded-md border border-line" role="radiogroup" aria-label={d.label}>
+              {(["inherit", "allow", "deny"] as const).map((o) => (
+                <button
+                  key={o}
+                  role="radio"
+                  aria-checked={st === o}
+                  disabled={busy}
+                  onClick={() => st !== o && set(d.key, o)}
+                  className={`h-7 px-2.5 text-[12px] capitalize ${
+                    st === o
+                      ? o === "deny"
+                        ? "bg-loz-red text-loz-red-ink"
+                        : o === "allow"
+                          ? "bg-loz-green text-loz-green-ink"
+                          : "bg-surface-dim font-semibold text-ink"
+                      : "bg-surface text-ink-subtle hover:bg-surface-2"
+                  }`}
+                >
+                  {o}
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 function Status({ u }: { u: UserRow }) {
   if (!u.active) return <span className="pill bg-loz-grey text-loz-grey-ink">Off</span>;
@@ -32,7 +95,12 @@ export default function UsersPage() {
   const [users, setUsers] = useState<UserRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ email: "", username: "", name: "", role: "developer" as Role });
+  const [form, setForm] = useState({ email: "", username: "", name: "", role: "developer" });
+  const [roles, setRoles] = useState<RoleRow[]>([]);
+  const [defs, setDefs] = useState<PermDef[]>([]);
+  const [open, setOpen] = useState<number | null>(null);
+  const canUsers = !!me.perms?.includes("users");
+  const canRoles = !!me.perms?.includes("roles");
   const [busy, setBusy] = useState(false);
   // The one time a temporary password is visible: right after create or reset.
   const [issued, setIssued] = useState<{ who: string; password: string } | null>(null);
@@ -41,6 +109,12 @@ export default function UsersPage() {
   const load = useCallback(() => {
     api<{ users: UserRow[] }>("/admin/users")
       .then((d) => setUsers(d.users))
+      .catch((e: Error) => setError(e.message));
+    api<{ roles: RoleRow[]; permissions: PermDef[] }>("/admin/roles")
+      .then((d) => {
+        setRoles(d.roles);
+        setDefs(d.permissions);
+      })
       .catch((e: Error) => setError(e.message));
   }, []);
   useEffect(load, [load]);
@@ -72,7 +146,7 @@ export default function UsersPage() {
     load();
   }
 
-  async function patch(u: UserRow, body: Partial<Pick<UserRow, "role" | "active">>) {
+  async function patch(u: UserRow, body: Partial<Pick<UserRow, "role" | "active" | "permAllow" | "permDeny">>) {
     if (await run(() => api(`/admin/users/${u.id}`, json("PATCH", body)))) load();
   }
 
@@ -97,7 +171,7 @@ export default function UsersPage() {
           <div className="eyebrow">IT Hub · Admin</div>
           <h1 className="mt-1 text-[24px] font-extrabold tracking-tight text-ink">Users</h1>
         </div>
-        {!adding && (
+        {!adding && canUsers && (
           <button className="btn-primary" onClick={() => setAdding(true)}>
             <Plus className="h-4 w-4" /> Add user
           </button>
@@ -167,10 +241,15 @@ export default function UsersPage() {
             <select
               className="input mt-1 w-full"
               value={form.role}
-              onChange={(e) => setForm({ ...form, role: e.target.value as Role })}
+              disabled={!canRoles}
+              title={canRoles ? undefined : "Only someone who can manage roles can pick another role"}
+              onChange={(e) => setForm({ ...form, role: e.target.value })}
             >
-              <option value="developer">Developer: works on tickets</option>
-              <option value="admin">Admin: tickets and users</option>
+              {roles.map((r) => (
+                <option key={r.key} value={r.key}>
+                  {r.name}
+                </option>
+              ))}
             </select>
           </label>
           <div className="flex gap-2 sm:col-span-2 lg:col-span-4">
@@ -208,8 +287,10 @@ export default function UsersPage() {
             )}
             {users?.map((u) => {
               const self = u.id === me.id;
+              const overrides = u.permAllow.length + u.permDeny.length;
               return (
-                <tr key={u.id} className={`border-b border-line-subtle last:border-0 ${u.active ? "" : "opacity-60"}`}>
+                <Fragment key={u.id}>
+                <tr className={`border-b border-line-subtle last:border-0 ${u.active ? "" : "opacity-60"}`}>
                   <td className="px-3 py-2.5 pl-4">
                     <div className="flex items-center gap-2.5">
                       <Avatar name={u.name} size={28} />
@@ -226,38 +307,70 @@ export default function UsersPage() {
                     <select
                       className="inline-select"
                       value={u.role}
-                      disabled={self || busy}
-                      title={self ? "You cannot change your own role" : undefined}
-                      onChange={(e) => patch(u, { role: e.target.value as Role })}
+                      disabled={self || busy || !canRoles}
+                      title={self ? "You cannot change your own role" : !canRoles ? "Needs the Manage roles permission" : undefined}
+                      onChange={(e) => patch(u, { role: e.target.value })}
                     >
-                      {(Object.keys(ROLE_LABEL) as Role[]).map((r) => (
-                        <option key={r} value={r}>
-                          {ROLE_LABEL[r]}
+                      {roles.map((r) => (
+                        <option key={r.key} value={r.key}>
+                          {r.name}
                         </option>
                       ))}
                     </select>
+                    {overrides > 0 && (
+                      <div className="mt-0.5 text-[11px] text-ink-subtlest">
+                        {overrides} override{overrides > 1 ? "s" : ""}
+                      </div>
+                    )}
                   </td>
                   <td className="w-24 px-3 py-2.5">
                     <Status u={u} />
                   </td>
                   <td className="w-28 px-3 py-2.5 text-ink-subtle">{u.lastSeenAt ? fmtAgo(u.lastSeenAt) : "Never"}</td>
-                  <td className="w-64 px-3 py-2.5 pr-4 text-right">
+                  <td className="w-80 px-3 py-2.5 pr-4 text-right">
                     {self ? (
                       <Link to="/account" className="btn-subtle h-8 px-2.5">
                         Change my password
                       </Link>
                     ) : (
                       <>
-                        <button className="btn-subtle h-8 px-2.5" disabled={busy} onClick={() => reset(u)}>
-                          Reset password
-                        </button>
-                        <button className="btn-subtle h-8 px-2.5" disabled={busy} onClick={() => toggle(u)}>
-                          {u.active ? "Switch off" : "Switch on"}
-                        </button>
+                        {canRoles && (
+                          <button
+                            className="btn-subtle h-8 px-2.5"
+                            aria-expanded={open === u.id}
+                            onClick={() => setOpen(open === u.id ? null : u.id)}
+                          >
+                            <SlidersHorizontal className="h-3.5 w-3.5" /> Permissions
+                          </button>
+                        )}
+                        {canUsers && (
+                          <>
+                            <button className="btn-subtle h-8 px-2.5" disabled={busy} onClick={() => reset(u)}>
+                              Reset password
+                            </button>
+                            <button className="btn-subtle h-8 px-2.5" disabled={busy} onClick={() => toggle(u)}>
+                              {u.active ? "Switch off" : "Switch on"}
+                            </button>
+                          </>
+                        )}
                       </>
                     )}
                   </td>
                 </tr>
+                {open === u.id && !self && (
+                  <tr className="border-b border-line-subtle">
+                    <td colSpan={6} className="p-0">
+                      <Overrides
+                        u={u}
+                        role={roles.find((r) => r.key === u.role)}
+                        defs={defs}
+                        busy={busy}
+                        onSave={(body) => patch(u, body)}
+                      />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
           </tbody>
