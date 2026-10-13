@@ -26,6 +26,7 @@ import {
 import type { DevApp } from "../types";
 import { broadcastTicketChanges, getLiveRoom } from "../live";
 import admin, { isUniqueViolation } from "./admin";
+import notifications, { countUnread } from "./notifications";
 
 const dev = new Hono<DevApp>();
 dev.use("*", devAuth);
@@ -44,6 +45,7 @@ const t = schema.tickets;
 const PAGE_SIZE = 50;
 
 dev.route("/admin", admin);
+dev.route("/notifications", notifications);
 
 dev.get("/live", need("it"), (c) => {
   if (c.req.header("Upgrade") !== "websocket") return c.json({ error: "Expected a WebSocket" }, 426);
@@ -252,7 +254,7 @@ dev.get("/tickets", async (c) => {
 // Counts per status under the current non-status filters, plus sidebar badges.
 dev.get("/tickets/stats", async (c) => {
   const db = getDb(c.env);
-  const [rows, bySystem, mine] = await Promise.all([
+  const [rows, bySystem, mine, unreadNotifications] = await Promise.all([
     db
       .select({ status: t.status, n: count() })
       .from(t)
@@ -267,11 +269,13 @@ dev.get("/tickets/stats", async (c) => {
       .select({ n: count() })
       .from(t)
       .where(and(eq(t.assigneeId, c.get("user").id), inArray(t.status, [...ACTIVE_STATUSES]))),
+    countUnread(db, c.get("user")),
   ]);
   return c.json({
     counts: Object.fromEntries(rows.map((r) => [r.status, r.n])),
     active_by_system: Object.fromEntries(bySystem.map((r) => [r.system, r.n])),
     my_active: mine[0]?.n ?? 0,
+    unread_notifications: unreadNotifications,
   });
 });
 

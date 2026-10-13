@@ -55,6 +55,7 @@ export const users = pgTable("users", {
   viewingPage: text("viewing_page"),
   permAllow: text("perm_allow").notNull().default(""),
   permDeny: text("perm_deny").notNull().default(""),
+  notificationsSeenId: integer("notifications_seen_id"),
 });
 
 export const roles = pgTable("roles", {

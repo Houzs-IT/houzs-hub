@@ -36,6 +36,20 @@ export type TicketRow = {
   updated_at: string;
 };
 
+export type Notification = {
+  id: number;
+  kind: "created" | "comment" | "status";
+  visibility: "public" | "internal";
+  author_name: string;
+  body: string | null;
+  to_value: string | null;
+  created_at: string;
+  ticket_code: string;
+  ticket_title: string;
+};
+
+export type NotificationsResponse = { notifications: Notification[]; total: number; page: number; page_size: number; seen_id: number };
+
 export type Attachment = { id: number; event_id: number; filename: string; mime: string; size: number };
 
 export type TicketEvent = {
