@@ -6,11 +6,12 @@
 //   node scripts/import-sheet.mjs <file.tsv> --apply         writes it
 //   node scripts/import-sheet.mjs <file.tsv> --triage <triage.tsv> --apply
 // The Form has no status. --triage is the team's tracking tab copied as TSV, no header,
-// one row per Form row in the same order: Priority, Issue Title, System, Developer, Progress.
+// one row per Form row in the same order: [Sheet ID], Priority, Issue Title, System, Developer, Progress.
 // Progress: blank -> open, On Going, On Hold, Testing, Done -> closed. Developer is matched
 // to a hub user by name or username. Without --triage every ticket lands open, unassigned.
 // Closed tickets get the Form timestamp as resolved/closed time (the real one is unknown).
-// legacy_code is the Form timestamp, so a re-run skips rows already imported.
+// legacy_code is the Sheet ID (BUG-01) when the triage tab has one, else the Form timestamp,
+// so a re-run skips rows already imported.
 // The Form has no user id: reporter_external_id is "sheet:<name in lower case>",
 // until scripts/bind-reporters.mjs maps each name to the reporter's real user id.
 import { readFileSync } from "node:fs";
@@ -99,6 +100,7 @@ const bad = [];
 for (const [k, r] of body.entries()) {
   const get = (h) => (r[col[h]] ?? "").trim();
   const tr = triage?.[k].map((c) => c.trim()) ?? [];
+  const sheetId = tr.length === 6 ? tr.shift() : null;
   const status = triage ? PROGRESS[(tr[4] ?? "").toLowerCase()] : "open";
   const assigneeId = tr[3] ? userId(tr[3]) : null;
   const at = toIso(get("timestamp"));
@@ -117,7 +119,7 @@ for (const [k, r] of body.entries()) {
   const phone = get("contact number");
   const description = get("description").slice(0, 10000);
   ok.push({
-    legacy: get("timestamp"),
+    legacy: sheetId || get("timestamp"),
     at,
     system,
     type,

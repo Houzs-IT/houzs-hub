@@ -23,7 +23,16 @@ import type { SysApp } from "../types";
 const sys = new Hono<SysApp>();
 sys.use("*", systemAuth);
 
-sys.onError((err, c) => {
+sys.onError(async (err, c) => {
+  // A failed ticket send shows on the Integrations page until the next good one.
+  const systemCode = c.get("systemCode");
+  if (systemCode && c.req.method === "POST" && c.req.path.endsWith("/tickets")) {
+    await getDb(c.env)
+      .update(schema.systems)
+      .set({ lastSendError: err.message.slice(0, 300), lastSendErrorAt: nowIso() })
+      .where(eq(schema.systems.code, systemCode))
+      .catch((e) => console.error("could not record send error", e));
+  }
   if (err instanceof InputError) return c.json({ error: err.message }, 400);
   throw err;
 });
@@ -109,6 +118,10 @@ sys.post("/tickets", async (c) => {
     at: now,
   });
   await saveAttachments(c.env, db, ticket, ev.id, files);
+  await db
+    .update(schema.systems)
+    .set({ lastSendError: null, lastSendErrorAt: null })
+    .where(eq(schema.systems.code, systemCode));
 
   return c.json({ code: ticket.code, status: ticket.status, created_at: ticket.createdAt }, 201);
 });

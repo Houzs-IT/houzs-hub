@@ -4,28 +4,30 @@ import { SystemTag } from "../components/Bits";
 import { fmtAgo, fmtDateTime } from "../lib/format";
 import { usePoll } from "../lib/usePoll";
 
-type SystemRow = { code: string; name: string; active: number; hasKey: boolean; lastCallAt: string | null };
-
-// A system's reporter badges poll the hub while anyone has it open, so a quiet
-// key during working hours usually means the link is broken.
-const CONNECTED_MS = 15 * 60_000;
+type SystemRow = {
+  code: string;
+  name: string;
+  active: number;
+  hasKey: boolean;
+  lastCallAt: string | null;
+  lastSendError: string | null;
+  lastSendErrorAt: string | null;
+};
 
 function Status({ s }: { s: SystemRow }) {
   if (!s.active) return <span className="pill bg-loz-grey text-loz-grey-ink">Off</span>;
   if (!s.hasKey) return <span className="pill bg-loz-red text-loz-red-ink">No key</span>;
+  if (s.lastSendErrorAt) return <span className="pill bg-loz-red text-loz-red-ink">Send failed</span>;
   if (!s.lastCallAt) return <span className="pill bg-loz-orange text-loz-orange-ink">Never called</span>;
-  if (Date.now() - Date.parse(s.lastCallAt) < CONNECTED_MS) {
-    return <span className="pill bg-loz-green text-loz-green-ink">Connected</span>;
-  }
-  return <span className="pill bg-loz-yellow text-loz-yellow-ink">Idle</span>;
+  return <span className="pill bg-loz-green text-loz-green-ink">Connected</span>;
 }
 
 function hint(s: SystemRow) {
   if (!s.active) return "Switched off; its key is refused.";
   if (!s.hasKey) return `Issue a key: npm --prefix backend run key:issue ${s.code}`;
+  if (s.lastSendErrorAt) return `Last ticket send failed ${fmtAgo(s.lastSendErrorAt)}: ${s.lastSendError}`;
   if (!s.lastCallAt) return "Key issued, but the system has not used it yet.";
-  if (Date.now() - Date.parse(s.lastCallAt) < CONNECTED_MS) return "Calling the hub normally.";
-  return "No calls in the last 15 minutes. Fine after hours; check the system if it lasts.";
+  return "Connected to the hub.";
 }
 
 export default function IntegrationsPage() {
