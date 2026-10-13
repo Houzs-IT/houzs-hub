@@ -32,7 +32,7 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
   const [data, setData] = useState<ListResp | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const query = f.apiQuery(queue ? { assignee: "me" } : {});
+  const query = f.apiQuery({ page_size: "15", ...(queue ? { assignee: "me" } : {}) });
   if (!query.get("status")) query.set("status", "active");
   const qs = query.toString();
 
