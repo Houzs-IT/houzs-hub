@@ -6,7 +6,7 @@ export type Role = "admin" | "developer";
 export type Developer = {
   id: number;
   name: string;
-  email: string;
+  email: string | null;
   username?: string | null;
   role?: Role;
   mustChangePassword?: number;

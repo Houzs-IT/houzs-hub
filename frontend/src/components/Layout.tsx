@@ -137,7 +137,7 @@ export default function Layout() {
             </span>
             <Link to="/account" className="group min-w-0 flex-1" title="My account and password">
               <div className="truncate text-[12px] font-semibold text-sidebar-ink group-hover:text-accent-bright">{base.me.name}</div>
-              <div className="truncate text-[10px] text-sidebar-ink-muted">{base.me.email}</div>
+              <div className="truncate text-[10px] text-sidebar-ink-muted">{base.me.email ?? base.me.username}</div>
             </Link>
             <button
               onClick={toggle}

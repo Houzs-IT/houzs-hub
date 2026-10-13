@@ -10,7 +10,7 @@ import {
   type TicketStatus,
 } from "../db/schema";
 import { devAuth } from "../middleware/devAuth";
-import { MIN_PASSWORD, hashPassword, verifyPassword } from "../services/crypto";
+import { EMAIL_RE, MIN_PASSWORD, hashPassword, verifyPassword } from "../services/crypto";
 import {
   ACTIVE_STATUSES,
   InputError,
@@ -24,7 +24,7 @@ import {
   validateFiles,
 } from "../services/tickets";
 import type { DevApp } from "../types";
-import admin from "./admin";
+import admin, { isUniqueViolation } from "./admin";
 
 const dev = new Hono<DevApp>();
 dev.use("*", devAuth);
@@ -44,23 +44,42 @@ dev.get("/me", (c) => {
   return c.json({ developer: { id, name, email, username, role, mustChangePassword } });
 });
 
-// Display name only. Old ticket comments keep the name they were written under.
+// Display name and/or email; send only what changes. An empty email clears it.
+// Old ticket comments keep the name they were written under.
 dev.patch("/me", async (c) => {
-  const b = (await c.req.json().catch(() => ({}))) as { name?: unknown };
-  const name = typeof b.name === "string" ? b.name.trim() : "";
-  if (!name || name.length > 60) return c.json({ error: "Display name must be 1 to 60 characters" }, 400);
-  const [dev] = await getDb(c.env)
-    .update(schema.developers)
-    .set({ name })
-    .where(eq(schema.developers.id, c.get("developer").id))
-    .returning({
-      id: schema.developers.id,
-      name: schema.developers.name,
-      email: schema.developers.email,
-      username: schema.developers.username,
-      role: schema.developers.role,
-    });
-  return c.json({ developer: dev });
+  const me = c.get("developer");
+  const b = (await c.req.json().catch(() => ({}))) as { name?: unknown; email?: unknown };
+  const set: { name?: string; email?: string | null } = {};
+  if (b.name !== undefined) {
+    const name = typeof b.name === "string" ? b.name.trim() : "";
+    if (!name || name.length > 60) return c.json({ error: "Display name must be 1 to 60 characters" }, 400);
+    set.name = name;
+  }
+  if (b.email !== undefined) {
+    const email = (typeof b.email === "string" ? b.email.trim().toLowerCase() : "") || null;
+    if (email && !EMAIL_RE.test(email)) return c.json({ error: "Enter a valid email address or leave it empty" }, 400);
+    // Without a username the email is the only way to sign in.
+    if (!email && !me.username) return c.json({ error: "You have no username, so your email cannot be removed" }, 400);
+    set.email = email;
+  }
+  if (Object.keys(set).length === 0) return c.json({ error: "Nothing to change" }, 400);
+  try {
+    const [dev] = await getDb(c.env)
+      .update(schema.developers)
+      .set(set)
+      .where(eq(schema.developers.id, me.id))
+      .returning({
+        id: schema.developers.id,
+        name: schema.developers.name,
+        email: schema.developers.email,
+        username: schema.developers.username,
+        role: schema.developers.role,
+      });
+    return c.json({ developer: dev });
+  } catch (e) {
+    if (isUniqueViolation(e)) return c.json({ error: "That email is already used by another account" }, 409);
+    throw e;
+  }
 });
 
 dev.post("/me/password", async (c) => {

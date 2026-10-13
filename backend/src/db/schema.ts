@@ -40,7 +40,7 @@ export const ticketSequences = pgTable("ticket_sequences", {
 
 export const developers = pgTable("developers", {
   id: id(),
-  email: text("email").notNull(),
+  email: text("email"),
   name: text("name").notNull(),
   active: integer("active").notNull().default(1),
   createdAt: text("created_at"),

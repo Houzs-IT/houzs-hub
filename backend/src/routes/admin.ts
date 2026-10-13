@@ -26,7 +26,7 @@ const USER_COLS = {
 };
 
 const isRole = (v: unknown): v is Role => ROLES.includes(v as Role);
-const isUniqueViolation = (e: unknown) => {
+export const isUniqueViolation = (e: unknown) => {
   const err = e as { code?: string; cause?: { code?: string } };
   return (err.cause?.code ?? err.code) === "23505";
 };
@@ -40,11 +40,11 @@ admin.get("/users", async (c) => {
 // The temporary password is returned once in this response and never stored in plain text.
 admin.post("/users", async (c) => {
   const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-  const email = typeof b.email === "string" ? b.email.trim().toLowerCase() : "";
+  const email = (typeof b.email === "string" ? b.email.trim().toLowerCase() : "") || null;
   const username = typeof b.username === "string" ? b.username.trim().toLowerCase() : "";
   const name = typeof b.name === "string" && b.name.trim() ? b.name.trim().slice(0, 60) : username;
   const role = b.role ?? "developer";
-  if (!EMAIL_RE.test(email)) return c.json({ error: "Enter a valid email address" }, 400);
+  if (email && !EMAIL_RE.test(email)) return c.json({ error: "Enter a valid email address or leave it empty" }, 400);
   if (!USERNAME_RE.test(username)) return c.json({ error: "Username: 2 to 32 of a-z, 0-9, dot, dash, underscore" }, 400);
   if (!isRole(role)) return c.json({ error: "Unknown role" }, 400);
 

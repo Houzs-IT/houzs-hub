@@ -6,18 +6,21 @@ import PasswordForm from "../components/PasswordForm";
 export default function AccountPage() {
   const { me, setMe } = useHub();
   const [name, setName] = useState(me.name);
+  const [email, setEmail] = useState(me.email ?? "");
   const [nameMsg, setNameMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [savingName, setSavingName] = useState(false);
+  const dirty = name.trim() !== me.name || email.trim().toLowerCase() !== (me.email ?? "");
   const [changed, setChanged] = useState(false);
 
   async function saveName(e: FormEvent) {
     e.preventDefault();
     setSavingName(true);
     try {
-      const res = await api<{ developer: Developer }>("/me", json("PATCH", { name }));
+      const res = await api<{ developer: Developer }>("/me", json("PATCH", { name, email }));
       setMe(res.developer);
       setName(res.developer.name);
-      setNameMsg({ ok: true, text: "Display name saved." });
+      setEmail(res.developer.email ?? "");
+      setNameMsg({ ok: true, text: "Profile saved." });
     } catch (err) {
       setNameMsg({ ok: false, text: (err as Error).message });
     }
@@ -35,23 +38,34 @@ export default function AccountPage() {
           <form onSubmit={saveName} className="mt-3">
             <label className="block">
               <span className="section-title">Display name</span>
-              <div className="mt-1 flex gap-2">
-                <input
-                  className="input min-w-0 flex-1"
-                  required
-                  maxLength={60}
-                  value={name}
-                  onChange={(e) => {
-                    setName(e.target.value);
-                    setNameMsg(null);
-                  }}
-                />
-                <button className="btn-primary" disabled={savingName || !name.trim() || name.trim() === me.name}>
-                  {savingName ? "Saving..." : "Save"}
-                </button>
-              </div>
+              <input
+                className="input mt-1 w-full"
+                required
+                maxLength={60}
+                value={name}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  setNameMsg(null);
+                }}
+              />
             </label>
             <p className="mt-1 text-[11.5px] text-ink-subtlest">Shown on tickets, comments and the assignee list.</p>
+            <label className="mt-3 block">
+              <span className="section-title">Email (optional)</span>
+              <input
+                className="input mt-1 w-full"
+                type="email"
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setNameMsg(null);
+                }}
+              />
+            </label>
+            <p className="mt-1 text-[11.5px] text-ink-subtlest">You can also sign in with it. Leave empty to remove it.</p>
+            <button className="btn-primary mt-3" disabled={savingName || !name.trim() || !dirty}>
+              {savingName ? "Saving..." : "Save"}
+            </button>
             {nameMsg && (
               <p
                 role="status"
@@ -66,7 +80,6 @@ export default function AccountPage() {
           <dl className="mt-4 space-y-2 border-t border-line-subtle pt-4 text-[13px]">
             {[
               ["Username", me.username ?? "none"],
-              ["Email", me.email],
               ["Role", me.role === "admin" ? "Admin" : "Developer"],
             ].map(([k, v]) => (
               <div key={k} className="flex gap-3">

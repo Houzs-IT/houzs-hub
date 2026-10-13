@@ -8,7 +8,7 @@ import { fmtAgo } from "../lib/format";
 
 type User = {
   id: number;
-  email: string;
+  email: string | null;
   username: string | null;
   name: string;
   role: Role;
@@ -66,7 +66,7 @@ export default function UsersPage() {
     e.preventDefault();
     const res = await run(() => api<{ user: User; password: string }>("/admin/users", json("POST", form)));
     if (!res) return;
-    show(res.user.username ?? res.user.email, res.password);
+    show(res.user.username ?? res.user.email ?? res.user.name, res.password);
     setForm({ email: "", username: "", name: "", role: "developer" });
     setAdding(false);
     load();
@@ -80,7 +80,7 @@ export default function UsersPage() {
     if (!confirm(`Make a new password for ${u.name}? Their old password stops working.`)) return;
     const res = await run(() => api<{ password: string }>(`/admin/users/${u.id}/reset-password`, { method: "POST" }));
     if (res) {
-      show(u.username ?? u.email, res.password);
+      show(u.username ?? u.email ?? u.name, res.password);
       load();
     }
   }
@@ -133,11 +133,10 @@ export default function UsersPage() {
       {adding && (
         <form onSubmit={add} className="card mt-4 grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-4">
           <label className="block">
-            <span className="section-title">Email</span>
+            <span className="section-title">Email (optional)</span>
             <input
               className="input mt-1 w-full"
               type="email"
-              required
               autoFocus
               value={form.email}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
@@ -222,7 +221,7 @@ export default function UsersPage() {
                       </div>
                     </div>
                   </td>
-                  <td className="px-3 py-2.5 text-ink-subtle">{u.email}</td>
+                  <td className="px-3 py-2.5 text-ink-subtle">{u.email ?? <span className="text-ink-subtlest">none</span>}</td>
                   <td className="w-44 px-3 py-2.5">
                     <select
                       className="inline-select"
