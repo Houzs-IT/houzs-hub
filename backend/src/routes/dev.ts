@@ -9,7 +9,7 @@ import {
   type Ticket,
   type TicketStatus,
 } from "../db/schema";
-import { devAuth } from "../middleware/devAuth";
+import { devAuth, need } from "../middleware/devAuth";
 import { EMAIL_RE, MIN_PASSWORD, hashPassword, verifyPassword } from "../services/crypto";
 import {
   ACTIVE_STATUSES,
@@ -28,6 +28,10 @@ import admin, { isUniqueViolation } from "./admin";
 
 const dev = new Hono<DevApp>();
 dev.use("*", devAuth);
+// The IT category: every ticket route and attachment needs the "it" permission.
+dev.use("/tickets", need("it"));
+dev.use("/tickets/*", need("it"));
+dev.use("/attachments/*", need("it"));
 
 dev.onError((err, c) => {
   if (err instanceof InputError) return c.json({ error: err.message }, 400);
@@ -40,8 +44,8 @@ const PAGE_SIZE = 50;
 dev.route("/admin", admin);
 
 dev.get("/me", (c) => {
-  const { id, name, email, username, role, mustChangePassword } = c.get("user");
-  return c.json({ user: { id, name, email, username, role, mustChangePassword } });
+  const { id, name, email, username, role, roleName, perms, mustChangePassword } = c.get("user");
+  return c.json({ user: { id, name, email, username, role, roleName, perms, mustChangePassword } });
 });
 
 // Display name and/or email; send only what changes. An empty email clears it.
@@ -75,7 +79,7 @@ dev.patch("/me", async (c) => {
         username: schema.users.username,
         role: schema.users.role,
       });
-    return c.json({ user });
+    return c.json({ user: { ...user, roleName: me.roleName, perms: me.perms } });
   } catch (e) {
     if (isUniqueViolation(e)) return c.json({ error: "That email is already used by another account" }, 409);
     throw e;

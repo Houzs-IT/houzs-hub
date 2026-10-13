@@ -2,15 +2,21 @@ export type Status = "open" | "in_progress" | "on_hold" | "testing" | "waiting_r
 export type Priority = "urgent" | "high" | "medium" | "low";
 export type TicketType = "bug" | "development";
 
-export type Role = "admin" | "developer";
+// Permission keys come from the server (services/perms.ts); these are the ones
+// the portal checks to show or hide things.
+export type Perm = "it" | "users" | "roles" | "integrations";
 export type User = {
   id: number;
   name: string;
   email: string | null;
   username?: string | null;
-  role?: Role;
+  role?: string;
+  roleName?: string;
+  perms?: Perm[];
   mustChangePassword?: number;
 };
+export type PermDef = { key: Perm; label: string; hint: string };
+export type RoleRow = { key: string; name: string; permissions: Perm[]; users: number; builtIn: boolean };
 export type SystemRow = { code: string; name: string; active: number };
 
 export type TicketRow = {

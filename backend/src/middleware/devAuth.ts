@@ -4,6 +4,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { createMiddleware } from "hono/factory";
 import { sign, verify } from "hono/jwt";
 import { getDb, schema } from "../db/client";
+import { effective, type Perm } from "../services/perms";
 import type { DevApp, Env } from "../types";
 
 const COOKIE = "hub_session";
@@ -27,6 +28,15 @@ export function endSession(c: Context) {
   deleteCookie(c, COOKIE, { path: "/", secure: true });
 }
 
+// After devAuth: passes if the user holds any of the given permissions.
+export const need = (...perms: Perm[]) =>
+  createMiddleware<DevApp>(async (c, next) => {
+    if (!perms.some((p) => c.get("user").perms.includes(p))) {
+      return c.json({ error: "You do not have permission for this" }, 403);
+    }
+    await next();
+  });
+
 export const devAuth = createMiddleware<DevApp>(async (c, next) => {
   const token = getCookie(c, COOKIE);
   const payload = token ? await verify(token, secret(c.env), "HS256").catch(() => null) : null;
@@ -34,8 +44,18 @@ export const devAuth = createMiddleware<DevApp>(async (c, next) => {
   if (!Number.isInteger(id)) return c.json({ error: "Not signed in" }, 401);
 
   const db = getDb(c.env);
-  const [user] = await db.select().from(schema.users).where(eq(schema.users.id, id)).limit(1);
-  if (!user?.active) return c.json({ error: "Not signed in" }, 401);
+  const [row] = await db
+    .select({ user: schema.users, role: schema.roles })
+    .from(schema.users)
+    .leftJoin(schema.roles, eq(schema.roles.key, schema.users.role))
+    .where(eq(schema.users.id, id))
+    .limit(1);
+  if (!row?.user.active) return c.json({ error: "Not signed in" }, 401);
+  const user = {
+    ...row.user,
+    roleName: row.role?.name ?? row.user.role,
+    perms: effective(row.role?.permissions ?? "", row.user.permAllow, row.user.permDeny),
+  };
   // With a handed-out password, the only things allowed are reading who you
   // are and setting your own password.
   const path = c.req.path;

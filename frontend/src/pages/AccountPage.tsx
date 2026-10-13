@@ -80,7 +80,7 @@ export default function AccountPage() {
           <dl className="mt-4 space-y-2 border-t border-line-subtle pt-4 text-[13px]">
             {[
               ["Username", me.username ?? "none"],
-              ["Role", me.role === "admin" ? "Admin" : "Developer"],
+              ["Role", me.roleName ?? me.role ?? ""],
             ].map(([k, v]) => (
               <div key={k} className="flex gap-3">
                 <dt className="w-20 shrink-0 text-ink-subtlest">{k}</dt>
