@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, inArray, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
 import { Hono } from "hono";
 import { getDb, schema, type DB } from "../db/client";
 import {
@@ -98,6 +98,26 @@ dev.post("/me/password", async (c) => {
     .set({ passwordHash: await hashPassword(next), mustChangePassword: 0 })
     .where(eq(schema.users.id, me.id));
   return c.json({ ok: true });
+});
+
+// Heartbeat from every open portal tab: records the page it is on (devAuth has
+// already bumped last_seen_at) and returns who else is online and where.
+// Tabs check in every 15s while visible, so 60s of silence means gone.
+const ONLINE_MS = 60_000;
+
+dev.post("/presence", async (c) => {
+  const b = (await c.req.json().catch(() => ({}))) as { page?: unknown };
+  // Only same-site paths; the list links to them.
+  const page = typeof b.page === "string" && /^\/(?!\/)/.test(b.page) ? b.page.slice(0, 200) : null;
+  const db = getDb(c.env);
+  const u = schema.users;
+  await db.update(u).set({ viewingPage: page }).where(eq(u.id, c.get("user").id));
+  const since = new Date(Date.now() - ONLINE_MS).toISOString();
+  const rows = await db
+    .select({ id: u.id, page: u.viewingPage })
+    .from(u)
+    .where(and(eq(u.active, 1), gt(u.lastSeenAt, since)));
+  return c.json({ online: rows });
 });
 
 dev.get("/users", async (c) => {
