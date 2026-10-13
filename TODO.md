@@ -96,10 +96,13 @@ staging (`hookka-erp-staging-sg`), feature PR goes to staging first.
 
 ## 4. Rollout
 
-- [ ] Import Google Sheet history into hub (one-shot script). ~149 rows across tabs Development / Bugs /
-      Done. Columns: Developer, Progress, ID, Priority, Type, System, Issue Title, Description,
-      Date and Time Issue Occurred, Submit Photo (Drive link), Reporter Name, Contact Number.
-      Map Progress: blank -> open, On Going -> in_progress, On Hold, Testing, Done -> closed.
+- [x] Import Hookka Form history into hub (2026-10-13, `scripts/import-sheet.mjs`): 89 rows, HK-0001 to
+      HK-0089. Form responses tab + triage tab (Developer, Progress) merged row by row.
+      Progress: blank -> open, On Going -> in_progress, On Hold, Testing, Done -> closed.
+      legacy_code = Form timestamp. No photos imported (the Form tab had no Drive links).
+      Reporters bound to their Hookka prod user ids with `scripts/bind-reporters.mjs`.
+      Imported tickets show no SLA (they predate it).
+- [ ] Same import for Houzs Century / 2990s / Conts rows, if any
 - [ ] Deploy hub prod + `SESSION_SECRET` secret
 - [ ] Hookka prod
 - [ ] Then Houzs Century, 2990s using Hookka as the template

@@ -322,7 +322,7 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
   }
 
   const { ticket: t, events } = data;
-  const s = sla(t.createdAt, t.priority, t.status);
+  const s = sla(t.createdAt, t.priority, t.status, t.legacyCode);
   const created = events.find((e) => e.kind === "created");
   const shown = events
     .filter((e) => e.kind !== "created" || tab !== "comments")

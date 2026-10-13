@@ -91,7 +91,7 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
         </thead>
         <tbody>
           {data?.tickets.map((t) => {
-            const s = sla(t.created_at, t.priority, t.status);
+            const s = sla(t.created_at, t.priority, t.status, t.legacy_code);
             const reporterReplied = t.last_public_actor === "reporter" && t.status !== "open" && ACTIVE.includes(t.status);
             return (
               <tr
