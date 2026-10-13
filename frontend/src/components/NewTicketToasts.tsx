@@ -42,6 +42,8 @@ export default function NewTicketToasts() {
 
   const show = useCallback(
     (tickets: TicketRow[]) => {
+      // A socket message that lands before the first check is dropped as old.
+      // Rare (both start together); the ticket still shows in the list.
       const fresh = tickets.filter((t) => seen.current !== null && t.created_at > seen.current);
       if (!fresh.length) return;
       seen.current = fresh.reduce((m, t) => (t.created_at > m ? t.created_at : m), seen.current!);
