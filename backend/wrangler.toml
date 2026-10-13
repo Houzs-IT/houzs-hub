@@ -32,6 +32,15 @@ localConnectionString = "postgres://postgres:postgres@127.0.0.1:54329/postgres"
 binding = "FILES"
 bucket_name = "houzs-it-hub"
 
+# The room hub tabs join over a WebSocket for new-ticket alerts (src/live.ts).
+[[durable_objects.bindings]]
+name = "LIVE"
+class_name = "LiveRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["LiveRoom"]
+
 [triggers]
 # 02:00 UTC = 10:00 GMT+8. Auto-closes tickets left in Resolved for 7 days.
 crons = ["0 2 * * *"]

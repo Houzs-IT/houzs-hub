@@ -29,32 +29,66 @@ function chime() {
   } catch {}
 }
 
-// Watches for tickets created since this page opened, pops a toast for each
-// and refreshes every open view so the new ticket shows without a reload.
-// ponytail: 10s poll, not push; a Durable Object with WebSockets if seconds matter.
+// Pops a toast for each ticket submitted while the hub is open and refreshes
+// every open view so it shows without a reload. New tickets arrive over a
+// WebSocket the moment they are saved (backend live.ts); a slow poll catches
+// any sent while the socket was down (laptop asleep, network blip).
 export default function NewTicketToasts() {
   const { systems, refresh } = useHub();
   const navigate = useNavigate();
   const [toasts, setToasts] = useState<TicketRow[]>([]);
+  // created_at of the newest ticket already shown; null until the first check.
   const seen = useRef<string | null>(null);
+
+  const show = useCallback(
+    (tickets: TicketRow[]) => {
+      const fresh = tickets.filter((t) => seen.current !== null && t.created_at > seen.current);
+      if (!fresh.length) return;
+      seen.current = fresh.reduce((m, t) => (t.created_at > m ? t.created_at : m), seen.current!);
+      setToasts((list) => [...fresh, ...list].slice(0, 3));
+      chime();
+      refresh();
+    },
+    [refresh],
+  );
 
   const check = useCallback(() => {
     api<{ tickets: TicketRow[] }>("/tickets?sort=created&dir=desc&page_size=5")
       .then(({ tickets }) => {
-        const newest = tickets[0]?.created_at ?? "";
         // First check only sets the starting point: no toasts for old tickets.
-        if (seen.current === null) return void (seen.current = newest);
-        const fresh = tickets.filter((t) => t.created_at > seen.current!);
-        if (!fresh.length) return;
-        seen.current = newest;
-        setToasts((list) => [...fresh, ...list].slice(0, 3));
-        chime();
-        refresh();
+        if (seen.current === null) seen.current = tickets[0]?.created_at ?? "";
+        else show(tickets);
       })
       .catch(() => {});
-  }, [refresh]);
+  }, [show]);
   useEffect(check, [check]);
-  usePoll(check, 10_000);
+  usePoll(check, 60_000);
+
+  useEffect(() => {
+    let ws: WebSocket;
+    let retry: ReturnType<typeof setTimeout>;
+    let stopped = false;
+    const connect = () => {
+      ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/v1/dev/live`);
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.type === "ticket.created") show([msg.ticket]);
+        } catch {}
+      };
+      ws.onclose = () => {
+        if (stopped) return;
+        retry = setTimeout(connect, 10_000);
+        check();
+      };
+    };
+    connect();
+    return () => {
+      stopped = true;
+      clearTimeout(retry);
+      ws.close();
+    };
+  }, [show, check]);
 
   const dismiss = (code: string) => setToasts((list) => list.filter((t) => t.code !== code));
 

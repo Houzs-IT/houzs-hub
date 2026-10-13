@@ -2,6 +2,7 @@ import { and, asc, count, desc, eq, inArray, isNull, or, gt, sql } from "drizzle
 import { Hono } from "hono";
 import { getDb, schema } from "../db/client";
 import { TICKET_PRIORITIES, TICKET_STATUSES, TICKET_TYPES, type Ticket } from "../db/schema";
+import { liveRoom } from "../live";
 import { systemAuth } from "../middleware/systemAuth";
 import {
   InputError,
@@ -122,6 +123,25 @@ sys.post("/tickets", async (c) => {
     .update(schema.systems)
     .set({ lastSendError: null, lastSendErrorAt: null })
     .where(eq(schema.systems.code, systemCode));
+
+  // Same shape as a row of GET /dev/tickets, so the hub can show it as is.
+  const row = {
+    code: ticket.code,
+    legacy_code: ticket.legacyCode,
+    system_code: ticket.systemCode,
+    type: ticket.type,
+    priority: ticket.priority,
+    status: ticket.status,
+    title: ticket.title,
+    reporter_name: ticket.reporterName,
+    reporter_department: ticket.reporterDepartment,
+    assignee_id: null,
+    assignee_name: null,
+    last_public_actor: ticket.lastPublicActor,
+    created_at: ticket.createdAt,
+    updated_at: ticket.updatedAt,
+  };
+  c.executionCtx.waitUntil(liveRoom(c.env.LIVE).broadcast(JSON.stringify({ type: "ticket.created", ticket: row })));
 
   return c.json({ code: ticket.code, status: ticket.status, created_at: ticket.createdAt }, 201);
 });

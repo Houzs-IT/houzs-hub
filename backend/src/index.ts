@@ -7,6 +7,8 @@ import sys from "./routes/sys";
 import { addEvent, nowIso } from "./services/tickets";
 import type { Env } from "./types";
 
+export { LiveRoom } from "./live";
+
 const app = new Hono<{ Bindings: Env }>();
 
 app.get("/api/health", (c) => c.json({ ok: true, service: "houzs-it-hub" }));
