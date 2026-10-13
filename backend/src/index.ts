@@ -4,8 +4,11 @@ import { getDb, schema } from "./db/client";
 import auth from "./routes/auth";
 import dev from "./routes/dev";
 import sys from "./routes/sys";
-import { addEvent, nowIso } from "./services/tickets";
+import { notifyTicketsChanged } from "./live";
+import { nowIso } from "./services/tickets";
 import type { Env } from "./types";
+
+export { LiveRoom } from "./live";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -19,29 +22,30 @@ const AUTO_CLOSE_DAYS = 7;
 
 async function autoCloseResolved(env: Env) {
   const db = getDb(env);
-  const t = schema.tickets;
+  const tickets = schema.tickets;
   const cutoff = new Date(Date.now() - AUTO_CLOSE_DAYS * 86400_000).toISOString();
-  const stale = await db
-    .select({ id: t.id })
-    .from(t)
-    .where(and(eq(t.status, "resolved"), lt(t.resolvedAt, cutoff)));
-  const at = nowIso();
-  for (const { id } of stale) {
-    await addEvent(db, id, {
-      kind: "status",
-      visibility: "public",
-      authorKind: "system",
+  const closedAt = nowIso();
+  const closedTickets = await db
+    .update(tickets)
+    .set({ status: "closed", closedAt, lastPublicActivityAt: closedAt, lastPublicActor: "system", updatedAt: closedAt })
+    .where(and(eq(tickets.status, "resolved"), lt(tickets.resolvedAt, cutoff)))
+    .returning({ id: tickets.id });
+  if (!closedTickets.length) return;
+
+  await db.insert(schema.ticketEvents).values(
+    closedTickets.map(({ id }) => ({
+      ticketId: id,
+      kind: "status" as const,
+      visibility: "public" as const,
+      authorKind: "system" as const,
       authorName: "System",
       body: `Closed automatically after ${AUTO_CLOSE_DAYS} days in Resolved.`,
       fromValue: "resolved",
       toValue: "closed",
-      at,
-    });
-    await db
-      .update(t)
-      .set({ status: "closed", closedAt: at, lastPublicActivityAt: at, lastPublicActor: "system", updatedAt: at })
-      .where(eq(t.id, id));
-  }
+      createdAt: closedAt,
+    })),
+  );
+  await notifyTicketsChanged(env.LIVE);
 }
 
 export default {

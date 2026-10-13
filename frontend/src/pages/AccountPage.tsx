@@ -28,7 +28,7 @@ export default function AccountPage() {
   }
 
   return (
-    <div className="h-full overflow-auto px-8 py-6">
+    <div className="h-full overflow-auto px-4 py-6 md:px-8">
       <div className="eyebrow">IT Hub · Account</div>
       <h1 className="mt-1 text-[24px] font-extrabold tracking-tight text-ink">My account</h1>
 

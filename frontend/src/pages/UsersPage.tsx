@@ -239,7 +239,7 @@ export default function UsersPage() {
   }
 
   return (
-    <div className="h-full overflow-auto px-8 py-6">
+    <div className="h-full overflow-auto px-4 py-6 md:px-8">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="eyebrow">IT Hub · Admin</div>

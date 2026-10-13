@@ -24,6 +24,7 @@ import {
   validateFiles,
 } from "../services/tickets";
 import type { DevApp } from "../types";
+import { broadcastTicketChanges, getLiveRoom } from "../live";
 import admin, { isUniqueViolation } from "./admin";
 
 const dev = new Hono<DevApp>();
@@ -31,6 +32,7 @@ dev.use("*", devAuth);
 // The IT category: every ticket route and attachment needs the "it" permission.
 dev.use("/tickets", need("it"));
 dev.use("/tickets/*", need("it"));
+dev.use("/tickets/*", broadcastTicketChanges);
 dev.use("/attachments/*", need("it"));
 
 dev.onError((err, c) => {
@@ -42,6 +44,11 @@ const t = schema.tickets;
 const PAGE_SIZE = 50;
 
 dev.route("/admin", admin);
+
+dev.get("/live", need("it"), (c) => {
+  if (c.req.header("Upgrade") !== "websocket") return c.json({ error: "Expected a WebSocket" }, 426);
+  return getLiveRoom(c.env.LIVE).fetch(c.req.raw);
+});
 
 dev.get("/me", (c) => {
   const { id, name, email, username, role, roleName, perms, mustChangePassword } = c.get("user");

@@ -1,4 +1,4 @@
-import { ChevronDown, KanbanSquare, List, LogOut, Moon, Plug, ShieldCheck, Sun, UserCheck, Users } from "lucide-react";
+import { ChevronDown, KanbanSquare, List, LogOut, Menu, Moon, Plug, ShieldCheck, Sun, UserCheck, Users } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { Link, Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
 import { api, json, type Perm, type User, type SystemRow } from "../api/client";
@@ -6,6 +6,7 @@ import { useTheme } from "../lib/theme";
 import { usePoll } from "../lib/usePoll";
 import FirstPasswordPage from "../pages/FirstPasswordPage";
 import { Avatar } from "./Bits";
+import NewTicketToasts from "./NewTicketToasts";
 
 type Stats = { active_by_system: Record<string, number>; my_active: number };
 
@@ -81,6 +82,8 @@ export default function Layout() {
   const { theme, toggle } = useTheme();
   const [presence, setPresence] = useState<{ id: number; page: string | null }[]>([]);
   const { pathname, search } = useLocation();
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  useEffect(() => setIsMenuOpen(false), [pathname, search]);
   const [itOpen, setItOpen] = useState(() => {
     try {
       return localStorage.getItem("sidebar.it") !== "closed";
@@ -113,7 +116,7 @@ export default function Layout() {
     if (base?.me.perms?.includes("it")) api<Stats>("/tickets/stats").then(setStats).catch(() => {});
   }, [base]);
   useEffect(loadStats, [loadStats, version]);
-  usePoll(loadStats, 30_000);
+  usePoll(loadStats, 60_000);
 
   const checkIn = useCallback(() => {
     if (base) api<{ online: typeof presence }>("/presence", json("POST", { page: pathname + search }))
@@ -147,7 +150,12 @@ export default function Layout() {
   return (
     <HubContext.Provider value={{ ...base, stats, version, refresh, setMe }}>
       <div className="flex h-full">
-        <aside className="relative flex w-60 shrink-0 flex-col bg-sidebar">
+        {isMenuOpen && <div className="fixed inset-0 z-30 bg-black/50 lg:hidden" onClick={() => setIsMenuOpen(false)} />}
+        <aside
+          className={`fixed inset-y-0 left-0 z-40 flex w-60 shrink-0 flex-col bg-sidebar transition-transform lg:relative lg:translate-x-0 ${
+            isMenuOpen ? "translate-x-0" : "-translate-x-full"
+          }`}
+        >
           <div className="pointer-events-none absolute right-0 top-0 h-full w-px bg-gradient-to-b from-transparent via-accent/35 to-transparent" />
           <div className="flex items-center gap-2.5 border-b border-[var(--sidebar-border)] px-4 py-4">
             <span className="grid h-9 w-9 place-items-center rounded-lg bg-[var(--sidebar-active)] text-[12px] font-bold tracking-wider text-accent-bright shadow-[inset_0_0_0_1px_rgba(161,106,46,0.35)]">
@@ -257,10 +265,22 @@ export default function Layout() {
           </div>
         </aside>
 
-        <main className="min-w-0 flex-1 overflow-hidden">
-          {!can("it") && IT_PATH.test(pathname) ? <Navigate to={landing} replace /> : <Outlet />}
-        </main>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line bg-surface px-2 lg:hidden">
+            <button className="btn-subtle h-10 px-2" onClick={() => setIsMenuOpen(true)} aria-label="Open menu">
+              <Menu className="h-5 w-5" />
+            </button>
+            <span className="flex-1 text-[14px] font-bold text-ink">Houzs IT Hub</span>
+            <Link to="/account" className="p-1" title="My account" aria-label="My account">
+              <Avatar name={base.me.name} size={30} />
+            </Link>
+          </header>
+          <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
+            {!can("it") && IT_PATH.test(pathname) ? <Navigate to={landing} replace /> : <Outlet />}
+          </main>
+        </div>
       </div>
+      {can("it") && <NewTicketToasts />}
     </HubContext.Provider>
   );
 }

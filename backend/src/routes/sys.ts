@@ -2,6 +2,7 @@ import { and, asc, count, desc, eq, inArray, isNull, or, gt, sql } from "drizzle
 import { Hono } from "hono";
 import { getDb, schema } from "../db/client";
 import { TICKET_PRIORITIES, TICKET_STATUSES, TICKET_TYPES, type Ticket } from "../db/schema";
+import { broadcastTicketChanges, getLiveRoom } from "../live";
 import { systemAuth } from "../middleware/systemAuth";
 import {
   InputError,
@@ -22,6 +23,7 @@ import type { SysApp } from "../types";
 // their own tickets and only public events.
 const sys = new Hono<SysApp>();
 sys.use("*", systemAuth);
+sys.use("/tickets/:code/*", broadcastTicketChanges);
 
 sys.onError(async (err, c) => {
   // A failed ticket send shows on the Integrations page until the next good one.
@@ -122,6 +124,25 @@ sys.post("/tickets", async (c) => {
     .update(schema.systems)
     .set({ lastSendError: null, lastSendErrorAt: null })
     .where(eq(schema.systems.code, systemCode));
+
+  // Same shape as a row of GET /dev/tickets.
+  const ticketRow = {
+    code: ticket.code,
+    legacy_code: ticket.legacyCode,
+    system_code: ticket.systemCode,
+    type: ticket.type,
+    priority: ticket.priority,
+    status: ticket.status,
+    title: ticket.title,
+    reporter_name: ticket.reporterName,
+    reporter_department: ticket.reporterDepartment,
+    assignee_id: null,
+    assignee_name: null,
+    last_public_actor: ticket.lastPublicActor,
+    created_at: ticket.createdAt,
+    updated_at: ticket.updatedAt,
+  };
+  c.executionCtx.waitUntil(getLiveRoom(c.env.LIVE).broadcast(JSON.stringify({ type: "ticket.created", ticket: ticketRow })));
 
   return c.json({ code: ticket.code, status: ticket.status, created_at: ticket.createdAt }, 201);
 });

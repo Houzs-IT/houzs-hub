@@ -293,6 +293,7 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState<"all" | "comments" | "history">("all");
   const navigate = useNavigate();
+  const confirmDelete = useRef<HTMLDialogElement>(null);
 
   const load = useCallback(() => {
     api<Detail>(`/tickets/${code}`)
@@ -304,7 +305,7 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
   }, [code]);
 
   useEffect(load, [load, version]);
-  usePoll(load, 15_000);
+  usePoll(load, 60_000);
 
   async function patch(body: Record<string, unknown>, path = "") {
     setSaving(true);
@@ -319,7 +320,7 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
   }
 
   async function remove() {
-    if (!confirm(`Delete ${code} with all its comments and files? This cannot be undone.`)) return;
+    confirmDelete.current?.close();
     setSaving(true);
     try {
       await api(`/tickets/${code}`, { method: "DELETE" });
@@ -357,11 +358,29 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
           </button>
         )}
         {me.perms?.includes("delete_tickets") && (
-          <button className="btn-subtle ml-auto text-loz-red-ink" disabled={saving} onClick={remove}>
+          <button className="btn-subtle ml-auto text-loz-red-ink" disabled={saving} onClick={() => confirmDelete.current?.showModal()}>
             <Trash2 className="h-4 w-4" /> Delete
           </button>
         )}
       </div>
+
+      <dialog
+        ref={confirmDelete}
+        className="card w-[400px] max-w-[calc(100vw-32px)] p-0 text-ink backdrop:bg-black/40"
+      >
+        <div className="border-b border-line px-5 py-3 text-[15px] font-bold">Delete ticket</div>
+        <p className="px-5 py-4 text-sm leading-6 text-ink-subtle">
+          Delete <span className="font-semibold text-ink">{t.code}</span> with all its comments and files? This action cannot be undone.
+        </p>
+        <div className="flex justify-end gap-2 px-5 pb-4">
+          <button className="btn-default" autoFocus onClick={() => confirmDelete.current?.close()}>
+            Cancel
+          </button>
+          <button className="btn border border-loz-red-ink bg-loz-red-ink text-surface hover:opacity-90" onClick={remove}>
+            Delete
+          </button>
+        </div>
+      </dialog>
 
       <div className="card">
         <div className="section-title border-b border-line px-4 py-3">Details</div>
@@ -518,7 +537,7 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
 
   return (
     <div className={variant === "panel" ? "flex h-full flex-col" : ""}>
-      <div className={`flex items-center gap-2 ${variant === "panel" ? "border-b border-line px-6 py-3" : "mb-4"}`}>
+      <div className={`flex items-center gap-2 ${variant === "panel" ? "border-b border-line px-4 py-3 md:px-6" : "mb-4"}`}>
         <div className="flex min-w-0 items-center gap-1.5 text-sm text-ink-subtle">
           <SystemTag code={t.systemCode} />
           <span>/</span>
@@ -539,7 +558,7 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
         )}
       </div>
 
-      <div className={variant === "panel" ? "flex-1 overflow-y-auto px-6 py-5" : ""}>
+      <div className={variant === "panel" ? "flex-1 overflow-y-auto px-4 py-5 md:px-6" : ""}>
         <h1 className={`mb-5 font-extrabold tracking-tight text-ink ${variant === "panel" ? "text-[20px]" : "text-[24px]"}`}>{t.title}</h1>
         {error && <div className="mb-4 rounded bg-loz-red px-3 py-2 text-sm text-loz-red-ink">{error}</div>}
         {variant === "panel" ? (
