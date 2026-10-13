@@ -18,7 +18,7 @@ const isReporterWaiting = (ticket: TicketRow) =>
 type Col = { key: string; label: string; sort?: string; className?: string };
 const COLS: Col[] = [
   { key: "type", label: "Type", className: "w-16" },
-  { key: "key", label: "Key", sort: "key", className: "w-24" },
+  { key: "key", label: "Key", sort: "key", className: "w-32" },
   { key: "summary", label: "Summary" },
   { key: "status", label: "Status", sort: "status", className: "w-44" },
   { key: "priority", label: "Priority", sort: "priority", className: "w-24" },
@@ -119,7 +119,7 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
         {!data && !error && <div className="py-16 text-center text-sm text-ink-subtlest">Loading...</div>}
       </div>
 
-      <div className="card hidden min-w-[1100px] lg:block">
+      <div className="card hidden min-w-[1130px] lg:block">
       <table className="w-full table-fixed border-collapse text-[13px]">
         <thead className="sticky top-0 z-10">
           <tr>
