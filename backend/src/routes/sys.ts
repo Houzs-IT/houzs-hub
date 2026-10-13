@@ -2,7 +2,7 @@ import { and, asc, count, desc, eq, inArray, isNull, or, gt, sql } from "drizzle
 import { Hono } from "hono";
 import { getDb, schema } from "../db/client";
 import { TICKET_PRIORITIES, TICKET_STATUSES, TICKET_TYPES, type Ticket } from "../db/schema";
-import { getLiveRoom } from "../live";
+import { broadcastTicketChanges, getLiveRoom } from "../live";
 import { systemAuth } from "../middleware/systemAuth";
 import {
   InputError,
@@ -23,6 +23,7 @@ import type { SysApp } from "../types";
 // their own tickets and only public events.
 const sys = new Hono<SysApp>();
 sys.use("*", systemAuth);
+sys.use("/tickets/*", broadcastTicketChanges);
 
 sys.onError(async (err, c) => {
   // A failed ticket send shows on the Integrations page until the next good one.

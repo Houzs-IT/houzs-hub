@@ -31,7 +31,7 @@ export default function BoardPage() {
       .catch((e: Error) => setError(e.message));
   }, [qs]);
   useEffect(load, [load, version]);
-  usePoll(load, 30_000);
+  usePoll(load, 60_000);
 
   async function move(code: string, status: Status) {
     const card = tickets?.find((t) => t.code === code);

@@ -24,7 +24,7 @@ import {
   validateFiles,
 } from "../services/tickets";
 import type { DevApp } from "../types";
-import { getLiveRoom } from "../live";
+import { broadcastTicketChanges, getLiveRoom } from "../live";
 import admin, { isUniqueViolation } from "./admin";
 
 const dev = new Hono<DevApp>();
@@ -32,6 +32,7 @@ dev.use("*", devAuth);
 // The IT category: every ticket route and attachment needs the "it" permission.
 dev.use("/tickets", need("it"));
 dev.use("/tickets/*", need("it"));
+dev.use("/tickets/*", broadcastTicketChanges);
 dev.use("/attachments/*", need("it"));
 
 dev.onError((err, c) => {

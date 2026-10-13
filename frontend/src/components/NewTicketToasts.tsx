@@ -31,7 +31,7 @@ function playChime() {
   } catch {}
 }
 
-// New tickets arrive over the live socket; the backup check catches any sent while it was down.
+// Ticket news arrives over the live socket; the backup check catches anything sent while it was down.
 export default function NewTicketToasts() {
   const { systems, refresh } = useHub();
   const navigate = useNavigate();
@@ -76,6 +76,7 @@ export default function NewTicketToasts() {
         try {
           const message = JSON.parse(event.data);
           if (message.type === "ticket.created") showNewTickets([message.ticket]);
+          if (message.type === "tickets.changed") refresh();
         } catch {}
       };
       socket.onclose = () => {
@@ -92,7 +93,7 @@ export default function NewTicketToasts() {
       clearTimeout(reconnectTimer);
       socket?.close();
     };
-  }, [showNewTickets, checkForNewTickets]);
+  }, [showNewTickets, checkForNewTickets, refresh]);
 
   const dismiss = (code: string) => setToasts((current) => current.filter((ticket) => ticket.code !== code));
 

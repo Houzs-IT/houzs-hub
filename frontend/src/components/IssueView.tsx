@@ -305,7 +305,7 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
   }, [code]);
 
   useEffect(load, [load, version]);
-  usePoll(load, 15_000);
+  usePoll(load, 60_000);
 
   async function patch(body: Record<string, unknown>, path = "") {
     setSaving(true);

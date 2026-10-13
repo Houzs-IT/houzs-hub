@@ -45,7 +45,7 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
       .catch((e: Error) => setError(e.message));
   }, [qs]);
   useEffect(load, [load, version]);
-  usePoll(load, 30_000);
+  usePoll(load, 60_000);
 
   const sort = f.get("sort") ?? "updated";
   const dir = f.get("dir") ?? "desc";
