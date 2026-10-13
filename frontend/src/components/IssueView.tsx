@@ -537,7 +537,7 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
 
   return (
     <div className={variant === "panel" ? "flex h-full flex-col" : ""}>
-      <div className={`flex items-center gap-2 ${variant === "panel" ? "border-b border-line px-6 py-3" : "mb-4"}`}>
+      <div className={`flex items-center gap-2 ${variant === "panel" ? "border-b border-line px-4 py-3 md:px-6" : "mb-4"}`}>
         <div className="flex min-w-0 items-center gap-1.5 text-sm text-ink-subtle">
           <SystemTag code={t.systemCode} />
           <span>/</span>
@@ -558,7 +558,7 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
         )}
       </div>
 
-      <div className={variant === "panel" ? "flex-1 overflow-y-auto px-6 py-5" : ""}>
+      <div className={variant === "panel" ? "flex-1 overflow-y-auto px-4 py-5 md:px-6" : ""}>
         <h1 className={`mb-5 font-extrabold tracking-tight text-ink ${variant === "panel" ? "text-[20px]" : "text-[24px]"}`}>{t.title}</h1>
         {error && <div className="mb-4 rounded bg-loz-red px-3 py-2 text-sm text-loz-red-ink">{error}</div>}
         {variant === "panel" ? (

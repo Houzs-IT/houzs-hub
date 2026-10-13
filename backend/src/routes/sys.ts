@@ -23,7 +23,7 @@ import type { SysApp } from "../types";
 // their own tickets and only public events.
 const sys = new Hono<SysApp>();
 sys.use("*", systemAuth);
-sys.use("/tickets/*", broadcastTicketChanges);
+sys.use("/tickets/:code/*", broadcastTicketChanges);
 
 sys.onError(async (err, c) => {
   // A failed ticket send shows on the Integrations page until the next good one.
