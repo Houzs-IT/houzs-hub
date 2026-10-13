@@ -6,6 +6,7 @@ import { useTheme } from "../lib/theme";
 import { usePoll } from "../lib/usePoll";
 import FirstPasswordPage from "../pages/FirstPasswordPage";
 import { Avatar } from "./Bits";
+import NewTicketToasts from "./NewTicketToasts";
 
 type Stats = { active_by_system: Record<string, number>; my_active: number };
 
@@ -261,6 +262,7 @@ export default function Layout() {
           {!can("it") && IT_PATH.test(pathname) ? <Navigate to={landing} replace /> : <Outlet />}
         </main>
       </div>
+      {can("it") && <NewTicketToasts />}
     </HubContext.Provider>
   );
 }
