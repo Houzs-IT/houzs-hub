@@ -34,7 +34,7 @@ export default function ProjectShell({
   return (
     <div className="relative flex h-full">
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="px-8 pt-6">
+        <div className="px-4 pt-6 md:px-8">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <div className="eyebrow">IT Hub · Tickets</div>
@@ -53,11 +53,11 @@ export default function ProjectShell({
             <Toolbar showStatus={showStatus} showAssignee={showAssignee} />
           </div>
         </div>
-        <div className="min-h-0 flex-1 overflow-auto px-8 pb-8">{children}</div>
+        <div className="min-h-0 flex-1 overflow-auto px-4 pb-8 md:px-8">{children}</div>
       </div>
 
       {selected && (
-        <aside className="w-[min(640px,50%)] shrink-0 border-l border-line bg-surface shadow-overlay">
+        <aside className="absolute inset-0 z-20 shrink-0 border-l border-line bg-surface shadow-overlay md:static md:w-[min(640px,50%)]">
           <IssueView key={selected} code={selected} variant="panel" onClose={() => f.set({ selected: null })} />
         </aside>
       )}

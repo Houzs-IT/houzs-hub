@@ -71,7 +71,7 @@ export default function RolesPage() {
   }
 
   return (
-    <div className="h-full overflow-auto px-8 py-6">
+    <div className="h-full overflow-auto px-4 py-6 md:px-8">
       <div className="eyebrow">IT Hub · Admin</div>
       <h1 className="mt-1 text-[24px] font-extrabold tracking-tight text-ink">Roles</h1>
       <p className="mt-1 max-w-2xl text-[13px] text-ink-subtle">

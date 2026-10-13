@@ -43,7 +43,7 @@ export default function IntegrationsPage() {
   usePoll(load, 30_000);
 
   return (
-    <div className="h-full overflow-auto px-8 py-6">
+    <div className="h-full overflow-auto px-4 py-6 md:px-8">
       <div className="eyebrow">IT Hub · Admin</div>
       <h1 className="mt-1 text-[24px] font-extrabold tracking-tight text-ink">Integrations</h1>
       <p className="mt-1 text-[13px] text-ink-subtle">Whether each system is linked to the hub, based on its last call with a valid API key.</p>
