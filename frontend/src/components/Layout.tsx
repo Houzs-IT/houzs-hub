@@ -1,4 +1,4 @@
-import { ChevronDown, KanbanSquare, List, LogOut, Menu, Moon, Plug, ShieldCheck, Sun, UserCheck, Users } from "lucide-react";
+import { Bell, ChevronDown, KanbanSquare, List, LogOut, Menu, Moon, Plug, ShieldCheck, Sun, UserCheck, Users } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { Link, Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
 import { api, json, type Perm, type User, type SystemRow } from "../api/client";
@@ -7,15 +7,17 @@ import { usePoll } from "../lib/usePoll";
 import FirstPasswordPage from "../pages/FirstPasswordPage";
 import { Avatar } from "./Bits";
 import NewTicketToasts from "./NewTicketToasts";
+import { NotificationBell } from "./Notifications";
 
-type Stats = { active_by_system: Record<string, number>; my_active: number };
+type Stats = { active_by_system: Record<string, number>; my_active: number; unread_notifications: number };
 
-const IT_PATH = /^\/($|tickets|board|queue)/;
+const IT_PATH = /^\/($|tickets|board|queue|notifications)/;
 
 const PAGE_NAMES: Record<string, string> = {
   "/tickets": "List",
   "/board": "Board",
   "/queue": "My queue",
+  "/notifications": "Notifications",
   "/users": "Users",
   "/account": "My account",
   "/integrations": "Integrations",
@@ -73,7 +75,7 @@ function NavItem({ to, icon, label, count }: { to: string; icon: ReactNode; labe
 
 export default function Layout() {
   const [base, setBase] = useState<Omit<Ctx, "stats" | "version" | "refresh" | "setMe"> | null>(null);
-  const [stats, setStats] = useState<Stats>({ active_by_system: {}, my_active: 0 });
+  const [stats, setStats] = useState<Stats>({ active_by_system: {}, my_active: 0, unread_notifications: 0 });
   const [version, setVersion] = useState(0);
   const [error, setError] = useState<string | null>(null);
   // Set when the account still has a handed-out password; the server refuses
@@ -157,7 +159,7 @@ export default function Layout() {
           }`}
         >
           <div className="pointer-events-none absolute right-0 top-0 h-full w-px bg-gradient-to-b from-transparent via-accent/35 to-transparent" />
-          <div className="flex items-center gap-2.5 border-b border-[var(--sidebar-border)] px-4 py-4">
+          <div className="relative flex items-center gap-2.5 border-b border-[var(--sidebar-border)] py-4 pl-4 pr-2">
             <span className="grid h-9 w-9 place-items-center rounded-lg bg-[var(--sidebar-active)] text-[12px] font-bold tracking-wider text-accent-bright shadow-[inset_0_0_0_1px_rgba(161,106,46,0.35)]">
               IT
             </span>
@@ -165,6 +167,11 @@ export default function Layout() {
               <div className="truncate text-[14px] font-bold text-sidebar-ink">Houzs IT Hub</div>
               <div className="truncate text-[9.5px] font-bold uppercase tracking-brand text-accent-bright">Tickets</div>
             </div>
+            {can("it") && (
+              <div className="ml-auto">
+                <NotificationBell />
+              </div>
+            )}
           </div>
 
           <nav className="space-y-0.5 px-3 py-2">
@@ -189,6 +196,7 @@ export default function Layout() {
                 <NavItem to="/tickets" icon={<List className="h-4 w-4" />} label="List" />
                 <NavItem to="/board" icon={<KanbanSquare className="h-4 w-4" />} label="Board" />
                 <NavItem to="/queue" icon={<UserCheck className="h-4 w-4" />} label="My queue" count={stats.my_active} />
+                <NavItem to="/notifications" icon={<Bell className="h-4 w-4" />} label="Notifications" count={stats.unread_notifications} />
 
                 <div className="px-2.5 pb-1 pt-3 text-[9px] font-semibold uppercase tracking-brand text-sidebar-ink-muted/70">Systems</div>
                 {base.systems.map((s) => (
