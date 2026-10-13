@@ -154,16 +154,12 @@ export default function Layout() {
           </div>
 
           <nav className="space-y-0.5 px-3 py-2">
-            <div className="px-2.5 pb-1 pt-3 text-[9.5px] font-bold uppercase tracking-brand text-sidebar-ink-muted">Workspace</div>
-            <NavItem to="/tickets" icon={<List className="h-4 w-4" />} label="List" />
-            <NavItem to="/board" icon={<KanbanSquare className="h-4 w-4" />} label="Board" />
-            <NavItem to="/queue" icon={<UserCheck className="h-4 w-4" />} label="My queue" count={stats.my_active} />
-
-            {/* The IT group: one block, so RBAC can show or hide it with one condition. */}
+            {/* The IT group (workspace views and its systems) is one block, so RBAC
+                can show or hide it with one condition. */}
             <button
               onClick={toggleIt}
               aria-expanded={itOpen}
-              className="flex w-full items-center gap-1.5 px-2.5 pb-1 pt-5 text-[9.5px] font-bold uppercase tracking-brand text-sidebar-ink-muted hover:text-sidebar-ink"
+              className="flex w-full items-center gap-1.5 px-2.5 pb-1 pt-3 text-[9.5px] font-bold uppercase tracking-brand text-sidebar-ink-muted hover:text-sidebar-ink"
             >
               <span className="flex-1 text-left">IT</span>
               {!itOpen && itActive > 0 && (
@@ -171,19 +167,29 @@ export default function Layout() {
               )}
               <ChevronDown className={`h-3.5 w-3.5 transition-transform ${itOpen ? "" : "-rotate-90"}`} />
             </button>
-            {itOpen && base.systems.map((s) => (
-              <NavItem
-                key={s.code}
-                to={`/tickets?system=${s.code}`}
-                icon={
-                  <span className="grid h-5 min-w-[22px] place-items-center rounded border border-[var(--sidebar-border)] px-1 font-docno text-[9px] font-semibold text-accent-bright">
-                    {s.code}
-                  </span>
-                }
-                label={s.name}
-                count={stats.active_by_system[s.code] ?? 0}
-              />
-            ))}
+            {itOpen && (
+              <>
+                <div className="px-2.5 pb-1 pt-1.5 text-[9px] font-semibold uppercase tracking-brand text-sidebar-ink-muted/70">Workspace</div>
+                <NavItem to="/tickets" icon={<List className="h-4 w-4" />} label="List" />
+                <NavItem to="/board" icon={<KanbanSquare className="h-4 w-4" />} label="Board" />
+                <NavItem to="/queue" icon={<UserCheck className="h-4 w-4" />} label="My queue" count={stats.my_active} />
+
+                <div className="px-2.5 pb-1 pt-3 text-[9px] font-semibold uppercase tracking-brand text-sidebar-ink-muted/70">Systems</div>
+                {base.systems.map((s) => (
+                  <NavItem
+                    key={s.code}
+                    to={`/tickets?system=${s.code}`}
+                    icon={
+                      <span className="grid h-5 min-w-[22px] place-items-center rounded border border-[var(--sidebar-border)] px-1 font-docno text-[9px] font-semibold text-accent-bright">
+                        {s.code}
+                      </span>
+                    }
+                    label={s.name}
+                    count={stats.active_by_system[s.code] ?? 0}
+                  />
+                ))}
+              </>
+            )}
 
             {/* Only hides the link; the API itself refuses non-admins. */}
             {base.me.role === "admin" && (
