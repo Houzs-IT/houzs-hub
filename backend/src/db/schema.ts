@@ -31,6 +31,7 @@ export const systems = pgTable("systems", {
   apiKeyHash: text("api_key_hash"),
   active: integer("active").notNull().default(1),
   createdAt: text("created_at").notNull(),
+  lastCallAt: text("last_call_at"),
 });
 
 export const ticketSequences = pgTable("ticket_sequences", {
@@ -51,6 +52,7 @@ export const users = pgTable("users", {
   lockedUntil: text("locked_until"),
   role: text("role").$type<Role>().notNull().default("developer"),
   mustChangePassword: integer("must_change_password").notNull().default(0),
+  viewingPage: text("viewing_page"),
 });
 
 export const tickets = pgTable("tickets", {

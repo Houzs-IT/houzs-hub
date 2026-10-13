@@ -8,7 +8,7 @@ import type { DevApp } from "../types";
 // Mounted inside routes/dev.ts, after devAuth, so c.get("user") is set.
 const admin = new Hono<DevApp>();
 admin.use("*", async (c, next) => {
-  if (c.get("user").role !== "admin") return c.json({ error: "Only admins can manage users" }, 403);
+  if (c.get("user").role !== "admin") return c.json({ error: "Admins only" }, 403);
   await next();
 });
 
@@ -30,6 +30,16 @@ export const isUniqueViolation = (e: unknown) => {
   const err = e as { code?: string; cause?: { code?: string } };
   return (err.cause?.code ?? err.code) === "23505";
 };
+
+// Integrations page: whether each system has a key and when it last used it.
+admin.get("/systems", async (c) => {
+  const s = schema.systems;
+  const rows = await getDb(c.env)
+    .select({ code: s.code, name: s.name, active: s.active, apiKeyHash: s.apiKeyHash, lastCallAt: s.lastCallAt })
+    .from(s)
+    .orderBy(asc(s.name));
+  return c.json({ systems: rows.map(({ apiKeyHash, ...r }) => ({ ...r, hasKey: !!apiKeyHash })) });
+});
 
 // Inactive users too, unlike /users which feeds the assignee picker.
 admin.get("/users", async (c) => {

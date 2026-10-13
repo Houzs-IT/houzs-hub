@@ -1,12 +1,33 @@
-import { KanbanSquare, List, LogOut, Moon, Sun, UserCheck, Users } from "lucide-react";
+import { ChevronDown, KanbanSquare, List, LogOut, Moon, Plug, Sun, UserCheck, Users } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { api, type User, type SystemRow } from "../api/client";
+import { api, json, type User, type SystemRow } from "../api/client";
 import { useTheme } from "../lib/theme";
 import { usePoll } from "../lib/usePoll";
 import FirstPasswordPage from "../pages/FirstPasswordPage";
+import { Avatar } from "./Bits";
 
 type Stats = { active_by_system: Record<string, number>; my_active: number };
+
+const PAGE_NAMES: Record<string, string> = {
+  "/tickets": "List",
+  "/board": "Board",
+  "/queue": "My queue",
+  "/users": "Users",
+  "/account": "My account",
+  "/integrations": "Integrations",
+};
+
+// "/tickets?system=HK&selected=HK-12" -> "HK-12", "/board?system=HK" -> "Board · HK"
+export function pageLabel(page: string | null) {
+  if (!page) return "";
+  const url = new URL(page, "http://x");
+  const ticket = url.pathname.match(/^\/tickets\/([^/]+)$/)?.[1] ?? url.searchParams.get("selected");
+  if (ticket) return decodeURIComponent(ticket);
+  const name = PAGE_NAMES[url.pathname] ?? url.pathname;
+  const system = url.searchParams.get("system");
+  return system ? `${name} · ${system}` : name;
+}
 type Ctx = {
   me: User;
   // After the user renames themselves, so the sidebar and assignee lists follow.
@@ -55,6 +76,22 @@ export default function Layout() {
   // everything but /me and /me/password until it is replaced.
   const [firstLogin, setFirstLogin] = useState<string | null>(null);
   const { theme, toggle } = useTheme();
+  const [presence, setPresence] = useState<{ id: number; page: string | null }[]>([]);
+  const { pathname, search } = useLocation();
+  const [itOpen, setItOpen] = useState(() => {
+    try {
+      return localStorage.getItem("sidebar.it") !== "closed";
+    } catch {
+      return true;
+    }
+  });
+  const toggleIt = () =>
+    setItOpen((o) => {
+      try {
+        localStorage.setItem("sidebar.it", o ? "closed" : "open");
+      } catch {}
+      return !o;
+    });
 
   useEffect(() => {
     api<{ user: User }>("/me")
@@ -75,12 +112,27 @@ export default function Layout() {
   useEffect(loadStats, [loadStats, version]);
   usePoll(loadStats, 30_000);
 
+  const checkIn = useCallback(() => {
+    if (base) api<{ online: typeof presence }>("/presence", json("POST", { page: pathname + search }))
+      .then((r) => setPresence(r.online))
+      .catch(() => {});
+  }, [base, pathname, search]);
+  useEffect(checkIn, [checkIn]);
+  usePoll(checkIn, 15_000);
+
   const refresh = useCallback(() => setVersion((v) => v + 1), []);
   const setMe = useCallback(
     (me: User) =>
       setBase((b) => b && { ...b, me, users: b.users.map((d) => (d.id === me.id ? { ...d, name: me.name } : d)) }),
     [],
   );
+
+  const online = presence.flatMap((p) => {
+    const u = base?.users.find((d) => d.id === p.id);
+    return u && u.id !== base!.me.id ? [{ ...u, page: p.page }] : [];
+  });
+
+  const itActive = Object.values(stats.active_by_system).reduce((a, n) => a + n, 0);
 
   if (firstLogin) return <FirstPasswordPage name={firstLogin} />;
   if (error) return <div className="p-10 text-center text-loz-red-ink">{error}</div>;
@@ -107,8 +159,19 @@ export default function Layout() {
             <NavItem to="/board" icon={<KanbanSquare className="h-4 w-4" />} label="Board" />
             <NavItem to="/queue" icon={<UserCheck className="h-4 w-4" />} label="My queue" count={stats.my_active} />
 
-            <div className="px-2.5 pb-1 pt-5 text-[9.5px] font-bold uppercase tracking-brand text-sidebar-ink-muted">Systems</div>
-            {base.systems.map((s) => (
+            {/* The IT group: one block, so RBAC can show or hide it with one condition. */}
+            <button
+              onClick={toggleIt}
+              aria-expanded={itOpen}
+              className="flex w-full items-center gap-1.5 px-2.5 pb-1 pt-5 text-[9.5px] font-bold uppercase tracking-brand text-sidebar-ink-muted hover:text-sidebar-ink"
+            >
+              <span className="flex-1 text-left">IT</span>
+              {!itOpen && itActive > 0 && (
+                <span className="rounded-full bg-[var(--sidebar-hover)] px-1.5 text-[10.5px] normal-case tracking-normal tabular-nums">{itActive}</span>
+              )}
+              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${itOpen ? "" : "-rotate-90"}`} />
+            </button>
+            {itOpen && base.systems.map((s) => (
               <NavItem
                 key={s.code}
                 to={`/tickets?system=${s.code}`}
@@ -127,11 +190,32 @@ export default function Layout() {
               <>
                 <div className="px-2.5 pb-1 pt-5 text-[9.5px] font-bold uppercase tracking-brand text-sidebar-ink-muted">Admin</div>
                 <NavItem to="/users" icon={<Users className="h-4 w-4" />} label="Users" />
+                <NavItem to="/integrations" icon={<Plug className="h-4 w-4" />} label="Integrations" />
               </>
             )}
           </nav>
 
-          <div className="mt-auto flex items-center gap-2.5 border-t border-[var(--sidebar-border)] px-4 py-3">
+          <div className="mt-auto" />
+          {online.length > 0 && (
+            <div className="px-4 pb-3">
+              <div className="pb-1.5 text-[9.5px] font-bold uppercase tracking-brand text-sidebar-ink-muted">Online now</div>
+              <div className="space-y-1">
+                {online.map((u) => (
+                  <Link
+                    key={u.id}
+                    to={u.page ?? "/tickets"}
+                    className="flex items-center gap-2 rounded-md px-1 py-0.5 hover:bg-[var(--sidebar-hover)]"
+                    title={`Go to what ${u.name} is reading`}
+                  >
+                    <Avatar name={u.name} size={22} />
+                    <span className="min-w-0 flex-1 truncate text-[12px] text-sidebar-ink">{u.name}</span>
+                    <span className="max-w-[45%] truncate font-docno text-[10.5px] text-sidebar-ink-muted">{pageLabel(u.page)}</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="flex items-center gap-2.5 border-t border-[var(--sidebar-border)] px-4 py-3">
             <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--sidebar-active)] text-[10px] font-bold uppercase text-accent-bright shadow-[inset_0_0_0_1px_rgba(161,106,46,0.25)]">
               {base.me.name.slice(0, 2)}
             </span>
