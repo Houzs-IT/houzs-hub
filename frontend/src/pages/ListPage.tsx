@@ -12,6 +12,9 @@ import { usePoll } from "../lib/usePoll";
 
 type ListResp = { tickets: TicketRow[]; total: number; page: number; page_size: number };
 
+const isReporterWaiting = (ticket: TicketRow) =>
+  ticket.last_public_actor === "reporter" && ticket.status !== "open" && ACTIVE.includes(ticket.status);
+
 type Col = { key: string; label: string; sort?: string; className?: string };
 const COLS: Col[] = [
   { key: "type", label: "Type", className: "w-16" },
@@ -70,7 +73,53 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
   return (
     <ProjectShell title={queue ? "My queue" : "IT Tickets"} showAssignee={!queue}>
       {error && <div className="mb-3 rounded bg-loz-red px-3 py-2 text-sm text-loz-red-ink">{error}</div>}
-      <div className="card min-w-[1100px]">
+      <div className="space-y-2 lg:hidden">
+        <label className="flex items-center gap-2 text-xs text-ink-subtle">
+          Sort by
+          <select className="input" value={sort} onChange={(e) => f.set({ sort: e.target.value, dir: "desc" })}>
+            {COLS.filter((column) => column.sort).map((column) => (
+              <option key={column.key} value={column.sort}>
+                {column.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        {data?.tickets.map((ticket) => {
+          const ticketSla = sla(ticket.created_at, ticket.priority, ticket.status, ticket.legacy_code);
+          return (
+            <button
+              key={ticket.code}
+              onClick={() => f.set({ selected: ticket.code })}
+              className={`card block w-full p-3 text-left ${selected === ticket.code ? "border-primary ring-2 ring-primary/25" : ""}`}
+            >
+              <div className="flex items-center gap-2">
+                <TypeIcon type={ticket.type} />
+                <span className="font-docno text-[12.5px] font-semibold text-accent">{ticket.code}</span>
+                <span className="ml-auto">
+                  <Lozenge status={ticket.status} />
+                </span>
+              </div>
+              <div className="mt-1.5 line-clamp-2 text-sm font-medium text-ink">{ticket.title}</div>
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-subtle">
+                <span className="flex items-center gap-1 capitalize">
+                  <PriorityIcon priority={ticket.priority} /> {ticket.priority}
+                </span>
+                <span className="flex min-w-0 items-center gap-1">
+                  <Avatar name={ticket.assignee_name} size={18} />
+                  <span className="truncate">{ticket.assignee_name ?? "Unassigned"}</span>
+                </span>
+                <span>{fmtAgo(ticket.updated_at)}</span>
+                {ticketSla?.overdue && <span className="pill bg-loz-red text-loz-red-ink">{ticketSla.label}</span>}
+                {isReporterWaiting(ticket) && <MessageSquare className="h-3.5 w-3.5 text-primary" aria-label="Reporter replied" />}
+              </div>
+            </button>
+          );
+        })}
+        {data && data.tickets.length === 0 && <div className="py-16 text-center text-sm text-ink-subtlest">No tickets match these filters</div>}
+        {!data && !error && <div className="py-16 text-center text-sm text-ink-subtlest">Loading...</div>}
+      </div>
+
+      <div className="card hidden min-w-[1100px] lg:block">
       <table className="w-full table-fixed border-collapse text-[13px]">
         <thead className="sticky top-0 z-10">
           <tr>
@@ -94,7 +143,7 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
         <tbody>
           {data?.tickets.map((t) => {
             const s = sla(t.created_at, t.priority, t.status, t.legacy_code);
-            const reporterReplied = t.last_public_actor === "reporter" && t.status !== "open" && ACTIVE.includes(t.status);
+            const reporterReplied = isReporterWaiting(t);
             return (
               <tr
                 key={t.code}
