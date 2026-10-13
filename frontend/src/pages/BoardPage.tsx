@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api, json, type Status, type TicketRow } from "../api/client";
 import { Avatar, Lozenge, PriorityIcon, SystemTag, TypeIcon } from "../components/Bits";
 import { useHub } from "../components/Layout";
@@ -11,6 +12,7 @@ import { usePoll } from "../lib/usePoll";
 export default function BoardPage() {
   const { version, refresh } = useHub();
   const f = useFilters();
+  const navigate = useNavigate();
   const [tickets, setTickets] = useState<TicketRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
@@ -86,6 +88,7 @@ export default function BoardPage() {
                       }}
                       onDragEnd={() => setDragging(null)}
                       onClick={() => f.set({ selected: t.code })}
+                      onDoubleClick={() => navigate(`/tickets/${t.code}`)}
                       className={`cursor-pointer rounded-[10px] border bg-surface p-3 shadow-stone transition-colors hover:border-primary/50 ${
                         selected === t.code ? "border-primary ring-2 ring-primary/25" : "border-line"
                       } ${dragging === t.code ? "opacity-50" : ""}`}
