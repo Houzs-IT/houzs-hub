@@ -14,7 +14,7 @@ export function statusSelection(raw: string | null): Status[] {
 }
 
 export default function Toolbar({ showStatus = true, showAssignee = true }: { showStatus?: boolean; showAssignee?: boolean }) {
-  const { me, developers, systems } = useHub();
+  const { me, users, systems } = useHub();
   const f = useFilters();
   const [q, setQ] = useState(f.get("q") ?? "");
 
@@ -71,7 +71,7 @@ export default function Toolbar({ showStatus = true, showAssignee = true }: { sh
           options={[
             { value: "none", label: "Unassigned", icon: <Avatar name={null} size={20} /> },
             { value: "me", label: "Me", icon: <Avatar name={me.name} size={20} /> },
-            ...developers
+            ...users
               .filter((d) => d.id !== me.id)
               .map((d) => ({ value: String(d.id), label: d.name, icon: <Avatar name={d.name} size={20} /> })),
           ]}

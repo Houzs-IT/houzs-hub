@@ -5,14 +5,14 @@ import { ROLES, type Role } from "../db/schema";
 import { EMAIL_RE, USERNAME_RE, hashPassword, randomPassword } from "../services/crypto";
 import type { DevApp } from "../types";
 
-// Mounted inside routes/dev.ts, after devAuth, so c.get("developer") is set.
+// Mounted inside routes/dev.ts, after devAuth, so c.get("user") is set.
 const admin = new Hono<DevApp>();
 admin.use("*", async (c, next) => {
-  if (c.get("developer").role !== "admin") return c.json({ error: "Only admins can manage users" }, 403);
+  if (c.get("user").role !== "admin") return c.json({ error: "Only admins can manage users" }, 403);
   await next();
 });
 
-const d = schema.developers;
+const d = schema.users;
 const USER_COLS = {
   id: d.id,
   email: d.email,
@@ -31,7 +31,7 @@ export const isUniqueViolation = (e: unknown) => {
   return (err.cause?.code ?? err.code) === "23505";
 };
 
-// Inactive users too, unlike /developers which feeds the assignee picker.
+// Inactive users too, unlike /users which feeds the assignee picker.
 admin.get("/users", async (c) => {
   const users = await getDb(c.env).select(USER_COLS).from(d).orderBy(asc(d.name));
   return c.json({ users });
@@ -75,7 +75,7 @@ admin.patch("/users/:id", async (c) => {
   if (b.active !== undefined) set.active = b.active ? 1 : 0;
   if (typeof b.name === "string" && b.name.trim()) set.name = b.name.trim().slice(0, 60);
   if (Object.keys(set).length === 0) return c.json({ error: "Nothing to change" }, 400);
-  if (id === c.get("developer").id && (set.role !== undefined || set.active !== undefined)) {
+  if (id === c.get("user").id && (set.role !== undefined || set.active !== undefined)) {
     return c.json({ error: "You cannot change your own role or switch yourself off" }, 400);
   }
 

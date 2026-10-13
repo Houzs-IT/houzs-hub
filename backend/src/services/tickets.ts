@@ -70,7 +70,7 @@ export async function addEvent(
     visibility: Visibility;
     authorKind: AuthorKind;
     authorName: string;
-    developerId?: number | null;
+    userId?: number | null;
     body?: string | null;
     fromValue?: string | null;
     toValue?: string | null;
@@ -85,7 +85,7 @@ export async function addEvent(
       visibility: e.visibility,
       authorKind: e.authorKind,
       authorName: e.authorName,
-      developerId: e.developerId ?? null,
+      userId: e.userId ?? null,
       body: e.body ?? null,
       fromValue: e.fromValue ?? null,
       toValue: e.toValue ?? null,

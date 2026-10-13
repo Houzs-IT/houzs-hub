@@ -6,7 +6,7 @@ import { Avatar } from "../components/Bits";
 import { useHub } from "../components/Layout";
 import { fmtAgo } from "../lib/format";
 
-type User = {
+type UserRow = {
   id: number;
   email: string | null;
   username: string | null;
@@ -19,7 +19,7 @@ type User = {
 
 const ROLE_LABEL: Record<Role, string> = { admin: "Admin", developer: "Developer" };
 
-function Status({ u }: { u: User }) {
+function Status({ u }: { u: UserRow }) {
   if (!u.active) return <span className="pill bg-loz-grey text-loz-grey-ink">Off</span>;
   if (u.lockedUntil && u.lockedUntil > new Date().toISOString()) {
     return <span className="pill bg-loz-orange text-loz-orange-ink">Locked</span>;
@@ -29,7 +29,7 @@ function Status({ u }: { u: User }) {
 
 export default function UsersPage() {
   const { me } = useHub();
-  const [users, setUsers] = useState<User[] | null>(null);
+  const [users, setUsers] = useState<UserRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ email: "", username: "", name: "", role: "developer" as Role });
@@ -39,7 +39,7 @@ export default function UsersPage() {
   const [copied, setCopied] = useState(false);
 
   const load = useCallback(() => {
-    api<{ users: User[] }>("/admin/users")
+    api<{ users: UserRow[] }>("/admin/users")
       .then((d) => setUsers(d.users))
       .catch((e: Error) => setError(e.message));
   }, []);
@@ -64,7 +64,7 @@ export default function UsersPage() {
 
   async function add(e: FormEvent) {
     e.preventDefault();
-    const res = await run(() => api<{ user: User; password: string }>("/admin/users", json("POST", form)));
+    const res = await run(() => api<{ user: UserRow; password: string }>("/admin/users", json("POST", form)));
     if (!res) return;
     show(res.user.username ?? res.user.email ?? res.user.name, res.password);
     setForm({ email: "", username: "", name: "", role: "developer" });
@@ -72,11 +72,11 @@ export default function UsersPage() {
     load();
   }
 
-  async function patch(u: User, body: Partial<Pick<User, "role" | "active">>) {
+  async function patch(u: UserRow, body: Partial<Pick<UserRow, "role" | "active">>) {
     if (await run(() => api(`/admin/users/${u.id}`, json("PATCH", body)))) load();
   }
 
-  async function reset(u: User) {
+  async function reset(u: UserRow) {
     if (!confirm(`Make a new password for ${u.name}? Their old password stops working.`)) return;
     const res = await run(() => api<{ password: string }>(`/admin/users/${u.id}/reset-password`, { method: "POST" }));
     if (res) {
@@ -85,7 +85,7 @@ export default function UsersPage() {
     }
   }
 
-  async function toggle(u: User) {
+  async function toggle(u: UserRow) {
     if (u.active && !confirm(`Switch off ${u.name}? They are signed out and cannot sign in until switched back on.`)) return;
     await patch(u, { active: u.active ? 0 : 1 });
   }

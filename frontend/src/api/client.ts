@@ -3,7 +3,7 @@ export type Priority = "urgent" | "high" | "medium" | "low";
 export type TicketType = "bug" | "development";
 
 export type Role = "admin" | "developer";
-export type Developer = {
+export type User = {
   id: number;
   name: string;
   email: string | null;

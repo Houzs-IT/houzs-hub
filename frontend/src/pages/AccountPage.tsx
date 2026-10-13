@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { api, json, type Developer } from "../api/client";
+import { api, json, type User } from "../api/client";
 import { useHub } from "../components/Layout";
 import PasswordForm from "../components/PasswordForm";
 
@@ -16,10 +16,10 @@ export default function AccountPage() {
     e.preventDefault();
     setSavingName(true);
     try {
-      const res = await api<{ developer: Developer }>("/me", json("PATCH", { name, email }));
-      setMe(res.developer);
-      setName(res.developer.name);
-      setEmail(res.developer.email ?? "");
+      const res = await api<{ user: User }>("/me", json("PATCH", { name, email }));
+      setMe(res.user);
+      setName(res.user.name);
+      setEmail(res.user.email ?? "");
       setNameMsg({ ok: true, text: "Profile saved." });
     } catch (err) {
       setNameMsg({ ok: false, text: (err as Error).message });

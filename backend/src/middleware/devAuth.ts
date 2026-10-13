@@ -15,11 +15,11 @@ function secret(env: Env) {
 }
 
 // ponytail: stateless signed cookie, so one stolen session cannot be revoked on
-// its own before it expires. Setting developers.active = 0 cuts all of that
-// developer's sessions. Add a sessions table if per-session revoke is needed.
-export async function startSession(c: Context<{ Bindings: Env }>, developerId: number) {
+// its own before it expires. Setting users.active = 0 cuts all of that
+// user's sessions. Add a sessions table if per-session revoke is needed.
+export async function startSession(c: Context<{ Bindings: Env }>, userId: number) {
   const exp = Math.floor(Date.now() / 1000) + SESSION_DAYS * 86400;
-  const token = await sign({ sub: developerId, exp }, secret(c.env), "HS256");
+  const token = await sign({ sub: userId, exp }, secret(c.env), "HS256");
   setCookie(c, COOKIE, token, { httpOnly: true, secure: true, sameSite: "Lax", path: "/", maxAge: SESSION_DAYS * 86400 });
 }
 
@@ -34,16 +34,16 @@ export const devAuth = createMiddleware<DevApp>(async (c, next) => {
   if (!Number.isInteger(id)) return c.json({ error: "Not signed in" }, 401);
 
   const db = getDb(c.env);
-  const [dev] = await db.select().from(schema.developers).where(eq(schema.developers.id, id)).limit(1);
-  if (!dev?.active) return c.json({ error: "Not signed in" }, 401);
+  const [user] = await db.select().from(schema.users).where(eq(schema.users.id, id)).limit(1);
+  if (!user?.active) return c.json({ error: "Not signed in" }, 401);
   // With a handed-out password, the only things allowed are reading who you
   // are and setting your own password.
   const path = c.req.path;
-  if (dev.mustChangePassword && !(path.endsWith("/me") && c.req.method === "GET") && !path.endsWith("/me/password")) {
+  if (user.mustChangePassword && !(path.endsWith("/me") && c.req.method === "GET") && !path.endsWith("/me/password")) {
     return c.json({ error: "Choose your own password first", code: "must_change_password" }, 403);
   }
-  await db.update(schema.developers).set({ lastSeenAt: new Date().toISOString() }).where(eq(schema.developers.id, dev.id));
+  await db.update(schema.users).set({ lastSeenAt: new Date().toISOString() }).where(eq(schema.users.id, user.id));
 
-  c.set("developer", dev);
+  c.set("user", user);
   await next();
 });

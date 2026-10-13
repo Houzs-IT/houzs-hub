@@ -1,17 +1,17 @@
 import { KanbanSquare, List, LogOut, Moon, Sun, UserCheck, Users } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { api, type Developer, type SystemRow } from "../api/client";
+import { api, type User, type SystemRow } from "../api/client";
 import { useTheme } from "../lib/theme";
 import { usePoll } from "../lib/usePoll";
 import FirstPasswordPage from "../pages/FirstPasswordPage";
 
 type Stats = { active_by_system: Record<string, number>; my_active: number };
 type Ctx = {
-  me: Developer;
+  me: User;
   // After the user renames themselves, so the sidebar and assignee lists follow.
-  setMe: (me: Developer) => void;
-  developers: Developer[];
+  setMe: (me: User) => void;
+  users: User[];
   systems: SystemRow[];
   stats: Stats;
   // Bumped after any mutation so every open view refetches.
@@ -57,14 +57,14 @@ export default function Layout() {
   const { theme, toggle } = useTheme();
 
   useEffect(() => {
-    api<{ developer: Developer }>("/me")
-      .then(async ({ developer: me }) => {
+    api<{ user: User }>("/me")
+      .then(async ({ user: me }) => {
         if (me.mustChangePassword) return setFirstLogin(me.name);
         const [d, s] = await Promise.all([
-          api<{ developers: Developer[] }>("/developers"),
+          api<{ users: User[] }>("/users"),
           api<{ systems: SystemRow[] }>("/systems"),
         ]);
-        setBase({ me, developers: d.developers, systems: s.systems });
+        setBase({ me, users: d.users, systems: s.systems });
       })
       .catch((e: Error) => setError(e.message));
   }, []);
@@ -77,8 +77,8 @@ export default function Layout() {
 
   const refresh = useCallback(() => setVersion((v) => v + 1), []);
   const setMe = useCallback(
-    (me: Developer) =>
-      setBase((b) => b && { ...b, me, developers: b.developers.map((d) => (d.id === me.id ? { ...d, name: me.name } : d)) }),
+    (me: User) =>
+      setBase((b) => b && { ...b, me, users: b.users.map((d) => (d.id === me.id ? { ...d, name: me.name } : d)) }),
     [],
   );
 

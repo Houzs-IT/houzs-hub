@@ -133,11 +133,11 @@ sys.get("/tickets", async (c) => {
       title: t.title,
       created_at: t.createdAt,
       updated_at: t.updatedAt,
-      assignee_name: schema.developers.name,
+      assignee_name: schema.users.name,
       unread: unreadExpr,
     })
     .from(t)
-    .leftJoin(schema.developers, eq(schema.developers.id, t.assigneeId))
+    .leftJoin(schema.users, eq(schema.users.id, t.assigneeId))
     .where(where)
     .orderBy(desc(t.updatedAt))
     .limit(200);
@@ -167,7 +167,7 @@ sys.get("/tickets/:code", async (c) => {
   if (!ticket) return c.json({ error: "Not found" }, 404);
 
   const [assignee] = ticket.assigneeId
-    ? await db.select({ name: schema.developers.name }).from(schema.developers).where(eq(schema.developers.id, ticket.assigneeId))
+    ? await db.select({ name: schema.users.name }).from(schema.users).where(eq(schema.users.id, ticket.assigneeId))
     : [];
 
   const events = await db

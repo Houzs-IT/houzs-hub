@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Creates a developer or resets their password, against DATABASE_URL. A random
+// Creates a user or resets their password, against DATABASE_URL. A random
 // password is printed once; only its PBKDF2 hash is stored. It works for one
 // sign-in: the hub then makes them choose their own. Also clears any lockout.
 //   node scripts/set-password.mjs samuel@gmail.com samuel
@@ -34,11 +34,11 @@ const { sql, target } = connect();
 let row;
 try {
   [row] = await sql`
-    INSERT INTO developers (email, name, username, password_hash, role, must_change_password)
+    INSERT INTO users (email, name, username, password_hash, role, must_change_password)
     VALUES (${email}, ${name}, ${username}, ${stored}, ${role ?? "developer"}, 1)
     ON CONFLICT (email) DO UPDATE SET
-      username = COALESCE(excluded.username, developers.username),
-      role = COALESCE(${role}, developers.role),
+      username = COALESCE(excluded.username, users.username),
+      role = COALESCE(${role}, users.role),
       password_hash = excluded.password_hash,
       must_change_password = 1,
       failed_logins = 0,
@@ -46,7 +46,7 @@ try {
     RETURNING email, username, role`;
 } catch (e) {
   // 23505 = unique violation; the email conflict is handled above, so this is the username.
-  console.error(e.code === "23505" ? `Username ${username} is taken by another developer.` : e.message);
+  console.error(e.code === "23505" ? `Username ${username} is taken by another user.` : e.message);
   process.exit(1);
 } finally {
   await sql.end();

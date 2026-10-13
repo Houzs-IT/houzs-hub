@@ -5,7 +5,7 @@ import {
   TICKET_PRIORITIES,
   TICKET_STATUSES,
   TICKET_TYPES,
-  type Developer,
+  type User,
   type Ticket,
   type TicketStatus,
 } from "../db/schema";
@@ -40,14 +40,14 @@ const PAGE_SIZE = 50;
 dev.route("/admin", admin);
 
 dev.get("/me", (c) => {
-  const { id, name, email, username, role, mustChangePassword } = c.get("developer");
-  return c.json({ developer: { id, name, email, username, role, mustChangePassword } });
+  const { id, name, email, username, role, mustChangePassword } = c.get("user");
+  return c.json({ user: { id, name, email, username, role, mustChangePassword } });
 });
 
 // Display name and/or email; send only what changes. An empty email clears it.
 // Old ticket comments keep the name they were written under.
 dev.patch("/me", async (c) => {
-  const me = c.get("developer");
+  const me = c.get("user");
   const b = (await c.req.json().catch(() => ({}))) as { name?: unknown; email?: unknown };
   const set: { name?: string; email?: string | null } = {};
   if (b.name !== undefined) {
@@ -64,18 +64,18 @@ dev.patch("/me", async (c) => {
   }
   if (Object.keys(set).length === 0) return c.json({ error: "Nothing to change" }, 400);
   try {
-    const [dev] = await getDb(c.env)
-      .update(schema.developers)
+    const [user] = await getDb(c.env)
+      .update(schema.users)
       .set(set)
-      .where(eq(schema.developers.id, me.id))
+      .where(eq(schema.users.id, me.id))
       .returning({
-        id: schema.developers.id,
-        name: schema.developers.name,
-        email: schema.developers.email,
-        username: schema.developers.username,
-        role: schema.developers.role,
+        id: schema.users.id,
+        name: schema.users.name,
+        email: schema.users.email,
+        username: schema.users.username,
+        role: schema.users.role,
       });
-    return c.json({ developer: dev });
+    return c.json({ user });
   } catch (e) {
     if (isUniqueViolation(e)) return c.json({ error: "That email is already used by another account" }, 409);
     throw e;
@@ -83,7 +83,7 @@ dev.patch("/me", async (c) => {
 });
 
 dev.post("/me/password", async (c) => {
-  const me = c.get("developer");
+  const me = c.get("user");
   const b = (await c.req.json().catch(() => ({}))) as { current?: unknown; next?: unknown };
   const current = typeof b.current === "string" ? b.current : "";
   const next = typeof b.next === "string" ? b.next : "";
@@ -94,20 +94,20 @@ dev.post("/me/password", async (c) => {
     return c.json({ error: `The new password needs at least ${MIN_PASSWORD} characters` }, 400);
   }
   await getDb(c.env)
-    .update(schema.developers)
+    .update(schema.users)
     .set({ passwordHash: await hashPassword(next), mustChangePassword: 0 })
-    .where(eq(schema.developers.id, me.id));
+    .where(eq(schema.users.id, me.id));
   return c.json({ ok: true });
 });
 
-dev.get("/developers", async (c) => {
+dev.get("/users", async (c) => {
   const db = getDb(c.env);
   const rows = await db
-    .select({ id: schema.developers.id, name: schema.developers.name, email: schema.developers.email })
-    .from(schema.developers)
-    .where(eq(schema.developers.active, 1))
-    .orderBy(asc(schema.developers.name));
-  return c.json({ developers: rows });
+    .select({ id: schema.users.id, name: schema.users.name, email: schema.users.email })
+    .from(schema.users)
+    .where(eq(schema.users.active, 1))
+    .orderBy(asc(schema.users.name));
+  return c.json({ users: rows });
 });
 
 dev.get("/systems", async (c) => {
@@ -126,8 +126,8 @@ function pick<T extends string>(v: string | undefined, allowed: readonly T[]): T
 }
 
 // Every filter accepts a comma list. status: "active" = the open-ish set,
-// "all" or absent = no status filter. assignee: "me", "none" or developer ids.
-function filterWhere(q: Record<string, string | undefined>, me: Developer, withStatus: boolean): SQL | undefined {
+// "all" or absent = no status filter. assignee: "me", "none" or user ids.
+function filterWhere(q: Record<string, string | undefined>, me: User, withStatus: boolean): SQL | undefined {
   const parts: (SQL | undefined)[] = [];
   const systems = list(q.system);
   if (systems.length) parts.push(inArray(t.systemCode, systems));
@@ -175,7 +175,7 @@ function orderFor(sort: string | undefined, dir: string | undefined) {
     case "key":
       return [d(t.systemCode), d(t.id)];
     case "assignee":
-      return [d(schema.developers.name), desc(t.updatedAt)];
+      return [d(schema.users.name), desc(t.updatedAt)];
     default:
       return [d(t.updatedAt)];
   }
@@ -186,7 +186,7 @@ dev.get("/tickets", async (c) => {
   const q = c.req.query();
   const page = Math.max(1, Number(q.page) || 1);
   const pageSize = Math.min(500, Math.max(1, Number(q.page_size) || PAGE_SIZE));
-  const where = filterWhere(q, c.get("developer"), true);
+  const where = filterWhere(q, c.get("user"), true);
 
   const [rows, [total]] = await Promise.all([
     db
@@ -201,13 +201,13 @@ dev.get("/tickets", async (c) => {
         reporter_name: t.reporterName,
         reporter_department: t.reporterDepartment,
         assignee_id: t.assigneeId,
-        assignee_name: schema.developers.name,
+        assignee_name: schema.users.name,
         last_public_actor: t.lastPublicActor,
         created_at: t.createdAt,
         updated_at: t.updatedAt,
       })
       .from(t)
-      .leftJoin(schema.developers, eq(schema.developers.id, t.assigneeId))
+      .leftJoin(schema.users, eq(schema.users.id, t.assigneeId))
       .where(where)
       .orderBy(...orderFor(q.sort, q.dir))
       .limit(pageSize)
@@ -225,7 +225,7 @@ dev.get("/tickets/stats", async (c) => {
     db
       .select({ status: t.status, n: count() })
       .from(t)
-      .where(filterWhere(c.req.query(), c.get("developer"), false))
+      .where(filterWhere(c.req.query(), c.get("user"), false))
       .groupBy(t.status),
     db
       .select({ system: t.systemCode, n: count() })
@@ -235,7 +235,7 @@ dev.get("/tickets/stats", async (c) => {
     db
       .select({ n: count() })
       .from(t)
-      .where(and(eq(t.assigneeId, c.get("developer").id), inArray(t.status, [...ACTIVE_STATUSES]))),
+      .where(and(eq(t.assigneeId, c.get("user").id), inArray(t.status, [...ACTIVE_STATUSES]))),
   ]);
   return c.json({
     counts: Object.fromEntries(rows.map((r) => [r.status, r.n])),
@@ -285,26 +285,26 @@ type Changes = {
 // Writes one timeline event per changed field. Status and assignee changes are
 // public (the reporter sees who is on it and where it stands); priority and
 // type are triage detail and stay internal.
-async function applyChanges(db: DB, ticket: Ticket, me: Developer, ch: Changes, at: string) {
+async function applyChanges(db: DB, ticket: Ticket, me: User, ch: Changes, at: string) {
   const patch: Partial<Ticket> = {};
   let publicTouch = false;
 
   if (ch.assigneeId !== undefined && ch.assigneeId !== ticket.assigneeId) {
     let toName: string | null = null;
     if (ch.assigneeId !== null) {
-      const [d] = await db.select().from(schema.developers).where(eq(schema.developers.id, ch.assigneeId));
-      if (!d) throw new InputError("Unknown developer");
+      const [d] = await db.select().from(schema.users).where(eq(schema.users.id, ch.assigneeId));
+      if (!d) throw new InputError("Unknown user");
       toName = d.name;
     }
     const [fromDev] = ticket.assigneeId
-      ? await db.select({ name: schema.developers.name }).from(schema.developers).where(eq(schema.developers.id, ticket.assigneeId))
+      ? await db.select({ name: schema.users.name }).from(schema.users).where(eq(schema.users.id, ticket.assigneeId))
       : [];
     await addEvent(db, ticket.id, {
       kind: "assign",
       visibility: "public",
       authorKind: "developer",
       authorName: me.name,
-      developerId: me.id,
+      userId: me.id,
       fromValue: fromDev?.name ?? null,
       toValue: toName,
       at,
@@ -320,7 +320,7 @@ async function applyChanges(db: DB, ticket: Ticket, me: Developer, ch: Changes, 
       visibility: "public",
       authorKind: "developer",
       authorName: me.name,
-      developerId: me.id,
+      userId: me.id,
       fromValue: ticket.status,
       toValue: ch.status,
       at,
@@ -339,7 +339,7 @@ async function applyChanges(db: DB, ticket: Ticket, me: Developer, ch: Changes, 
         visibility: "internal",
         authorKind: "developer",
         authorName: me.name,
-        developerId: me.id,
+        userId: me.id,
         fromValue: ticket[field],
         toValue: next,
         at,
@@ -366,14 +366,14 @@ function parseChanges(f: Record<string, string | undefined>): Changes {
   if (f.assignee_id !== undefined) {
     if (f.assignee_id === "" || f.assignee_id === "null") ch.assigneeId = null;
     else if (/^\d+$/.test(f.assignee_id)) ch.assigneeId = Number(f.assignee_id);
-    else throw new InputError("assignee_id must be a developer id or null");
+    else throw new InputError("assignee_id must be a user id or null");
   }
   return ch;
 }
 
 dev.post("/tickets/:code/pickup", async (c) => {
   const db = getDb(c.env);
-  const me = c.get("developer");
+  const me = c.get("user");
   const ticket = await findTicket(db, c.req.param("code"));
   if (!ticket) return c.json({ error: "Not found" }, 404);
   if (ticket.assigneeId && ticket.assigneeId !== me.id) {
@@ -399,7 +399,7 @@ dev.patch("/tickets/:code", async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
   const fields: Record<string, string> = {};
   for (const [k, v] of Object.entries(body)) fields[k] = v === null ? "null" : String(v);
-  await applyChanges(db, ticket, c.get("developer"), parseChanges(fields), nowIso());
+  await applyChanges(db, ticket, c.get("user"), parseChanges(fields), nowIso());
   return c.json({ ok: true });
 });
 
@@ -407,7 +407,7 @@ dev.patch("/tickets/:code", async (c) => {
 // status to move to in the same action (e.g. reply + Waiting Reporter).
 dev.post("/tickets/:code/comments", async (c) => {
   const db = getDb(c.env);
-  const me = c.get("developer");
+  const me = c.get("user");
   const ticket = await findTicket(db, c.req.param("code"));
   if (!ticket) return c.json({ error: "Not found" }, 404);
 
@@ -423,7 +423,7 @@ dev.post("/tickets/:code/comments", async (c) => {
     visibility,
     authorKind: "developer",
     authorName: me.name,
-    developerId: me.id,
+    userId: me.id,
     body,
     at,
   });

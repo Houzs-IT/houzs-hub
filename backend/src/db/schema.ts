@@ -38,7 +38,7 @@ export const ticketSequences = pgTable("ticket_sequences", {
   nextN: integer("next_n").notNull(),
 });
 
-export const developers = pgTable("developers", {
+export const users = pgTable("users", {
   id: id(),
   email: text("email"),
   name: text("name").notNull(),
@@ -90,7 +90,7 @@ export const ticketEvents = pgTable("ticket_events", {
   visibility: text("visibility").$type<Visibility>().notNull(),
   authorKind: text("author_kind").$type<AuthorKind>().notNull(),
   authorName: text("author_name").notNull(),
-  developerId: integer("developer_id"),
+  userId: integer("user_id"),
   body: text("body"),
   fromValue: text("from_value"),
   toValue: text("to_value"),
@@ -111,4 +111,4 @@ export const ticketAttachments = pgTable("ticket_attachments", {
 export type Ticket = typeof tickets.$inferSelect;
 export type TicketEvent = typeof ticketEvents.$inferSelect;
 export type TicketAttachment = typeof ticketAttachments.$inferSelect;
-export type Developer = typeof developers.$inferSelect;
+export type User = typeof users.$inferSelect;

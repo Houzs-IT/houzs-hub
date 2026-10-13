@@ -287,7 +287,7 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 }
 
 export default function IssueView({ code, variant, onClose }: { code: string; variant: "panel" | "page"; onClose?: () => void }) {
-  const { me, developers, refresh, version } = useHub();
+  const { me, users, refresh, version } = useHub();
   const [data, setData] = useState<Detail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -329,7 +329,7 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
     .filter((e) => (tab === "comments" ? e.kind === "comment" : tab === "history" ? e.kind !== "comment" : true))
     .slice()
     .reverse();
-  const assignee = developers.find((d) => d.id === t.assigneeId);
+  const assignee = users.find((d) => d.id === t.assigneeId);
   const canPickUp = ACTIVE.includes(t.status) && !t.assigneeId;
 
   const details = (
@@ -356,7 +356,7 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
                 onChange={(e) => patch({ assignee_id: e.target.value ? Number(e.target.value) : null })}
               >
                 <option value="">Unassigned</option>
-                {developers.map((d) => (
+                {users.map((d) => (
                   <option key={d.id} value={d.id}>
                     {d.name}
                   </option>
