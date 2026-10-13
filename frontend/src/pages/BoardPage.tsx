@@ -75,7 +75,7 @@ export default function BoardPage() {
               </div>
               <div className="flex-1 space-y-2 overflow-y-auto px-2 pb-3">
                 {cards.map((t) => {
-                  const s = sla(t.created_at, t.priority, t.status);
+                  const s = sla(t.created_at, t.priority, t.status, t.legacy_code);
                   return (
                     <div
                       key={t.code}
