@@ -24,7 +24,7 @@ import {
   validateFiles,
 } from "../services/tickets";
 import type { DevApp } from "../types";
-import { liveRoom } from "../live";
+import { getLiveRoom } from "../live";
 import admin, { isUniqueViolation } from "./admin";
 
 const dev = new Hono<DevApp>();
@@ -44,11 +44,9 @@ const PAGE_SIZE = 50;
 
 dev.route("/admin", admin);
 
-// Hub tabs open a WebSocket here and get each new ticket the moment it is
-// submitted (see live.ts). Signed in with the "it" permission, same as tickets.
 dev.get("/live", need("it"), (c) => {
   if (c.req.header("Upgrade") !== "websocket") return c.json({ error: "Expected a WebSocket" }, 426);
-  return liveRoom(c.env.LIVE).fetch(c.req.raw);
+  return getLiveRoom(c.env.LIVE).fetch(c.req.raw);
 });
 
 dev.get("/me", (c) => {

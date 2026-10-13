@@ -2,7 +2,7 @@ import { and, asc, count, desc, eq, inArray, isNull, or, gt, sql } from "drizzle
 import { Hono } from "hono";
 import { getDb, schema } from "../db/client";
 import { TICKET_PRIORITIES, TICKET_STATUSES, TICKET_TYPES, type Ticket } from "../db/schema";
-import { liveRoom } from "../live";
+import { getLiveRoom } from "../live";
 import { systemAuth } from "../middleware/systemAuth";
 import {
   InputError,
@@ -124,8 +124,8 @@ sys.post("/tickets", async (c) => {
     .set({ lastSendError: null, lastSendErrorAt: null })
     .where(eq(schema.systems.code, systemCode));
 
-  // Same shape as a row of GET /dev/tickets, so the hub can show it as is.
-  const row = {
+  // Same shape as a row of GET /dev/tickets.
+  const ticketRow = {
     code: ticket.code,
     legacy_code: ticket.legacyCode,
     system_code: ticket.systemCode,
@@ -141,7 +141,7 @@ sys.post("/tickets", async (c) => {
     created_at: ticket.createdAt,
     updated_at: ticket.updatedAt,
   };
-  c.executionCtx.waitUntil(liveRoom(c.env.LIVE).broadcast(JSON.stringify({ type: "ticket.created", ticket: row })));
+  c.executionCtx.waitUntil(getLiveRoom(c.env.LIVE).broadcast(JSON.stringify({ type: "ticket.created", ticket: ticketRow })));
 
   return c.json({ code: ticket.code, status: ticket.status, created_at: ticket.createdAt }, 201);
 });

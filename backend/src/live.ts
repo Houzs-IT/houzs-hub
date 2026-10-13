@@ -1,31 +1,28 @@
 import { DurableObject } from "cloudflare:workers";
 
-// One room every open hub tab joins over a WebSocket. When a ticket is
-// submitted, sys.ts calls broadcast() and each tab gets it at once.
-// Hibernation API: idle sockets cost nothing while nobody is sending.
+// Every open hub tab holds a WebSocket here; a submitted ticket is broadcast to all of them.
 export class LiveRoom extends DurableObject {
   async fetch() {
-    const [client, server] = Object.values(new WebSocketPair());
-    this.ctx.acceptWebSocket(server);
-    return new Response(null, { status: 101, webSocket: client });
+    const [browserSocket, serverSocket] = Object.values(new WebSocketPair());
+    this.ctx.acceptWebSocket(serverSocket);
+    return new Response(null, { status: 101, webSocket: browserSocket });
   }
 
   broadcast(message: string) {
-    for (const ws of this.ctx.getWebSockets()) {
+    for (const socket of this.ctx.getWebSockets()) {
       try {
-        ws.send(message);
+        socket.send(message);
       } catch {}
     }
   }
 
-  // Tabs only listen; anything they send is ignored.
   webSocketMessage() {}
 
-  webSocketClose(ws: WebSocket) {
+  webSocketClose(socket: WebSocket) {
     try {
-      ws.close();
+      socket.close();
     } catch {}
   }
 }
 
-export const liveRoom = (ns: DurableObjectNamespace<LiveRoom>) => ns.get(ns.idFromName("hub"));
+export const getLiveRoom = (rooms: DurableObjectNamespace<LiveRoom>) => rooms.get(rooms.idFromName("hub"));
