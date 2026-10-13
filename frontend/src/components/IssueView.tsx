@@ -293,6 +293,7 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState<"all" | "comments" | "history">("all");
   const navigate = useNavigate();
+  const confirmDelete = useRef<HTMLDialogElement>(null);
 
   const load = useCallback(() => {
     api<Detail>(`/tickets/${code}`)
@@ -319,7 +320,7 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
   }
 
   async function remove() {
-    if (!confirm(`Delete ${code} with all its comments and files? This cannot be undone.`)) return;
+    confirmDelete.current?.close();
     setSaving(true);
     try {
       await api(`/tickets/${code}`, { method: "DELETE" });
@@ -357,11 +358,29 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
           </button>
         )}
         {me.perms?.includes("delete_tickets") && (
-          <button className="btn-subtle ml-auto text-loz-red-ink" disabled={saving} onClick={remove}>
+          <button className="btn-subtle ml-auto text-loz-red-ink" disabled={saving} onClick={() => confirmDelete.current?.showModal()}>
             <Trash2 className="h-4 w-4" /> Delete
           </button>
         )}
       </div>
+
+      <dialog
+        ref={confirmDelete}
+        className="card w-[400px] max-w-[calc(100vw-32px)] p-0 text-ink backdrop:bg-black/40"
+      >
+        <div className="border-b border-line px-5 py-3 text-[15px] font-bold">Delete ticket</div>
+        <p className="px-5 py-4 text-sm leading-6 text-ink-subtle">
+          Delete <span className="font-semibold text-ink">{t.code}</span> with all its comments and files? This action cannot be undone.
+        </p>
+        <div className="flex justify-end gap-2 px-5 pb-4">
+          <button className="btn-default" autoFocus onClick={() => confirmDelete.current?.close()}>
+            Cancel
+          </button>
+          <button className="btn border border-loz-red-ink bg-loz-red-ink text-surface hover:opacity-90" onClick={remove}>
+            Delete
+          </button>
+        </div>
+      </dialog>
 
       <div className="card">
         <div className="section-title border-b border-line px-4 py-3">Details</div>
