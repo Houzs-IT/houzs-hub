@@ -102,7 +102,9 @@ staging (`hookka-erp-staging-sg`), feature PR goes to staging first.
       legacy_code = Form timestamp. No photos imported (the Form tab had no Drive links).
       Reporters bound to their Hookka prod user ids with `scripts/bind-reporters.mjs`.
       Imported tickets show no SLA (they predate it).
-- [ ] Same import for Houzs Century / 2990s / Conts rows, if any
+- [x] Houzs Century + 2990s Form history (2026-10-13): 88 rows, HC-0002 to HC-0086 and 2990-0001 to
+      2990-0003. Triage tab had real Sheet IDs (BUG-01, DEV-13), used as legacy_code. HC reporters bound
+      to Houzs ERP user ids. The 3 2990s tickets are not bound yet (2990s accounts unknown).
 - [ ] Deploy hub prod + `SESSION_SECRET` secret
 - [ ] Hookka prod
 - [ ] Then Houzs Century, 2990s using Hookka as the template
