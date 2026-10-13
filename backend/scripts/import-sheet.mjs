@@ -1,15 +1,18 @@
 #!/usr/bin/env node
 // One-shot import of the old Google Form responses into the hub, against DATABASE_URL.
 // Input is the Form responses tab copied as TSV (Timestamp, Name, Contact Number,
-// System, Issue Title, Description, Type, Priority). Dry run unless --apply.
+// System, Issue Title, Description, Type, Priority; optional "Date and Time Issue Occurred"
+// and "Submit Photo", whose Drive links are added under the description). Dry run unless --apply.
 //   node scripts/import-sheet.mjs <file.tsv>                 prints what would be imported
 //   node scripts/import-sheet.mjs <file.tsv> --apply         writes it
 //   node scripts/import-sheet.mjs <file.tsv> --triage <triage.tsv> --apply
 // The Form has no status. --triage is the team's tracking tab copied as TSV, no header,
-// one row per Form row in the same order: [Sheet ID], Priority, Issue Title, System, Developer, Progress.
+// one row per Form row in the same order: [Sheet ID], Priority, Issue Title, System, Developer, Progress,
+// then optionally Start time, End time, Note. Start becomes picked_up_at, End the close time, and
+// a Note lands as an internal note.
 // Progress: blank -> open, On Going, On Hold, Testing, Done -> closed. Developer is matched
 // to a hub user by name or username. Without --triage every ticket lands open, unassigned.
-// Closed tickets get the Form timestamp as resolved/closed time (the real one is unknown).
+// Closed tickets without an End time get the Form timestamp as resolved/closed time.
 // legacy_code is the Sheet ID (BUG-01) when the triage tab has one, else the Form timestamp,
 // so a re-run skips rows already imported.
 // The Form has no user id: reporter_external_id is "sheet:<name in lower case>",
@@ -100,7 +103,8 @@ const bad = [];
 for (const [k, r] of body.entries()) {
   const get = (h) => (r[col[h]] ?? "").trim();
   const tr = triage?.[k].map((c) => c.trim()) ?? [];
-  const sheetId = tr.length === 6 ? tr.shift() : null;
+  const sheetId = /^(BUG|DEV)-\d+$/i.test(tr[0] ?? "") ? tr.shift() : null;
+  const [startAt, endAt] = [tr[5], tr[6]].map((v) => (v ? toIso(v) : null));
   const status = triage ? PROGRESS[(tr[4] ?? "").toLowerCase()] : "open";
   const assigneeId = tr[3] ? userId(tr[3]) : null;
   const at = toIso(get("timestamp"));
@@ -110,14 +114,16 @@ for (const [k, r] of body.entries()) {
   const title = get("issue title").slice(0, 200);
   const name = get("name").replace(/\s+/g, " ").slice(0, 120);
   const why = [!at && "timestamp", !system && "system", !type && "type", !PRIORITIES.includes(priority) && "priority", !title && "title", !name && "name"].filter(Boolean);
-  if (r.length !== header.length) why.push(`${r.length} cells`);
+  if (r.length > header.length) why.push(`${r.length} cells`);
   if (triage && tr[1] !== title) why.push(`triage row ${k + 1} is "${tr[1]}"`);
   if (triage && tr[0]?.toLowerCase() !== priority) why.push(`triage priority ${tr[0]}`);
   if (!status) why.push(`progress "${tr[4]}"`);
   if (assigneeId === undefined) why.push(`no hub user "${tr[3]}"`);
+  if ((tr[5] && !startAt) || (tr[6] && !endAt)) why.push(`start/end time "${tr[5]}" "${tr[6]}"`);
   if (why.length) { bad.push({ ts: get("timestamp"), title, why: why.join(", ") }); continue; }
   const phone = get("contact number");
-  const description = get("description").slice(0, 10000);
+  const photos = get("submit photo");
+  const description = (get("description") + (photos ? `\n\nPhotos: ${photos}` : "")).slice(0, 10000);
   ok.push({
     legacy: sheetId || get("timestamp"),
     at,
@@ -132,6 +138,10 @@ for (const [k, r] of body.entries()) {
     status,
     assigneeId,
     developer: tr[3] || "-",
+    occurredAt: toIso(get("date and time issue occurred")),
+    startAt,
+    endAt,
+    note: tr[7] || null,
   });
 }
 ok.sort((a, b) => a.at.localeCompare(b.at));
@@ -156,18 +166,23 @@ try {
     for (const x of todo) {
       const [{ next }] = await tx`UPDATE ticket_sequences SET next_n = next_n + 1 WHERE system_code = ${x.system} RETURNING next_n AS next`;
       const code = `${x.system}-${String(next - 1).padStart(4, "0")}`;
-      const closedAt = x.status === "closed" ? x.at : null;
+      const closedAt = x.status === "closed" ? x.endAt ?? x.at : null;
       const [{ id }] = await tx`
         INSERT INTO tickets (code, legacy_code, system_code, type, priority, status, title, description,
-          reporter_external_id, reporter_name, reporter_phone, assignee_id, resolved_at, closed_at,
+          occurred_at, reporter_external_id, reporter_name, reporter_phone, assignee_id, picked_up_at, resolved_at, closed_at,
           last_public_activity_at, last_public_actor, reporter_seen_at, created_at, updated_at)
         VALUES (${code}, ${x.legacy}, ${x.system}, ${x.type}, ${x.priority}, ${x.status}, ${x.title}, ${x.description},
-          ${x.reporterId}, ${x.name}, ${x.phone}, ${x.assigneeId}, ${closedAt}, ${closedAt},
+          ${x.occurredAt}, ${x.reporterId}, ${x.name}, ${x.phone}, ${x.assigneeId}, ${x.startAt}, ${closedAt}, ${closedAt},
           ${x.at}, 'reporter', ${x.at}, ${x.at}, ${x.at})
         RETURNING id`;
       await tx`
         INSERT INTO ticket_events (ticket_id, kind, visibility, author_kind, author_name, created_at)
         VALUES (${id}, 'created', 'public', 'reporter', ${x.name}, ${x.at})`;
+      if (x.note) {
+        await tx`
+          INSERT INTO ticket_events (ticket_id, kind, visibility, author_kind, author_name, body, created_at)
+          VALUES (${id}, 'comment', 'internal', 'system', 'Sheet import', ${x.note}, ${x.startAt ?? x.at})`;
+      }
       out.push(code);
     }
     return out;
