@@ -71,7 +71,15 @@ async function roleExists(db: DB, key: unknown) {
 admin.get("/systems", need("integrations"), async (c) => {
   const s = schema.systems;
   const rows = await getDb(c.env)
-    .select({ code: s.code, name: s.name, active: s.active, apiKeyHash: s.apiKeyHash, lastCallAt: s.lastCallAt })
+    .select({
+      code: s.code,
+      name: s.name,
+      active: s.active,
+      apiKeyHash: s.apiKeyHash,
+      lastCallAt: s.lastCallAt,
+      lastSendError: s.lastSendError,
+      lastSendErrorAt: s.lastSendErrorAt,
+    })
     .from(s)
     .orderBy(asc(s.name));
   return c.json({ systems: rows.map(({ apiKeyHash, ...r }) => ({ ...r, hasKey: !!apiKeyHash })) });

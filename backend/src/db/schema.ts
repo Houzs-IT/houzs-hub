@@ -29,6 +29,8 @@ export const systems = pgTable("systems", {
   active: integer("active").notNull().default(1),
   createdAt: text("created_at").notNull(),
   lastCallAt: text("last_call_at"),
+  lastSendError: text("last_send_error"),
+  lastSendErrorAt: text("last_send_error_at"),
 });
 
 export const ticketSequences = pgTable("ticket_sequences", {
