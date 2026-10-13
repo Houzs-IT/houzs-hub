@@ -4,7 +4,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { createMiddleware } from "hono/factory";
 import { sign, verify } from "hono/jwt";
 import { getDb, schema } from "../db/client";
-import { effective } from "../services/perms";
+import { effective, type Perm } from "../services/perms";
 import type { DevApp, Env } from "../types";
 
 const COOKIE = "hub_session";
@@ -27,6 +27,15 @@ export async function startSession(c: Context<{ Bindings: Env }>, userId: number
 export function endSession(c: Context) {
   deleteCookie(c, COOKIE, { path: "/", secure: true });
 }
+
+// After devAuth: passes if the user holds any of the given permissions.
+export const need = (...perms: Perm[]) =>
+  createMiddleware<DevApp>(async (c, next) => {
+    if (!perms.some((p) => c.get("user").perms.includes(p))) {
+      return c.json({ error: "You do not have permission for this" }, 403);
+    }
+    await next();
+  });
 
 export const devAuth = createMiddleware<DevApp>(async (c, next) => {
   const token = getCookie(c, COOKIE);

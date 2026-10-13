@@ -9,7 +9,7 @@ import {
   type Ticket,
   type TicketStatus,
 } from "../db/schema";
-import { devAuth } from "../middleware/devAuth";
+import { devAuth, need } from "../middleware/devAuth";
 import { EMAIL_RE, MIN_PASSWORD, hashPassword, verifyPassword } from "../services/crypto";
 import {
   ACTIVE_STATUSES,
@@ -28,6 +28,10 @@ import admin, { isUniqueViolation } from "./admin";
 
 const dev = new Hono<DevApp>();
 dev.use("*", devAuth);
+// The IT category: every ticket route and attachment needs the "it" permission.
+dev.use("/tickets", need("it"));
+dev.use("/tickets/*", need("it"));
+dev.use("/attachments/*", need("it"));
 
 dev.onError((err, c) => {
   if (err instanceof InputError) return c.json({ error: err.message }, 400);

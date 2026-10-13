@@ -1,6 +1,6 @@
 import { ChevronDown, KanbanSquare, List, LogOut, Moon, Plug, ShieldCheck, Sun, UserCheck, Users } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
+import { Link, Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
 import { api, json, type Perm, type User, type SystemRow } from "../api/client";
 import { useTheme } from "../lib/theme";
 import { usePoll } from "../lib/usePoll";
@@ -8,6 +8,8 @@ import FirstPasswordPage from "../pages/FirstPasswordPage";
 import { Avatar } from "./Bits";
 
 type Stats = { active_by_system: Record<string, number>; my_active: number };
+
+const IT_PATH = /^\/($|tickets|board|queue)/;
 
 const PAGE_NAMES: Record<string, string> = {
   "/tickets": "List",
@@ -108,7 +110,7 @@ export default function Layout() {
   }, []);
 
   const loadStats = useCallback(() => {
-    if (base) api<Stats>("/tickets/stats").then(setStats).catch(() => {});
+    if (base?.me.perms?.includes("it")) api<Stats>("/tickets/stats").then(setStats).catch(() => {});
   }, [base]);
   useEffect(loadStats, [loadStats, version]);
   usePoll(loadStats, 30_000);
@@ -134,6 +136,8 @@ export default function Layout() {
   });
 
   const can = (...p: Perm[]) => p.some((x) => base?.me.perms?.includes(x));
+  // Without IT, land on the first admin page they may open, else My account.
+  const landing = can("users", "roles") ? "/users" : can("integrations") ? "/integrations" : "/account";
   const itActive = Object.values(stats.active_by_system).reduce((a, n) => a + n, 0);
 
   if (firstLogin) return <FirstPasswordPage name={firstLogin} />;
@@ -156,8 +160,9 @@ export default function Layout() {
           </div>
 
           <nav className="space-y-0.5 px-3 py-2">
-            {/* The IT group (workspace views and its systems) is one block, so RBAC
-                can show or hide it with one condition. */}
+            {/* The IT category (workspace views and its systems), shown with the "it"
+                permission. The server refuses ticket routes without it too. */}
+            {can("it") && (
             <button
               onClick={toggleIt}
               aria-expanded={itOpen}
@@ -169,7 +174,8 @@ export default function Layout() {
               )}
               <ChevronDown className={`h-3.5 w-3.5 transition-transform ${itOpen ? "" : "-rotate-90"}`} />
             </button>
-            {itOpen && (
+            )}
+            {can("it") && itOpen && (
               <>
                 <div className="px-2.5 pb-1 pt-1.5 text-[9px] font-semibold uppercase tracking-brand text-sidebar-ink-muted/70">Workspace</div>
                 <NavItem to="/tickets" icon={<List className="h-4 w-4" />} label="List" />
@@ -252,7 +258,7 @@ export default function Layout() {
         </aside>
 
         <main className="min-w-0 flex-1 overflow-hidden">
-          <Outlet />
+          {!can("it") && IT_PATH.test(pathname) ? <Navigate to={landing} replace /> : <Outlet />}
         </main>
       </div>
     </HubContext.Provider>

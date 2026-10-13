@@ -1,23 +1,14 @@
 import { asc, count, eq } from "drizzle-orm";
 import { Hono } from "hono";
-import { createMiddleware } from "hono/factory";
 import { getDb, schema, type DB } from "../db/client";
 import { EMAIL_RE, USERNAME_RE, hashPassword, randomPassword } from "../services/crypto";
-import { PERMISSIONS, joinPerms, locksOut, parsePerms, type Perm } from "../services/perms";
+import { need } from "../middleware/devAuth";
+import { PERMISSIONS, joinPerms, locksOut, parsePerms } from "../services/perms";
 import type { DevApp } from "../types";
 
 // Mounted inside routes/dev.ts, after devAuth, so c.get("user") is set.
 // There is no blanket check here: every route carries its own need(...).
 const admin = new Hono<DevApp>();
-
-// Passes if the user holds any of the given permissions.
-const need = (...perms: Perm[]) =>
-  createMiddleware<DevApp>(async (c, next) => {
-    if (!perms.some((p) => c.get("user").perms.includes(p))) {
-      return c.json({ error: "You do not have permission for this" }, 403);
-    }
-    await next();
-  });
 
 const d = schema.users;
 const r = schema.roles;
@@ -205,7 +196,8 @@ admin.post("/roles", need("roles"), async (c) => {
   const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
   const name = roleName(b.name);
   if (!name) return c.json({ error: "Give the role a name" }, 400);
-  const permissions = joinPerms(b.permissions ?? []);
+  // Most roles work tickets, so a new role starts with IT on.
+  const permissions = joinPerms(b.permissions ?? ["it"]);
   if (permissions === null) return c.json({ error: "Unknown permission" }, 400);
 
   // The key never changes after this, so renaming is free.

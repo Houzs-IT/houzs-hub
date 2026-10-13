@@ -1,6 +1,7 @@
 // Permissions a role can grant. Adding one here is all it takes to make it a
 // switch on the Roles page; then guard its routes with need("<key>").
 export const PERMISSIONS = [
+  { key: "it", label: "IT tickets", hint: "The IT category: List, Board, My queue and every system's tickets" },
   { key: "users", label: "Manage users", hint: "Add users, reset passwords, switch accounts off" },
   { key: "roles", label: "Manage roles", hint: "Create and rename roles, set permissions, assign roles and overrides" },
   { key: "integrations", label: "See Integrations", hint: "Whether each system is connected to the hub" },
