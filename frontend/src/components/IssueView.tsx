@@ -1,6 +1,6 @@
-import { ArrowRight, ChevronDown, ExternalLink, FileText, Lock, Maximize2, Paperclip, X } from "lucide-react";
+import { ArrowRight, ChevronDown, ExternalLink, FileText, Lock, Maximize2, Paperclip, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { api, attachmentUrl, json, type Attachment, type Status, type TicketEvent, type TicketFull } from "../api/client";
 import { fmtAgo, fmtDateTime, fmtSize, sla } from "../lib/format";
 import { ACTIVE, PRIORITIES, PRIORITY_LABEL, STATUSES, STATUS_LABEL, STATUS_STYLE, TYPES, TYPE_LABEL } from "../lib/labels";
@@ -292,6 +292,7 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState<"all" | "comments" | "history">("all");
+  const navigate = useNavigate();
 
   const load = useCallback(() => {
     api<Detail>(`/tickets/${code}`)
@@ -313,6 +314,20 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
     } catch (e) {
       setError((e as Error).message);
     } finally {
+      setSaving(false);
+    }
+  }
+
+  async function remove() {
+    if (!confirm(`Delete ${code} with all its comments and files? This cannot be undone.`)) return;
+    setSaving(true);
+    try {
+      await api(`/tickets/${code}`, { method: "DELETE" });
+      if (onClose) onClose();
+      else navigate("/tickets");
+      refresh();
+    } catch (e) {
+      setError((e as Error).message);
       setSaving(false);
     }
   }
@@ -339,6 +354,11 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
         {canPickUp && (
           <button className="btn-default" disabled={saving} onClick={() => patch({}, "/pickup")}>
             Pick up
+          </button>
+        )}
+        {me.perms?.includes("delete_tickets") && (
+          <button className="btn-subtle ml-auto text-loz-red-ink" disabled={saving} onClick={remove}>
+            <Trash2 className="h-4 w-4" /> Delete
           </button>
         )}
       </div>

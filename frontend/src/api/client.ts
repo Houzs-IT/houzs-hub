@@ -4,7 +4,7 @@ export type TicketType = "bug" | "development";
 
 // Permission keys come from the server (services/perms.ts); these are the ones
 // the portal checks to show or hide things.
-export type Perm = "it" | "users" | "roles" | "integrations";
+export type Perm = "it" | "delete_tickets" | "users" | "roles" | "integrations";
 export type User = {
   id: number;
   name: string;

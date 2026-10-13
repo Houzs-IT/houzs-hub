@@ -1,5 +1,6 @@
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, MessageSquare } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api, type TicketRow } from "../api/client";
 import { Avatar, Lozenge, PriorityIcon, TypeIcon } from "../components/Bits";
 import { useHub } from "../components/Layout";
@@ -27,6 +28,7 @@ const COLS: Col[] = [
 export default function ListPage({ queue = false }: { queue?: boolean }) {
   const { version, refresh } = useHub();
   const f = useFilters();
+  const navigate = useNavigate();
   const [data, setData] = useState<ListResp | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -97,6 +99,7 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
               <tr
                 key={t.code}
                 onClick={() => f.set({ selected: t.code })}
+                onDoubleClick={() => navigate(`/tickets/${t.code}`)}
                 className={`group h-11 cursor-pointer border-b border-line-subtle last:border-0 ${selected === t.code ? "bg-primary-soft" : "hover:bg-surface-2"}`}
               >
                 <td className="pl-4 pr-3">

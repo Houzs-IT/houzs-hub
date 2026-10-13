@@ -427,6 +427,20 @@ dev.patch("/tickets/:code", async (c) => {
   return c.json({ ok: true });
 });
 
+// Comments and attachment rows go with it (ON DELETE CASCADE, migration 008).
+dev.delete("/tickets/:code", need("delete_tickets"), async (c) => {
+  const db = getDb(c.env);
+  const ticket = await findTicket(db, c.req.param("code"));
+  if (!ticket) return c.json({ error: "Not found" }, 404);
+  const files = await db
+    .select({ key: schema.ticketAttachments.r2Key })
+    .from(schema.ticketAttachments)
+    .where(eq(schema.ticketAttachments.ticketId, ticket.id));
+  await db.delete(t).where(eq(t.id, ticket.id));
+  if (files.length) await c.env.FILES.delete(files.map((f) => f.key));
+  return c.json({ ok: true });
+});
+
 // Multipart: body, visibility (public|internal), files, and an optional
 // status to move to in the same action (e.g. reply + Waiting Reporter).
 dev.post("/tickets/:code/comments", async (c) => {
