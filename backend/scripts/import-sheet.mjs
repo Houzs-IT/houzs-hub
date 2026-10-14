@@ -10,7 +10,7 @@
 // one row per Form row in the same order: [Sheet ID], Priority, Issue Title, System, Developer, Progress,
 // then optionally Start time, End time, Note. Start becomes picked_up_at, End the close time, and
 // a Note lands as an internal note.
-// Progress: blank -> open, On Going, On Hold, Testing, Done -> closed. Developer is matched
+// Progress: blank -> open, On Going, On Hold, Testing (ON PR too), Done -> closed. Developer is matched
 // to a hub user by name or username. Without --triage every ticket lands open, unassigned.
 // Closed tickets without an End time get the Form timestamp as resolved/closed time.
 // legacy_code is the Sheet ID (BUG-01) when the triage tab has one, else the Form timestamp,
@@ -72,7 +72,7 @@ function parseTsv(text) {
 const SYSTEMS = { hookka: "HK", "houzs century": "HC", "2990s": "2990", conts: "CONTS" };
 const TYPES = { bugs: "bug", bug: "bug", development: "development" };
 const PRIORITIES = ["urgent", "high", "medium", "low"];
-const PROGRESS = { "": "open", "on going": "in_progress", "on hold": "on_hold", testing: "testing", done: "closed" };
+const PROGRESS = { "": "open", "on going": "in_progress", "on hold": "on_hold", testing: "testing", "on pr": "testing", done: "closed" };
 
 // "07/09/2026 19:26:12" is 7 September, Malaysia time.
 function toIso(ts) {
