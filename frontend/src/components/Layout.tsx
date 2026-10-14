@@ -154,7 +154,7 @@ export default function Layout() {
       <div className="flex h-full">
         {isMenuOpen && <div className="fixed inset-0 z-30 bg-black/50 lg:hidden" onClick={() => setIsMenuOpen(false)} />}
         <aside
-          className={`fixed inset-y-0 left-0 z-40 flex w-60 shrink-0 flex-col bg-sidebar transition-transform lg:relative lg:translate-x-0 ${
+          className={`fixed inset-y-0 left-0 z-40 flex w-60 shrink-0 flex-col bg-sidebar transition-transform motion-reduce:transition-none lg:relative lg:translate-x-0 ${
             isMenuOpen ? "translate-x-0" : "-translate-x-full"
           }`}
         >
@@ -187,7 +187,7 @@ export default function Layout() {
               {!itOpen && itActive > 0 && (
                 <span className="rounded-full bg-[var(--sidebar-hover)] px-1.5 text-[10.5px] normal-case tracking-normal tabular-nums">{itActive}</span>
               )}
-              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${itOpen ? "" : "-rotate-90"}`} />
+              <ChevronDown className={`h-3.5 w-3.5 transition-transform motion-reduce:transition-none ${itOpen ? "" : "-rotate-90"}`} />
             </button>
             )}
             {can("it") && itOpen && (

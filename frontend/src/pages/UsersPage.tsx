@@ -416,7 +416,7 @@ export default function UsersPage() {
                               onClick={() => setOpen(open === u.id ? null : u.id)}
                             >
                               <SlidersHorizontal className="h-3.5 w-3.5" /> Permissions
-                              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open === u.id ? "rotate-180" : ""}`} />
+                              <ChevronDown className={`h-3.5 w-3.5 transition-transform motion-reduce:transition-none ${open === u.id ? "rotate-180" : ""}`} />
                             </button>
                           )}
                           {canUsers && (

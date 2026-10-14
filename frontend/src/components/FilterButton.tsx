@@ -53,7 +53,7 @@ export default function FilterButton({
         <ChevronDown className="h-4 w-4" />
       </button>
       {open && (
-        <div className="absolute left-0 top-10 z-30 max-h-[60vh] min-w-[220px] overflow-y-auto rounded-[10px] bg-overlay py-1.5 shadow-overlay max-sm:fixed max-sm:inset-x-4 max-sm:bottom-4 max-sm:top-auto">
+        <div className="absolute left-0 top-10 z-30 max-h-[60vh] min-w-[220px] overflow-y-auto overscroll-contain rounded-[10px] border border-transparent bg-overlay py-1.5 shadow-overlay max-sm:fixed max-sm:inset-x-4 max-sm:bottom-4 max-sm:top-auto">
           {options.map((o) => {
             const checked = selected.includes(o.value);
             return (

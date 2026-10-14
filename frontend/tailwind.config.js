@@ -7,6 +7,8 @@ const v = (name) => `rgb(var(--${name}) / <alpha-value>)`;
 export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   darkMode: "class",
+  // Touch screens latch :hover after a tap; only apply hover styles where a pointer can hover.
+  future: { hoverOnlyWhenSupported: true },
   theme: {
     extend: {
       colors: {

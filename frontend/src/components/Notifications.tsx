@@ -62,9 +62,9 @@ export function NotificationBell() {
       </button>
 
       {isOpen && (
-        <div className="absolute left-3 top-full z-50 mt-1 w-[min(340px,calc(100vw-32px))] rounded-[10px] bg-overlay text-ink shadow-overlay">
+        <div className="absolute left-3 top-full z-50 mt-1 w-[min(340px,calc(100vw-32px))] rounded-[10px] border border-transparent bg-overlay text-ink shadow-overlay">
           <div className="border-b border-line px-4 py-2.5 text-[13px] font-bold">Notifications</div>
-          <div className="max-h-[60vh] overflow-y-auto">
+          <div className="max-h-[60vh] overflow-y-auto overscroll-contain">
             {latest?.notifications.map((notification) => (
               <Link
                 key={notification.id}

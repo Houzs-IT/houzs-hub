@@ -187,9 +187,12 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
                   ) : (
                     <div className="flex items-center gap-2">
                       <Avatar name={null} size={24} />
-                      <span className="text-ink-subtlest group-hover:hidden">Unassigned</span>
+                      {/* Touch screens cannot hover, so Pick up is always shown there. */}
+                      <span className={`text-ink-subtlest ${ACTIVE.includes(t.status) ? "group-hover:hidden [@media(hover:none)]:hidden" : ""}`}>
+                        Unassigned
+                      </span>
                       {ACTIVE.includes(t.status) && (
-                        <button className="hidden h-6 rounded px-1.5 text-xs font-medium text-primary hover:bg-primary-soft group-hover:inline" onClick={() => pickup(t.code)}>
+                        <button className="hidden h-6 rounded px-1.5 text-xs font-medium text-primary hover:bg-primary-soft group-hover:inline [@media(hover:none)]:inline" onClick={() => pickup(t.code)}>
                           Pick up
                         </button>
                       )}

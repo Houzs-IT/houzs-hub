@@ -40,7 +40,7 @@ export default function ProjectShell({
               <div className="eyebrow">IT Hub · Tickets</div>
               <h1 className="mt-1 text-[24px] font-extrabold tracking-tight text-ink">{title}</h1>
             </div>
-            <div className="inline-flex rounded-md border border-line bg-surface p-1 shadow-stone">
+            <div className="inline-flex rounded-[9px] border border-line bg-surface p-1 shadow-stone">
               <NavLink to={`/tickets${qs}`} end className={tab}>
                 <List className="h-3.5 w-3.5" /> List
               </NavLink>
