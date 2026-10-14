@@ -239,8 +239,9 @@ export default function Layout() {
                   <NavItem
                     key={s.code}
                     to={`/tickets?system=${s.code}`}
+                    // Same width for every code, so the system names line up.
                     icon={
-                      <span className="grid h-5 min-w-[22px] place-items-center rounded border border-[var(--sidebar-border)] px-1 font-docno text-[9px] font-semibold text-accent-bright">
+                      <span className="grid h-5 w-12 place-items-center truncate rounded bg-[var(--sidebar-hover)] px-1 font-docno text-[9px] font-semibold text-accent-bright">
                         {s.code}
                       </span>
                     }
