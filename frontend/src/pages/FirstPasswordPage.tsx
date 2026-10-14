@@ -21,11 +21,7 @@ export default function FirstPasswordPage({ name }: { name: string }) {
           <p className="mb-5 mt-1 text-[13px] text-ink-subtle">
             Choose your own password. The one you were given stops working, and nobody else will know the new one.
           </p>
-          <PasswordForm
-            currentLabel="Password you were given"
-            submitLabel="Save and continue"
-            onDone={() => location.reload()}
-          />
+          <PasswordForm submitLabel="Save and continue" onDone={() => location.reload()} />
         </div>
 
         <button
