@@ -198,7 +198,7 @@ export default function Layout() {
           <div className="pointer-events-none absolute right-0 top-0 h-full w-px bg-gradient-to-b from-transparent via-accent/35 to-transparent" />
           <div className="relative flex items-center gap-2.5 border-b border-[var(--sidebar-border)] py-4 pl-4 pr-2">
             <span className="grid h-9 w-9 place-items-center rounded-lg bg-[var(--sidebar-active)] text-[12px] font-bold tracking-wider text-accent-bright shadow-[inset_0_0_0_1px_rgba(161,106,46,0.35)]">
-              IT
+              HH
             </span>
             <div className="min-w-0">
               <div className="truncate text-[14px] font-bold text-sidebar-ink">Houzs Hub</div>
@@ -311,7 +311,7 @@ export default function Layout() {
             <button className="btn-subtle h-10 px-2" onClick={() => setIsMenuOpen(true)} aria-label="Open menu" aria-expanded={isMenuOpen}>
               <Menu className="h-5 w-5" />
             </button>
-            <span className="flex-1 text-[14px] font-bold text-ink"></span>
+            <span className="flex-1 text-[14px] font-bold text-ink">Houzs Hub</span>
             {/* New activity stays visible on phones, where the sidebar bell is behind the menu. */}
             {can("it") && (
               <Link

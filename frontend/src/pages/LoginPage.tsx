@@ -38,7 +38,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="mb-6 flex items-center gap-3">
           <span className="grid h-10 w-10 place-items-center rounded-lg bg-sidebar text-[13px] font-bold tracking-wider text-accent-bright shadow-[inset_0_0_0_1px_rgba(161,106,46,0.35)]">
-            IT
+            HH
           </span>
           <div>
             <div className="text-[16px] font-bold text-ink">Houzs Hub</div>
