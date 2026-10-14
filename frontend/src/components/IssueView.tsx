@@ -499,7 +499,7 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
                 </a>
               )}
               {t.reporterEmail && (
-                <a className="block truncate text-primary hover:underline" href={`mailto:${t.reporterEmail}`}>
+                <a className="block break-all text-primary hover:underline" href={`mailto:${t.reporterEmail}`}>
                   {t.reporterEmail}
                 </a>
               )}
@@ -542,15 +542,15 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
           <Row label="Occurred">{fmtDateTime(t.occurredAt)}</Row>
           {t.pageUrl && (
             <Row label="Page">
-              <a className="inline-flex max-w-full items-center gap-1 text-primary hover:underline" href={t.pageUrl} target="_blank" rel="noreferrer">
-                <span className="truncate">{t.pageUrl}</span>
-                <ExternalLink className="h-3 w-3 shrink-0" />
+              <a className="break-all text-primary hover:underline" href={t.pageUrl} target="_blank" rel="noreferrer">
+                {t.pageUrl}
+                <ExternalLink className="ml-1 inline h-3 w-3 align-[-1px]" />
               </a>
             </Row>
           )}
           {(t.appVersion || t.userAgent) && (
             <Row label="Client">
-              <span className="block truncate text-xs text-ink-subtle" title={t.userAgent ?? ""}>
+              <span className="block break-words text-xs text-ink-subtle">
                 {t.appVersion ? `v${t.appVersion} ` : ""}
                 {t.userAgent}
               </span>

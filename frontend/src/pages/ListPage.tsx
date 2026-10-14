@@ -90,7 +90,7 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
         </div>
       )}
       {/* With a ticket open beside it, the table would be a sideways-scrolling strip, so the cards show instead. */}
-      <div className={`space-y-2 ${selected ? "" : "lg:hidden"}`}>
+      <div className={`space-y-2 ${selected ? "" : "xl:hidden"}`}>
         <div className="flex items-center gap-2">
           <label className="flex items-center gap-2 text-xs text-ink-subtle">
             Sort by
@@ -150,7 +150,7 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
         {!data && !error && <div className="py-16 text-center text-sm text-ink-subtle">Loading...</div>}
       </div>
 
-      <div className={`card min-w-[920px] min-[1440px]:min-w-[1080px] ${selected ? "hidden" : "hidden lg:block"}`}>
+      <div className={`card min-w-[920px] min-[1440px]:min-w-[1080px] ${selected ? "hidden" : "hidden xl:block"}`}>
       <table className="w-full table-fixed border-collapse text-[13px]">
         <thead className="sticky top-0 z-10">
           <tr>

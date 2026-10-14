@@ -63,7 +63,7 @@ export default function ProjectShell({
             <Toolbar showStatus={showStatus} showAssignee={showAssignee} />
           </div>
         </div>
-        <div className="min-h-0 flex-1 overflow-auto px-4 pb-8 md:px-8">{children}</div>
+        <div className="min-h-0 flex-1 scroll-pt-10 overflow-auto px-4 pb-8 md:px-8">{children}</div>
       </div>
 
       {selected && (
