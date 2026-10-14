@@ -7,7 +7,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { connect } from "./db.mjs";
 
 const code = process.argv[2];
-if (!code || !/^[A-Z0-9]{2,6}$/.test(code)) {
+if (!code || !/^[A-Z0-9]{2,8}$/.test(code)) {
   console.error("Usage: node scripts/issue-api-key.mjs <SYSTEM_CODE>");
   process.exit(1);
 }
