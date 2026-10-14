@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { getDb, schema } from "../db/client";
-import { endSession, startSession } from "../middleware/devAuth";
+import { ACCOUNT_DISABLED, endSession, startSession } from "../middleware/devAuth";
 import { DUMMY_HASH, verifyPassword } from "../services/crypto";
 import type { Env } from "../types";
 
@@ -31,6 +31,11 @@ auth.post("/login", async (c) => {
   }
 
   const ok = await verifyPassword(password, user?.passwordHash ?? DUMMY_HASH);
+  // Only someone who knows the password learns the account is switched off,
+  // so this does not reveal which usernames exist.
+  if (user?.passwordHash && ok && !user.active) {
+    return c.json({ error: ACCOUNT_DISABLED, code: "account_disabled" }, 403);
+  }
   if (!user || !user.passwordHash || !user.active || !ok) {
     if (user) {
       const fails = user.failedLogins + 1;

@@ -24,6 +24,8 @@ export async function startSession(c: Context<{ Bindings: Env }>, userId: number
   setCookie(c, COOKIE, token, { httpOnly: true, secure: true, sameSite: "Lax", path: "/", maxAge: SESSION_DAYS * 86400 });
 }
 
+export const ACCOUNT_DISABLED = "Your account has been disabled. Ask an IT admin to turn it back on.";
+
 export function endSession(c: Context) {
   deleteCookie(c, COOKIE, { path: "/", secure: true });
 }
@@ -50,7 +52,8 @@ export const devAuth = createMiddleware<DevApp>(async (c, next) => {
     .leftJoin(schema.roles, eq(schema.roles.key, schema.users.role))
     .where(eq(schema.users.id, id))
     .limit(1);
-  if (!row?.user.active) return c.json({ error: "Not signed in" }, 401);
+  if (!row) return c.json({ error: "Not signed in" }, 401);
+  if (!row.user.active) return c.json({ error: ACCOUNT_DISABLED, code: "account_disabled" }, 401);
   const user = {
     ...row.user,
     roleName: row.role?.name ?? row.user.role,

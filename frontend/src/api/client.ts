@@ -114,11 +114,12 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(BASE + path, { credentials: "same-origin", ...init });
   // Every page and poll goes through here, so this is the one place an expired
   // session sends the user back to the login page.
+  const data = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
   if (res.status === 401) {
-    location.assign(`/login?next=${encodeURIComponent(location.pathname + location.search)}`);
+    const reason = data.code === "account_disabled" ? "&disabled=1" : "";
+    location.assign(`/login?next=${encodeURIComponent(location.pathname + location.search)}${reason}`);
     return new Promise<T>(() => {});
   }
-  const data = (await res.json().catch(() => ({}))) as { error?: string };
   if (!res.ok) throw new ApiError(res.status, data.error ?? `Request failed (${res.status})`);
   return data as T;
 }
