@@ -201,8 +201,8 @@ export default function Layout() {
               IT
             </span>
             <div className="min-w-0">
-              <div className="truncate text-[14px] font-bold text-sidebar-ink">Houzs IT Hub</div>
-              <div className="truncate text-[9.5px] font-bold uppercase tracking-brand text-accent-bright">Tickets</div>
+              <div className="truncate text-[14px] font-bold text-sidebar-ink">Houzs Hub</div>
+              <div className="truncate text-[9.5px] font-bold uppercase tracking-brand text-accent-bright">ENTERPRISE PORTAL</div>
             </div>
             {can("it") && (
               <div className="ml-auto">
@@ -311,7 +311,7 @@ export default function Layout() {
             <button className="btn-subtle h-10 px-2" onClick={() => setIsMenuOpen(true)} aria-label="Open menu" aria-expanded={isMenuOpen}>
               <Menu className="h-5 w-5" />
             </button>
-            <span className="flex-1 text-[14px] font-bold text-ink">Houzs IT Hub</span>
+            <span className="flex-1 text-[14px] font-bold text-ink"></span>
             {/* New activity stays visible on phones, where the sidebar bell is behind the menu. */}
             {can("it") && (
               <Link

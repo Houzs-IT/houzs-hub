@@ -1,4 +1,4 @@
-# Houzs IT Hub
+# Houzs Hub
 
 Central IT ticketing for the group's systems: Hookka (`HK`), Houzs Century (`HC`),
 2990s (`2990`), Conts (`CONTS`) and Houzs Connect (`CONNECT`). Each ticket is coded

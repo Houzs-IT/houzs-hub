@@ -76,7 +76,7 @@ export default function NotificationsPage() {
   return (
     <div className="h-full overflow-auto px-4 py-6 md:px-8">
       <div className="mx-auto max-w-3xl">
-        <div className="eyebrow">IT Hub · Activity</div>
+        <div className="eyebrow">Houzs Hub · Activity</div>
         <div className="mt-1 flex flex-wrap items-end justify-between gap-3">
           <h1 className="text-[24px] font-extrabold tracking-tight text-ink">
             Notifications {data && <span className="text-[15px] font-semibold text-ink-subtle">({data.total_capped ? "1000+" : data.total})</span>}

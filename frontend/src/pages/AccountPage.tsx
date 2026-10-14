@@ -29,7 +29,7 @@ export default function AccountPage() {
 
   return (
     <div className="h-full overflow-auto px-4 py-6 md:px-8">
-      <div className="eyebrow">IT Hub · Account</div>
+      <div className="eyebrow">Houzs Hub · Account</div>
       <h1 className="mt-1 text-[24px] font-extrabold tracking-tight text-ink">My account</h1>
 
       <div className="mt-4 grid max-w-3xl gap-4 md:grid-cols-2">

@@ -11,8 +11,8 @@ export default function FirstPasswordPage({ name }: { name: string }) {
             IT
           </span>
           <div>
-            <div className="text-[16px] font-bold text-ink">Houzs IT Hub</div>
-            <div className="text-[9.5px] font-bold uppercase tracking-brand text-accent">Developer portal</div>
+            <div className="text-[16px] font-bold text-ink">Houzs Hub</div>
+            <div className="text-[9.5px] font-bold uppercase tracking-brand text-accent">ENTERPRISE PORTAL</div>
           </div>
         </div>
 
