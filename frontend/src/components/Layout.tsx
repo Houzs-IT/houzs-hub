@@ -127,14 +127,13 @@ function TeamActivity({ teammates, canManage }: { teammates: Teammate[]; canMana
             {active.length > 0 && <TeammateGroup label="Active now" teammates={active} isActive onPick={close} />}
             {away.length > 0 && <TeammateGroup label="Away" teammates={away} isActive={false} onPick={close} />}
           </div>
-          <div className="flex items-center gap-2 border-t border-line px-4 py-2.5 text-[11px] text-ink-subtle">
-            <span className="flex-1">Away after 2½ min quiet · gone after 15</span>
-            {canManage && (
+          {canManage && (
+            <div className="flex justify-end border-t border-line px-4 py-2.5 text-[11px]">
               <Link to="/users" onClick={close} className="tap font-bold uppercase tracking-wide text-primary hover:underline">
                 Manage access
               </Link>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       )}
     </div>
