@@ -11,7 +11,10 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  // Set when an admin switched the account off while it was signed in.
+  const [error, setError] = useState<string | null>(() =>
+    params.get("disabled") ? "Your account has been disabled. Ask an IT admin to turn it back on." : null,
+  );
   const [busy, setBusy] = useState(false);
 
   async function submit(e: FormEvent) {

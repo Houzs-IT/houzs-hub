@@ -1,5 +1,5 @@
 import { ChevronDown, Copy, KeyRound, MoreHorizontal, Plus, RotateCcw, SlidersHorizontal, X } from "lucide-react";
-import { Fragment, useCallback, useEffect, useState, type FormEvent } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { api, json, type Perm, type PermDef, type RoleRow } from "../api/client";
 import { Avatar } from "../components/Bits";
@@ -154,6 +154,31 @@ function RowMenu({ items, disabled }: { items: { label: string; danger?: boolean
   );
 }
 
+const CONFIRM = {
+  reset: {
+    title: "Reset password",
+    message: "gets a new password. Their old one stops working, and you will see the new one once to send them.",
+    action: "Reset password",
+    isDanger: false,
+  },
+  deactivate: {
+    title: "Deactivate user",
+    message: "is signed out within a minute. If they try to sign in, they are told the account has been disabled.",
+    action: "Deactivate",
+    isDanger: true,
+  },
+  delete: {
+    title: "Delete user",
+    message: "is deleted for good. Their tickets become unassigned and their name stays in ticket history. This cannot be undone.",
+    action: "Delete user",
+    isDanger: true,
+  },
+};
+type ConfirmKind = keyof typeof CONFIRM;
+
+// Fading the whole row would fade its open menu too, letting the next row show through.
+const FADE_ALL_BUT_MENU = "[&>*:not(:last-child)]:opacity-60";
+
 function Status({ u }: { u: UserRow }) {
   if (!u.active) return <span className="pill bg-loz-grey text-loz-grey-ink">Inactive</span>;
   if (u.lockedUntil && u.lockedUntil > new Date().toISOString()) {
@@ -222,8 +247,24 @@ export default function UsersPage() {
     if (await run(() => api(`/admin/users/${u.id}`, json("PATCH", body)))) load();
   }
 
+  const confirmDialog = useRef<HTMLDialogElement>(null);
+  const [confirming, setConfirming] = useState<{ kind: ConfirmKind; user: UserRow } | null>(null);
+
+  function ask(kind: ConfirmKind, user: UserRow) {
+    setConfirming({ kind, user });
+    confirmDialog.current?.showModal();
+  }
+
+  function confirmChoice() {
+    confirmDialog.current?.close();
+    if (!confirming) return;
+    const { kind, user } = confirming;
+    if (kind === "reset") reset(user);
+    else if (kind === "deactivate") patch(user, { active: 0 });
+    else remove(user);
+  }
+
   async function reset(u: UserRow) {
-    if (!confirm(`Make a new password for ${u.name}? Their old password stops working.`)) return;
     const res = await run(() => api<{ password: string }>(`/admin/users/${u.id}/reset-password`, { method: "POST" }));
     if (res) {
       show(u.username ?? u.email ?? u.name, res.password);
@@ -231,9 +272,11 @@ export default function UsersPage() {
     }
   }
 
-  async function toggle(u: UserRow) {
-    if (u.active && !confirm(`Deactivate ${u.name}? They are signed out and cannot sign in until reactivated.`)) return;
-    await patch(u, { active: u.active ? 0 : 1 });
+  async function remove(u: UserRow) {
+    if (await run(() => api(`/admin/users/${u.id}`, { method: "DELETE" }))) {
+      if (open === u.id) setOpen(null);
+      load();
+    }
   }
 
   // Shared by the phone/tablet cards and the wide-screen table.
@@ -283,10 +326,13 @@ export default function UsersPage() {
         <RowMenu
           disabled={busy}
           items={[
-            { label: "Reset password", onClick: () => reset(u) },
-            u.active
-              ? { label: "Deactivate user", danger: true, onClick: () => toggle(u) }
-              : { label: "Reactivate user", onClick: () => toggle(u) },
+            { label: "Reset password", onClick: () => ask("reset", u) },
+            ...(u.active
+              ? [{ label: "Deactivate user", danger: true, onClick: () => ask("deactivate", u) }]
+              : [
+                  { label: "Reactivate user", onClick: () => patch(u, { active: 1 }) },
+                  { label: "Delete user", danger: true, onClick: () => ask("delete", u) },
+                ]),
           ]}
         />
       )
@@ -314,6 +360,32 @@ export default function UsersPage() {
       </div>
 
       {error && <div className="mt-4 rounded bg-loz-red px-3 py-2 text-sm text-loz-red-ink">{error}</div>}
+
+      <dialog
+        ref={confirmDialog}
+        onClose={() => setConfirming(null)}
+        className="card w-[400px] max-w-[calc(100vw-32px)] p-0 text-ink backdrop:bg-black/40"
+      >
+        {confirming && (
+          <>
+            <div className="border-b border-line px-5 py-3 text-[15px] font-bold">{CONFIRM[confirming.kind].title}</div>
+            <p className="px-5 py-4 text-sm leading-6 text-ink-subtle">
+              <span className="font-semibold text-ink">{confirming.user.name}</span> {CONFIRM[confirming.kind].message}
+            </p>
+            <div className="flex justify-end gap-2 px-5 pb-4">
+              <button className="btn-default" autoFocus onClick={() => confirmDialog.current?.close()}>
+                Cancel
+              </button>
+              <button
+                className={CONFIRM[confirming.kind].isDanger ? "btn border border-loz-red-ink bg-loz-red-ink text-surface hover:opacity-90" : "btn-primary"}
+                onClick={confirmChoice}
+              >
+                {CONFIRM[confirming.kind].action}
+              </button>
+            </div>
+          </>
+        )}
+      </dialog>
 
       {issued && (
         <div className="card mt-4 flex flex-wrap items-center gap-3 border-primary/40 bg-primary-soft p-4">
@@ -406,7 +478,7 @@ export default function UsersPage() {
           const self = u.id === me.id;
           return (
             <div key={u.id} className={`card p-4 ${open === u.id ? "md:col-span-2" : ""}`}>
-              <div className={`flex items-start gap-3 ${u.active ? "" : "opacity-60"}`}>
+              <div className={`flex items-start gap-3 ${u.active ? "" : FADE_ALL_BUT_MENU}`}>
                 <Avatar name={u.name} size={36} />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -458,7 +530,7 @@ export default function UsersPage() {
               const self = u.id === me.id;
               return (
                 <Fragment key={u.id}>
-                  <tr className={`border-b border-line-subtle last:border-0 ${u.active ? "" : "opacity-60"}`}>
+                  <tr className={`border-b border-line-subtle last:border-0 ${u.active ? "" : FADE_ALL_BUT_MENU}`}>
                     <td className="px-3 py-2.5 pl-4">
                       <div className="flex items-center gap-2.5">
                         <Avatar name={u.name} size={28} />

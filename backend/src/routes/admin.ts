@@ -179,6 +179,24 @@ admin.post("/users/:id/reset-password", need("users"), async (c) => {
   return c.json({ password });
 });
 
+// History keeps the person's name (ticket_events.author_name), so only the links
+// to the account are cleared: their tickets become unassigned.
+admin.delete("/users/:id", need("users"), async (c) => {
+  const db = c.get("db");
+  const id = Number(c.req.param("id"));
+  if (!Number.isInteger(id)) return c.json({ error: "User not found" }, 404);
+  if (id === c.get("user").id) return c.json({ error: "You cannot delete your own account" }, 400);
+  if (await lockout(db, { user: { id, active: 0 } })) return c.json({ error: LOCKOUT }, 400);
+
+  const deleted = await db.transaction(async (tx) => {
+    await tx.update(schema.tickets).set({ assigneeId: null }).where(eq(schema.tickets.assigneeId, id));
+    await tx.update(schema.ticketEvents).set({ userId: null }).where(eq(schema.ticketEvents.userId, id));
+    return tx.delete(d).where(eq(d.id, id)).returning({ id: d.id });
+  });
+  if (deleted.length === 0) return c.json({ error: "User not found" }, 404);
+  return c.json({ ok: true });
+});
+
 // Readable with "users" too: the Users page lists role names.
 // ponytail: whole table on purpose; roles is bounded by the few roles an IT team defines. Paginate if that stops being true.
 admin.get("/roles", need("users", "roles"), async (c) => {

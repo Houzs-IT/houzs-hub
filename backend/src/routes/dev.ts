@@ -102,7 +102,9 @@ dev.post("/me/password", async (c) => {
   const b = (await c.req.json().catch(() => ({}))) as { current?: unknown; next?: unknown };
   const current = typeof b.current === "string" ? b.current : "";
   const next = typeof b.next === "string" ? b.next : "";
-  if (!me.passwordHash || !(await verifyPassword(current, me.passwordHash))) {
+  // A first sign-in just proved the handed-out password, and that session can do nothing else.
+  const isFirstPassword = Boolean(me.mustChangePassword);
+  if (!isFirstPassword && (!me.passwordHash || !(await verifyPassword(current, me.passwordHash)))) {
     return c.json({ error: "Your current password is wrong" }, 400);
   }
   if (next.length < MIN_PASSWORD || next.length > 200) {
