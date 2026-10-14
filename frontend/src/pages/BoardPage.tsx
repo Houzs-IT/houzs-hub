@@ -5,7 +5,7 @@ import { api, json, type Status, type TicketRow } from "../api/client";
 import { Avatar, Lozenge, PriorityIcon, SystemTag, TypeIcon } from "../components/Bits";
 import { useHub } from "../components/Layout";
 import ProjectShell from "../components/ProjectShell";
-import { sla } from "../lib/format";
+import { fmtAgo, sla } from "../lib/format";
 import { BOARD_COLUMNS, isReporterWaiting } from "../lib/labels";
 import { useFilters } from "../lib/useFilters";
 import { usePoll } from "../lib/usePoll";
@@ -226,6 +226,8 @@ export default function BoardPage() {
                       <div className="mt-2.5 flex items-center gap-1.5">
                         <TypeIcon type={t.type} />
                         <span className="font-docno text-[12px] font-semibold text-accent">{t.code}</span>
+                        {/* Age since submitted, the same clock the Overdue badge uses. */}
+                        <span className="text-[11px] text-ink-subtle">· {fmtAgo(t.created_at)}</span>
                         <span className="ml-auto flex items-center gap-1.5">
                           <PriorityIcon priority={t.priority} />
                           <Avatar name={t.assignee_name} size={24} />
