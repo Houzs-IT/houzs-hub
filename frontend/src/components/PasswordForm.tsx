@@ -38,7 +38,7 @@ export default function PasswordForm({
 
   const field = (label: string, value: string, set: (v: string) => void, auto: string) => (
     <label className="block">
-      <span className="section-title">{label}</span>
+      <span className="text-[12px] font-semibold text-ink-subtle">{label}</span>
       <input
         type="password"
         className="input mt-1 w-full"

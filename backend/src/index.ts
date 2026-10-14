@@ -32,19 +32,19 @@ async function autoCloseResolved(env: Env) {
     .returning({ id: tickets.id });
   if (!closedTickets.length) return;
 
-  await db.insert(schema.ticketEvents).values(
-    closedTickets.map(({ id }) => ({
-      ticketId: id,
-      kind: "status" as const,
-      visibility: "public" as const,
-      authorKind: "system" as const,
-      authorName: "System",
-      body: `Closed automatically after ${AUTO_CLOSE_DAYS} days in Resolved.`,
-      fromValue: "resolved",
-      toValue: "closed",
-      createdAt: closedAt,
-    })),
-  );
+  const events = closedTickets.map(({ id }) => ({
+    ticketId: id,
+    kind: "status" as const,
+    visibility: "public" as const,
+    authorKind: "system" as const,
+    authorName: "System",
+    body: `Closed automatically after ${AUTO_CLOSE_DAYS} days in Resolved.`,
+    fromValue: "resolved",
+    toValue: "closed",
+    createdAt: closedAt,
+  }));
+  // Chunked: one statement can carry ~65k parameters, and a run after a long outage could close thousands.
+  for (let i = 0; i < events.length; i += 1000) await db.insert(schema.ticketEvents).values(events.slice(i, i + 1000));
   await notifyTicketsChanged(env.LIVE);
 }
 

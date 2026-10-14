@@ -9,7 +9,8 @@ import { useHub } from "./Layout";
 
 const TOAST_DURATION_MS = 8_000;
 const BACKUP_CHECK_MS = 60_000;
-const RECONNECT_DELAY_MS = 10_000;
+const RECONNECT_FIRST_MS = 2_000;
+const RECONNECT_MAX_MS = 60_000;
 const MAX_TOASTS = 3;
 
 function playChime() {
@@ -68,20 +69,38 @@ export default function NewTicketToasts() {
     let socket: WebSocket | undefined;
     let reconnectTimer: ReturnType<typeof setTimeout>;
     let isStopped = false;
+    let failedAttempts = 0;
+    // Bursts of changes (a reply that also moves status, several people at once) become one refetch.
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+    let pendingCode: string | null | undefined;
+    function queueRefresh(code: string | null) {
+      pendingCode = pendingCode === undefined || pendingCode === code ? code : null;
+      if (refreshTimer) return;
+      refreshTimer = setTimeout(() => {
+        refresh(pendingCode ?? undefined);
+        refreshTimer = undefined;
+        pendingCode = undefined;
+      }, 1500 + Math.random() * 1000);
+    }
 
     function connect() {
       const protocol = location.protocol === "https:" ? "wss" : "ws";
       socket = new WebSocket(`${protocol}://${location.host}/api/v1/dev/live`);
+      socket.onopen = () => {
+        failedAttempts = 0;
+      };
       socket.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
           if (message.type === "ticket.created") showNewTickets([message.ticket]);
-          if (message.type === "tickets.changed") refresh();
+          if (message.type === "tickets.changed") queueRefresh(message.code ?? null);
         } catch {}
       };
       socket.onclose = () => {
         if (isStopped) return;
-        reconnectTimer = setTimeout(connect, RECONNECT_DELAY_MS);
+        // Doubles up to a minute with jitter, so an outage does not get every tab retrying in step.
+        const delay = Math.min(RECONNECT_MAX_MS, RECONNECT_FIRST_MS * 2 ** failedAttempts++);
+        reconnectTimer = setTimeout(connect, delay * (0.5 + Math.random() / 2));
         checkForNewTickets();
       };
     }
@@ -91,6 +110,7 @@ export default function NewTicketToasts() {
     return () => {
       isStopped = true;
       clearTimeout(reconnectTimer);
+      clearTimeout(refreshTimer);
       socket?.close();
     };
   }, [showNewTickets, checkForNewTickets, refresh]);
@@ -98,7 +118,7 @@ export default function NewTicketToasts() {
   const dismiss = (code: string) => setToasts((current) => current.filter((ticket) => ticket.code !== code));
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex w-[360px] max-w-[calc(100vw-32px)] flex-col gap-3" aria-live="polite">
+    <div className="fixed bottom-4 right-4 z-50 flex w-[360px] max-w-[calc(100vw-32px)] flex-col gap-3 max-sm:[&>*:nth-child(n+2)]:hidden" aria-live="polite">
       {toasts.map((ticket) => (
         <Toast
           key={ticket.code}
@@ -118,6 +138,7 @@ export default function NewTicketToasts() {
 type ToastProps = { ticket: TicketRow; systemName?: string; onClose: () => void; onView: () => void };
 
 function Toast({ ticket, systemName, onClose, onView }: ToastProps) {
+  // Paused while pointed at, focused or touched, so nobody loses a toast mid-read.
   const [isHovered, setIsHovered] = useState(false);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -129,11 +150,19 @@ function Toast({ ticket, systemName, onClose, onView }: ToastProps) {
   }, [isHovered]);
 
   return (
-    <div className="card p-4" role="status" onMouseEnter={() => setIsHovered(true)} onMouseLeave={() => setIsHovered(false)}>
+    <div
+      className="card p-4"
+      role="status"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      onFocus={() => setIsHovered(true)}
+      onBlur={() => setIsHovered(false)}
+      onTouchStart={() => setIsHovered(true)}
+    >
       <div className="flex items-center gap-2">
         <Inbox className="h-4 w-4 text-primary" />
         <span className="flex-1 text-[10.5px] font-bold uppercase tracking-brand text-primary">New ticket submitted</span>
-        <button className="text-ink-subtlest hover:text-ink" onClick={onClose} aria-label="Dismiss">
+        <button className="tap -m-1 grid place-items-center p-1 text-ink-subtlest hover:text-ink" onClick={onClose} aria-label="Dismiss">
           <X className="h-4 w-4" />
         </button>
       </div>

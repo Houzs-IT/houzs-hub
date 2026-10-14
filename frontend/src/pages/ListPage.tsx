@@ -6,24 +6,24 @@ import { Avatar, Lozenge, PriorityIcon, TypeIcon } from "../components/Bits";
 import { useHub } from "../components/Layout";
 import ProjectShell from "../components/ProjectShell";
 import { fmtAgo, fmtDate, fmtDateTime, sla } from "../lib/format";
-import { ACTIVE } from "../lib/labels";
+import { ACTIVE, isReporterWaiting } from "../lib/labels";
 import { useFilters } from "../lib/useFilters";
 import { usePoll } from "../lib/usePoll";
 
 type ListResp = { tickets: TicketRow[]; total: number; page: number; page_size: number };
 
-const isReporterWaiting = (ticket: TicketRow) =>
-  ticket.last_public_actor === "reporter" && ticket.status !== "open" && ACTIVE.includes(ticket.status);
+// Reporter only shows from 1440px, so the table fits a 1280-1366px laptop without sideways scroll.
+const WIDE_ONLY = "hidden min-[1440px]:table-cell";
 
 type Col = { key: string; label: string; sort?: string; className?: string };
 const COLS: Col[] = [
   { key: "type", label: "Type", className: "w-16" },
   { key: "key", label: "Key", sort: "key", className: "w-32" },
   { key: "summary", label: "Summary" },
-  { key: "status", label: "Status", sort: "status", className: "w-44" },
+  { key: "status", label: "Status", sort: "status", className: "w-40" },
   { key: "priority", label: "Priority", sort: "priority", className: "w-24" },
   { key: "assignee", label: "Assignee", sort: "assignee", className: "w-36" },
-  { key: "reporter", label: "Reporter", className: "w-36" },
+  { key: "reporter", label: "Reporter", className: `w-36 ${WIDE_ONLY}` },
   { key: "created", label: "Created", sort: "created", className: "w-28" },
   { key: "updated", label: "Updated", sort: "updated", className: "w-24" },
 ];
@@ -70,20 +70,47 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
     }
   }
 
+  const canClearFilters = f.hasFilters || !!f.get("status");
+  const emptyState = (
+    <div className="py-16 text-center text-sm text-ink-subtle">
+      {queue && !canClearFilters ? "Nothing is assigned to you right now." : "No tickets match these filters."}
+      {canClearFilters && (
+        <button className="btn-subtle ml-2" onClick={f.clear}>
+          Clear filters
+        </button>
+      )}
+    </div>
+  );
+
   return (
-    <ProjectShell title={queue ? "My queue" : "IT Tickets"} showAssignee={!queue}>
-      {error && <div className="mb-3 rounded bg-loz-red px-3 py-2 text-sm text-loz-red-ink">{error}</div>}
-      <div className="space-y-2 lg:hidden">
-        <label className="flex items-center gap-2 text-xs text-ink-subtle">
-          Sort by
-          <select className="input" value={sort} onChange={(e) => f.set({ sort: e.target.value, dir: "desc" })}>
-            {COLS.filter((column) => column.sort).map((column) => (
-              <option key={column.key} value={column.sort}>
-                {column.label}
-              </option>
-            ))}
-          </select>
-        </label>
+    <ProjectShell view={queue ? "My queue" : "List"} showAssignee={!queue}>
+      {error && (
+        <div role="alert" className="mb-3 rounded bg-loz-red px-3 py-2 text-sm text-loz-red-ink">
+          {error}
+        </div>
+      )}
+      {/* With a ticket open beside it, the table would be a sideways-scrolling strip, so the cards show instead. */}
+      <div className={`space-y-2 ${selected ? "" : "lg:hidden"}`}>
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-2 text-xs text-ink-subtle">
+            Sort by
+            <select className="input" value={sort} onChange={(e) => f.set({ sort: e.target.value, dir: "desc" })}>
+              {COLS.filter((column) => column.sort).map((column) => (
+                <option key={column.key} value={column.sort}>
+                  {column.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            className="btn-default px-2.5"
+            onClick={() => sortBy(sort)}
+            aria-label={dir === "desc" ? "Sorted descending, switch to ascending" : "Sorted ascending, switch to descending"}
+          >
+            {dir === "desc" ? <ArrowDown className="h-4 w-4" /> : <ArrowUp className="h-4 w-4" />}
+          </button>
+        </div>
         {data?.tickets.map((ticket) => {
           const ticketSla = sla(ticket.created_at, ticket.priority, ticket.status, ticket.legacy_code);
           return (
@@ -110,22 +137,27 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
                 </span>
                 <span>{fmtAgo(ticket.updated_at)}</span>
                 {ticketSla?.overdue && <span className="pill bg-loz-red text-loz-red-ink">{ticketSla.label}</span>}
-                {isReporterWaiting(ticket) && <MessageSquare className="h-3.5 w-3.5 text-primary" aria-label="Reporter replied" />}
+                {isReporterWaiting(ticket) && (
+                  <span className="inline-flex items-center gap-1 font-medium text-primary">
+                    <MessageSquare className="h-3.5 w-3.5" /> Replied
+                  </span>
+                )}
               </div>
             </button>
           );
         })}
-        {data && data.tickets.length === 0 && <div className="py-16 text-center text-sm text-ink-subtlest">No tickets match these filters</div>}
-        {!data && !error && <div className="py-16 text-center text-sm text-ink-subtlest">Loading...</div>}
+        {data && data.tickets.length === 0 && emptyState}
+        {!data && !error && <div className="py-16 text-center text-sm text-ink-subtle">Loading...</div>}
       </div>
 
-      <div className="card hidden min-w-[1130px] lg:block">
+      <div className={`card min-w-[970px] min-[1440px]:min-w-[1130px] ${selected ? "hidden" : "hidden lg:block"}`}>
       <table className="w-full table-fixed border-collapse text-[13px]">
         <thead className="sticky top-0 z-10">
           <tr>
             {COLS.map((c) => (
               <th
                 key={c.key}
+                aria-sort={c.sort && sort === c.sort ? (dir === "desc" ? "descending" : "ascending") : undefined}
                 className={`border-b-2 border-line bg-surface-dim px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-brand text-ink-subtle first:rounded-tl-[10px] first:pl-4 last:rounded-tr-[10px] ${c.className ?? ""}`}
               >
                 {c.sort ? (
@@ -149,7 +181,10 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
                 key={t.code}
                 onClick={() => f.set({ selected: t.code })}
                 onDoubleClick={() => navigate(`/tickets/${t.code}`)}
-                className={`group h-11 cursor-pointer border-b border-line-subtle last:border-0 ${selected === t.code ? "bg-primary-soft" : "hover:bg-surface-2"}`}
+                tabIndex={0}
+                aria-label={`${t.code} ${t.title}`}
+                onKeyDown={(e) => e.key === "Enter" && e.target === e.currentTarget && f.set({ selected: t.code })}
+                className={`group h-11 cursor-pointer border-b border-line-subtle outline-none last:border-0 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary ${selected === t.code ? "bg-primary-soft" : "hover:bg-surface-2"}`}
               >
                 <td className="pl-4 pr-3">
                   <TypeIcon type={t.type} />
@@ -187,16 +222,19 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
                   ) : (
                     <div className="flex items-center gap-2">
                       <Avatar name={null} size={24} />
-                      <span className="text-ink-subtlest group-hover:hidden">Unassigned</span>
+                      {/* Touch screens cannot hover, so Pick up is always shown there. */}
+                      <span className={`text-ink-subtlest ${ACTIVE.includes(t.status) ? "group-hover:hidden group-focus-within:hidden [@media(hover:none)]:hidden" : ""}`}>
+                        Unassigned
+                      </span>
                       {ACTIVE.includes(t.status) && (
-                        <button className="hidden h-6 rounded px-1.5 text-xs font-medium text-primary hover:bg-primary-soft group-hover:inline" onClick={() => pickup(t.code)}>
+                        <button className="tap hidden h-6 rounded px-1.5 text-xs font-medium text-primary hover:bg-primary-soft group-hover:inline group-focus-within:inline [@media(hover:none)]:inline-block" onClick={() => pickup(t.code)}>
                           Pick up
                         </button>
                       )}
                     </div>
                   )}
                 </td>
-                <td className="px-3">
+                <td className={`px-3 ${WIDE_ONLY}`}>
                   <div className="flex items-center gap-2">
                     <Avatar name={t.reporter_name} size={24} />
                     <span className="truncate">{t.reporter_name}</span>
@@ -211,14 +249,12 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
           })}
           {data && data.tickets.length === 0 && (
             <tr>
-              <td colSpan={COLS.length} className="py-16 text-center text-ink-subtlest">
-                No tickets match these filters
-              </td>
+              <td colSpan={COLS.length}>{emptyState}</td>
             </tr>
           )}
           {!data && !error && (
             <tr>
-              <td colSpan={COLS.length} className="py-16 text-center text-ink-subtlest">
+              <td colSpan={COLS.length} className="py-16 text-center text-ink-subtle">
                 Loading...
               </td>
             </tr>
@@ -234,13 +270,13 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
           </span>
           {pages > 1 && (
             <div className="flex items-center gap-1">
-              <button className="btn-subtle px-2" disabled={page <= 1} onClick={() => f.set({ page: String(page - 1) })}>
+              <button className="btn-subtle px-2" aria-label="Previous page" disabled={page <= 1} onClick={() => f.set({ page: String(page - 1) })}>
                 <ChevronLeft className="h-4 w-4" />
               </button>
               <span className="px-2">
                 {page} / {pages}
               </span>
-              <button className="btn-subtle px-2" disabled={page >= pages} onClick={() => f.set({ page: String(page + 1) })}>
+              <button className="btn-subtle px-2" aria-label="Next page" disabled={page >= pages} onClick={() => f.set({ page: String(page + 1) })}>
                 <ChevronRight className="h-4 w-4" />
               </button>
             </div>

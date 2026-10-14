@@ -134,7 +134,7 @@ body {
 @layer components {
   /* Century Button: h-9, 13px semibold, petrol primary with border. */
   .btn {
-    @apply inline-flex h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-4 text-[13px] font-semibold tracking-wide transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-4 text-[13px] font-semibold tracking-wide transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50;
   }
   .btn-primary {
     @apply btn border border-primary bg-primary text-primary-on shadow-sm hover:border-primary-hover hover:bg-primary-hover;
@@ -154,8 +154,9 @@ body {
   .section-title {
     @apply text-[10px] font-bold uppercase tracking-brand text-ink-subtle;
   }
+  /* Hidden on phones, where the title alone says where you are and rows are scarce. */
   .eyebrow {
-    @apply text-[10px] font-bold uppercase tracking-brand text-accent;
+    @apply text-[10px] font-bold uppercase tracking-brand text-accent max-sm:hidden;
   }
   /* Century Badge: rounded-full, uppercase, bold, soft tone. */
   .pill {
@@ -163,5 +164,27 @@ body {
   }
   .card {
     @apply rounded-[10px] border border-line bg-surface shadow-stone;
+  }
+}
+
+/* Touch screens only; desktop keeps the compact Century sizes. iOS zooms into any
+   field under 16px, and fingers need 40px targets (`tap` marks small custom controls). */
+@media (pointer: coarse) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+  .btn,
+  .btn-primary,
+  .btn-default,
+  .btn-subtle,
+  .input,
+  .inline-select,
+  .tap {
+    min-height: 2.5rem;
+  }
+  .tap {
+    min-width: 2.5rem;
   }
 }

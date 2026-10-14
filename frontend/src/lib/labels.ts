@@ -1,4 +1,4 @@
-import type { Priority, Status, TicketType } from "../api/client";
+import type { Priority, Status, TicketRow, TicketType } from "../api/client";
 
 export const STATUS_LABEL: Record<Status, string> = {
   open: "Open",
@@ -38,6 +38,10 @@ export const STATUSES = Object.keys(STATUS_LABEL) as Status[];
 export const PRIORITIES = Object.keys(PRIORITY_LABEL) as Priority[];
 export const TYPES = Object.keys(TYPE_LABEL) as TicketType[];
 export const ACTIVE: Status[] = ["open", "in_progress", "on_hold", "testing", "waiting_reporter"];
+
+// The reporter spoke last on a ticket someone is already working.
+export const isReporterWaiting = (ticket: TicketRow) =>
+  ticket.last_public_actor === "reporter" && ticket.status !== "open" && ACTIVE.includes(ticket.status);
 export const BOARD_COLUMNS: Status[] = ["open", "in_progress", "on_hold", "testing", "waiting_reporter", "resolved"];
 // On Hold is parked on purpose, so it does not burn SLA.
 export const SLA_RUNNING: Status[] = ["open", "in_progress", "testing", "waiting_reporter"];

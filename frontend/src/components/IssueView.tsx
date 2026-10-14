@@ -1,4 +1,4 @@
-import { ArrowRight, ChevronDown, ExternalLink, FileText, Lock, Maximize2, Paperclip, Trash2, X } from "lucide-react";
+import { ArrowRight, ChevronDown, ExternalLink, FileText, Lock, Maximize2, MessageSquare, Paperclip, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, attachmentUrl, json, type Attachment, type Status, type TicketEvent, type TicketFull } from "../api/client";
@@ -7,17 +7,35 @@ import { ACTIVE, PRIORITIES, PRIORITY_LABEL, STATUSES, STATUS_LABEL, STATUS_STYL
 import { usePoll } from "../lib/usePoll";
 import { Avatar, Lozenge, PriorityIcon, SystemTag, TypeIcon } from "./Bits";
 import { useOutside } from "./FilterButton";
+import ImageLightbox from "./ImageLightbox";
 import { useHub } from "./Layout";
 
 type Detail = { ticket: TicketFull; events: TicketEvent[] };
 
+const MAX_FILES = 5;
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
+
 function Attachments({ items }: { items: Attachment[] }) {
+  const [viewing, setViewing] = useState<Attachment | null>(null);
   if (!items.length) return null;
   return (
     <div className="mt-2 flex flex-wrap gap-2">
+      {viewing && <ImageLightbox src={attachmentUrl(viewing.id)} alt={viewing.filename} onClose={() => setViewing(null)} />}
       {items.map((a) =>
         a.mime.startsWith("image/") ? (
-          <a key={a.id} href={attachmentUrl(a.id)} target="_blank" rel="noreferrer" className="group block w-40 overflow-hidden rounded border border-line">
+          <a
+            key={a.id}
+            href={attachmentUrl(a.id)}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(e) => {
+              // Ctrl/Cmd/Shift-click (and middle-click, which never fires onClick) still open the file in a new tab.
+              if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+              e.preventDefault();
+              setViewing(a);
+            }}
+            className="group block w-40 overflow-hidden rounded border border-line"
+          >
             <img src={attachmentUrl(a.id)} alt={a.filename} className="h-24 w-full object-cover group-hover:opacity-90" />
             <div className="truncate border-t border-line px-2 py-1 text-xs text-ink-subtle">{a.filename}</div>
           </a>
@@ -47,6 +65,9 @@ function StatusButton({ status, disabled, onChange }: { status: Status; disabled
       <button
         disabled={disabled}
         onClick={() => setOpen(!open)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Status: ${STATUS_LABEL[status]}. Change status`}
         className={`btn h-9 px-3.5 ${
           status === "in_progress" || status === "open"
             ? "border border-primary bg-primary text-primary-on shadow-sm hover:bg-primary-hover"
@@ -56,8 +77,9 @@ function StatusButton({ status, disabled, onChange }: { status: Status; disabled
         {STATUS_LABEL[status]}
         <ChevronDown className="h-4 w-4" />
       </button>
+      {open && <div className="fixed inset-0 z-20 bg-black/30 sm:hidden" onClick={() => setOpen(false)} />}
       {open && (
-        <div className="absolute left-0 top-10 z-30 min-w-[220px] rounded-[10px] bg-overlay py-1.5 shadow-overlay">
+        <div role="menu" className="absolute left-0 top-10 z-30 max-h-[60vh] min-w-[220px] overflow-y-auto overscroll-contain rounded-[10px] border border-transparent bg-overlay py-1.5 shadow-overlay max-sm:fixed max-sm:inset-x-4 max-sm:bottom-4 max-sm:top-auto">
           {STATUSES.filter((s) => s !== status).map((s) => (
             <button
               key={s}
@@ -65,7 +87,7 @@ function StatusButton({ status, disabled, onChange }: { status: Status; disabled
                 setOpen(false);
                 onChange(s);
               }}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-hover"
+              className="tap flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-hover"
             >
               <ArrowRight className="h-3.5 w-3.5 text-ink-subtlest" />
               <Lozenge status={s} />
@@ -129,7 +151,7 @@ function ActivityItem({ e }: { e: TicketEvent }) {
             {when}
           </div>
           <div className={`mt-1 rounded ${internal ? "border-l-4 border-note-line bg-note px-3 py-2" : ""}`}>
-            {e.body && <div className="whitespace-pre-wrap text-sm leading-6">{e.body}</div>}
+            {e.body && <div className="whitespace-pre-wrap break-words text-sm leading-6">{e.body}</div>}
             <Attachments items={e.attachments} />
           </div>
         </div>
@@ -142,7 +164,7 @@ function ActivityItem({ e }: { e: TicketEvent }) {
       <div className="min-w-0 flex-1 pt-1 text-sm text-ink">
         <span className="font-semibold">{name}</span> <span className="text-ink-subtle">{historyText(e)}</span>
         <div>{when}</div>
-        {e.body && <div className="mt-0.5 text-xs text-ink-subtlest">{e.body}</div>}
+        {e.body && <div className="mt-0.5 break-words text-xs text-ink-subtle">{e.body}</div>}
       </div>
     </div>
   );
@@ -157,6 +179,11 @@ function Composer({ code, status, onDone }: { code: string; status: Status; onDo
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  function cancel() {
+    if ((body.trim() || files.length) && !confirm("Discard what you wrote?")) return;
+    reset();
+  }
 
   function reset() {
     setMode(null);
@@ -189,11 +216,11 @@ function Composer({ code, status, onDone }: { code: string; status: Status; onDo
       <div className="flex gap-3">
         <Avatar name={me.name} size={32} />
         <div className="flex-1 rounded border border-line px-3 py-2 text-sm text-ink-subtlest">
-          <button className="font-medium text-primary hover:underline" onClick={() => setMode("public")}>
+          <button className="tap font-medium text-primary hover:underline" onClick={() => setMode("public")}>
             Reply to reporter
           </button>
           <span className="mx-2">or</span>
-          <button className="font-medium text-primary hover:underline" onClick={() => setMode("internal")}>
+          <button className="tap font-medium text-primary hover:underline" onClick={() => setMode("internal")}>
             Add internal note
           </button>
         </div>
@@ -211,7 +238,7 @@ function Composer({ code, status, onDone }: { code: string; status: Status; onDo
             <button
               key={m}
               onClick={() => setMode(m)}
-              className={`rounded px-2 py-1 text-xs font-semibold ${mode === m ? "bg-primary-soft text-primary" : "text-ink-subtle hover:bg-hover"}`}
+              className={`tap rounded px-2 py-1 text-xs font-semibold ${mode === m ? "bg-primary-soft text-primary" : "text-ink-subtle hover:bg-hover"}`}
             >
               {m === "public" ? "Reply to reporter" : "Add internal note"}
             </button>
@@ -220,6 +247,7 @@ function Composer({ code, status, onDone }: { code: string; status: Status; onDo
         <div className={`rounded border-2 ${internal ? "border-note-line bg-note" : "border-primary bg-surface"}`}>
           <textarea
             autoFocus
+            aria-label={internal ? "Internal note" : "Reply to reporter"}
             className="block h-28 w-full resize-y bg-transparent px-3 py-2 text-sm outline-none"
             placeholder={internal ? "Only developers can see internal notes" : "The reporter will see this in their system"}
             value={body}
@@ -228,9 +256,9 @@ function Composer({ code, status, onDone }: { code: string; status: Status; onDo
           {files.length > 0 && (
             <div className="flex flex-wrap gap-1.5 px-3 pb-2">
               {files.map((f, i) => (
-                <span key={i} className="inline-flex items-center gap-1 rounded bg-neutral px-2 py-0.5 text-xs">
-                  {f.name}
-                  <button onClick={() => setFiles(files.filter((_, j) => j !== i))}>
+                <span key={i} className="inline-flex max-w-full items-center gap-1 rounded bg-neutral px-2 py-0.5 text-xs">
+                  <span className="truncate">{f.name}</span>
+                  <button className="tap grid place-items-center" aria-label={`Remove ${f.name}`} onClick={() => setFiles(files.filter((_, j) => j !== i))}>
                     <X className="h-3 w-3" />
                   </button>
                 </span>
@@ -241,9 +269,9 @@ function Composer({ code, status, onDone }: { code: string; status: Status; onDo
         {error && <div className="mt-1 text-xs text-loz-red-ink">{error}</div>}
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <button className="btn-primary" disabled={busy || (!body.trim() && !files.length)} onClick={save}>
-            Save
+            {internal ? "Add note" : "Send to reporter"}
           </button>
-          <button className="btn-subtle" onClick={reset}>
+          <button className="btn-subtle" onClick={cancel}>
             Cancel
           </button>
           <input
@@ -253,11 +281,18 @@ function Composer({ code, status, onDone }: { code: string; status: Status; onDo
             accept="image/*,application/pdf,video/mp4,video/quicktime"
             className="hidden"
             onChange={(e) => {
-              setFiles([...files, ...Array.from(e.target.files ?? [])].slice(0, 5));
+              // Same limits as the server, told up front instead of after a long upload.
+              const picked = Array.from(e.target.files ?? []);
+              const tooBig = picked.filter((f) => f.size > MAX_FILE_BYTES);
+              const next = [...files, ...picked.filter((f) => f.size <= MAX_FILE_BYTES)];
+              if (tooBig.length) setError(`${tooBig.map((f) => f.name).join(", ")}: over 10 MB, not attached`);
+              else if (next.length > MAX_FILES) setError(`Up to ${MAX_FILES} files per message; the rest were not attached`);
+              else setError(null);
+              setFiles(next.slice(0, MAX_FILES));
               e.target.value = "";
             }}
           />
-          <button className="btn-subtle px-2" title="Attach files" onClick={() => fileRef.current?.click()}>
+          <button className="btn-subtle px-2" title="Attach files" aria-label="Attach files" onClick={() => fileRef.current?.click()}>
             <Paperclip className="h-4 w-4" />
           </button>
           <label className="ml-auto flex items-center gap-1.5 text-xs text-ink-subtle">
@@ -287,13 +322,19 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 }
 
 export default function IssueView({ code, variant, onClose }: { code: string; variant: "panel" | "page"; onClose?: () => void }) {
-  const { me, users, refresh, version } = useHub();
+  const { me, users, refresh, version, changedCode } = useHub();
   const [data, setData] = useState<Detail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState<"all" | "comments" | "history">("all");
   const navigate = useNavigate();
   const confirmDelete = useRef<HTMLDialogElement>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
+
+  function jumpToReply() {
+    composerRef.current?.scrollIntoView({ block: "start" });
+    composerRef.current?.querySelector("button")?.focus({ preventScroll: true });
+  }
 
   const load = useCallback(() => {
     api<Detail>(`/tickets/${code}`)
@@ -304,7 +345,14 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
       .catch((e: Error) => setError(e.message));
   }, [code]);
 
-  useEffect(load, [load, version]);
+  useEffect(load, [load]);
+  // Live updates about other tickets do not reload this one.
+  const seenVersion = useRef(version);
+  useEffect(() => {
+    if (version === seenVersion.current) return;
+    seenVersion.current = version;
+    if (!changedCode || changedCode === code) load();
+  }, [version, changedCode, code, load]);
   usePoll(load, 60_000);
 
   async function patch(body: Record<string, unknown>, path = "") {
@@ -334,7 +382,25 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
   }
 
   if (!data) {
-    return <div className="p-8 text-sm text-ink-subtlest">{error ?? "Loading..."}</div>;
+    return (
+      <div className={variant === "panel" ? "flex h-full flex-col" : ""}>
+        {variant === "panel" && (
+          <div className="flex justify-end border-b border-line px-4 py-3 md:px-6">
+            <button className="btn-subtle px-2" title="Close" aria-label="Close" onClick={onClose}>
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+        <div className="flex flex-wrap items-center gap-3 p-8 text-sm text-ink-subtle" role={error ? "alert" : undefined}>
+          {error ?? "Loading..."}
+          {error && (
+            <button className="btn-default" onClick={load}>
+              Try again
+            </button>
+          )}
+        </div>
+      </div>
+    );
   }
 
   const { ticket: t, events } = data;
@@ -402,8 +468,13 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
                 ))}
               </select>
             </div>
-            {t.assigneeId !== me.id && (
-              <button className="ml-8 text-xs font-medium text-primary hover:underline" onClick={() => patch({ assignee_id: me.id })}>
+            {/* Pick up already assigns you (and moves Open to On Going), so only one of them shows. */}
+            {t.assigneeId !== me.id && !canPickUp && (
+              <button
+                className="tap ml-8 inline-flex items-center text-xs font-medium text-primary hover:underline disabled:opacity-50"
+                disabled={saving}
+                onClick={() => patch({ assignee_id: me.id })}
+              >
                 Assign to me
               </button>
             )}
@@ -419,6 +490,8 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
                 <a
                   className="block text-primary hover:underline"
                   href={`https://wa.me/${t.reporterPhone.replace(/\D/g, "").replace(/^0/, "60")}`}
+                  title="Open in WhatsApp"
+                  aria-label={`WhatsApp ${t.reporterPhone}`}
                   target="_blank"
                   rel="noreferrer"
                 >
@@ -501,7 +574,7 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
     <div className="space-y-6">
       <div>
         <div className="section-title mb-2">Description</div>
-        <div className="whitespace-pre-wrap text-sm leading-6">{t.description || <span className="text-ink-subtlest">No description</span>}</div>
+        <div className="whitespace-pre-wrap break-words text-sm leading-6">{t.description || <span className="text-ink-subtlest">No description</span>}</div>
       </div>
 
       {created && created.attachments.length > 0 && (
@@ -519,14 +592,16 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
             <button
               key={k}
               onClick={() => setTab(k)}
-              className={`rounded px-2 py-1 font-medium ${tab === k ? "bg-primary-soft text-primary" : "text-ink-subtle hover:bg-hover"}`}
+              className={`tap rounded px-2 py-1 font-medium ${tab === k ? "bg-primary-soft text-primary" : "text-ink-subtle hover:bg-hover"}`}
             >
               {k === "all" ? "All" : k === "comments" ? "Comments" : "History"}
             </button>
           ))}
         </div>
         <div className="space-y-5">
-          <Composer code={code} status={t.status} onDone={refresh} />
+          <div ref={composerRef} className="scroll-mt-4">
+            <Composer code={code} status={t.status} onDone={refresh} />
+          </div>
           {shown.map((e) => (
             <ActivityItem key={e.id} e={e} />
           ))}
@@ -546,30 +621,40 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
             {t.code}
           </Link>
         </div>
-        {variant === "panel" && (
-          <div className="ml-auto flex items-center gap-1">
-            <Link to={`/tickets/${t.code}`} className="btn-subtle px-2" title="Open full page">
-              <Maximize2 className="h-4 w-4" />
-            </Link>
-            <button className="btn-subtle px-2" title="Close" onClick={onClose}>
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        )}
+        <div className="ml-auto flex items-center gap-1">
+          {/* On phones the reply box sits below every detail row; this jumps straight to it. */}
+          <button className="btn-default px-3 md:hidden" onClick={jumpToReply}>
+            <MessageSquare className="h-4 w-4" /> Reply
+          </button>
+          {variant === "panel" && (
+            <>
+              <Link to={`/tickets/${t.code}`} className="btn-subtle px-2" title="Open full page" aria-label="Open full page">
+                <Maximize2 className="h-4 w-4" />
+              </Link>
+              <button className="btn-subtle px-2" title="Close" aria-label="Close" onClick={onClose}>
+                <X className="h-4 w-4" />
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
-      <div className={variant === "panel" ? "flex-1 overflow-y-auto px-4 py-5 md:px-6" : ""}>
-        <h1 className={`mb-5 font-extrabold tracking-tight text-ink ${variant === "panel" ? "text-[20px]" : "text-[24px]"}`}>{t.title}</h1>
-        {error && <div className="mb-4 rounded bg-loz-red px-3 py-2 text-sm text-loz-red-ink">{error}</div>}
+      <div className={variant === "panel" ? "flex-1 overflow-y-auto overscroll-contain px-4 py-5 md:px-6" : ""}>
+        <h1 className={`mb-5 break-words font-extrabold tracking-tight text-ink ${variant === "panel" ? "text-[20px]" : "text-[24px]"}`}>{t.title}</h1>
+        {error && (
+          <div role="alert" className="mb-4 rounded bg-loz-red px-3 py-2 text-sm text-loz-red-ink">
+            {error}
+          </div>
+        )}
         {variant === "panel" ? (
           <div className="space-y-6">
             {details}
             {main}
           </div>
         ) : (
-          <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_380px]">
             {main}
-            <div className="lg:sticky lg:top-6 lg:self-start">{details}</div>
+            <div className="xl:sticky xl:top-6 xl:self-start">{details}</div>
           </div>
         )}
       </div>

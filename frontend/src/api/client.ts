@@ -48,7 +48,15 @@ export type Notification = {
   ticket_title: string;
 };
 
-export type NotificationsResponse = { notifications: Notification[]; total: number; page: number; page_size: number; seen_id: number };
+export type NotificationsResponse = {
+  notifications: Notification[];
+  total: number;
+  // The server stops counting at 1001; show "1000+".
+  total_capped: boolean;
+  page: number;
+  page_size: number;
+  seen_id: number;
+};
 
 export type Attachment = { id: number; event_id: number; filename: string; mime: string; size: number };
 

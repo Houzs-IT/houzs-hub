@@ -1,4 +1,4 @@
-import { useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 const FILTER_KEYS = ["system", "type", "priority", "assignee", "status", "q"] as const;
 
@@ -7,8 +7,18 @@ const split = (v: string | null) => (v ? v.split(",").filter(Boolean) : []);
 // All list / board state lives in the URL so views are shareable and survive reload.
 export function useFilters() {
   const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
+  const { state } = useLocation();
 
   function set(patch: Record<string, string | string[] | null>) {
+    const isTicketOpen = !!params.get("selected");
+    const isSelecting = "selected" in patch && !!patch.selected;
+    // Opening a ticket adds a history entry so phone Back closes it. Closing that same
+    // ticket steps back instead of adding another entry, or Back would reopen it.
+    if ("selected" in patch && !patch.selected && state?.openedTicket) {
+      navigate(-1);
+      return;
+    }
     const p = new URLSearchParams(params);
     for (const [k, v] of Object.entries(patch)) {
       const val = Array.isArray(v) ? v.join(",") : v;
@@ -16,7 +26,10 @@ export function useFilters() {
       else p.delete(k);
     }
     if (!("page" in patch) && !("selected" in patch)) p.delete("page");
-    setParams(p, { replace: !("selected" in patch) });
+    if (isSelecting && !isTicketOpen) setParams(p, { state: { openedTicket: true } });
+    // Switching tickets keeps the entry's flag; any other change drops it, so a later close
+    // replaces in place rather than stepping back to the old filters.
+    else setParams(p, { replace: true, state: isSelecting ? state : null });
   }
 
   // Query string for the API: filters + sort/page, never UI-only keys like `selected`.

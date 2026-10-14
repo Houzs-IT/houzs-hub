@@ -62,8 +62,13 @@ export const devAuth = createMiddleware<DevApp>(async (c, next) => {
   if (user.mustChangePassword && !(path.endsWith("/me") && c.req.method === "GET") && !path.endsWith("/me/password")) {
     return c.json({ error: "Choose your own password first", code: "must_change_password" }, 403);
   }
-  await db.update(schema.users).set({ lastSeenAt: new Date().toISOString() }).where(eq(schema.users.id, user.id));
+  // At most one write a minute per user, so reads stay reads.
+  const now = new Date();
+  if (!user.lastSeenAt || now.getTime() - Date.parse(user.lastSeenAt) > 60_000) {
+    await db.update(schema.users).set({ lastSeenAt: now.toISOString() }).where(eq(schema.users.id, user.id));
+  }
 
   c.set("user", user);
+  c.set("db", db);
   await next();
 });

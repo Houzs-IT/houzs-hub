@@ -1,6 +1,6 @@
 import { and, count, desc, eq, gt, inArray, isNull, max, ne, or, sql, type SQL } from "drizzle-orm";
 import { Hono } from "hono";
-import { getDb, schema, type DB } from "../db/client";
+import { schema, type DB } from "../db/client";
 import { need } from "../middleware/devAuth";
 import type { DevApp, DevVars } from "../types";
 
@@ -39,16 +39,25 @@ async function getSeenId(db: DB, user: DevVars["user"]) {
   return seenId;
 }
 
+// Counts stop at `cap`: events grow fastest of any table, and the UI only shows "99+" / "1000+".
+async function cappedCount(db: DB, where: SQL | undefined, cap: number) {
+  const capped = db.select({ one: sql`1` }).from(events).where(where).limit(cap).as("capped");
+  const [row] = await db.select({ n: count() }).from(capped);
+  return row?.n ?? 0;
+}
+
+export const UNREAD_CAP = 100;
+const TOTAL_CAP = 1001;
+
 export async function countUnread(db: DB, user: DevVars["user"]) {
   const seenId = await getSeenId(db, user);
-  const [unread] = await db.select({ n: count() }).from(events).where(notificationWhere(user.id, undefined, seenId));
-  return unread?.n ?? 0;
+  return cappedCount(db, notificationWhere(user.id, undefined, seenId), UNREAD_CAP);
 }
 
 // unread=1 lists events after the read mark; `after` pins that mark so marking
 // read while the page is open does not empty the Unread only view.
 notifications.get("/", async (c) => {
-  const db = getDb(c.env);
+  const db = c.get("db");
   const me = c.get("user");
   const query = c.req.query();
   const page = Math.max(1, Number(query.page) || 1);
@@ -57,7 +66,7 @@ notifications.get("/", async (c) => {
   const afterId = query.unread === "1" ? Number(query.after) || seenId : undefined;
   const where = notificationWhere(me.id, query.filter, afterId);
 
-  const [rows, [total]] = await Promise.all([
+  const [rows, total] = await Promise.all([
     db
       .select({
         id: events.id,
@@ -76,15 +85,16 @@ notifications.get("/", async (c) => {
       .orderBy(desc(events.id))
       .limit(pageSize)
       .offset((page - 1) * pageSize),
-    db.select({ n: count() }).from(events).where(where),
+    cappedCount(db, where, TOTAL_CAP),
   ]);
 
-  return c.json({ notifications: rows, total: total?.n ?? 0, page, page_size: pageSize, seen_id: seenId });
+  // ponytail: OFFSET paging and a capped total; switch to "older than id" paging if people dig past ~50 pages.
+  return c.json({ notifications: rows, total, total_capped: total >= TOTAL_CAP, page, page_size: pageSize, seen_id: seenId });
 });
 
 // Marks read up to `up_to`, or everything when it is missing. The mark never moves back.
 notifications.post("/read", async (c) => {
-  const db = getDb(c.env);
+  const db = c.get("db");
   const me = c.get("user");
   const body = (await c.req.json().catch(() => ({}))) as { up_to?: unknown };
   const upTo = Number(body.up_to);

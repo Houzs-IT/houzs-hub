@@ -34,10 +34,10 @@ export default function AccountPage() {
 
       <div className="mt-4 grid max-w-3xl gap-4 md:grid-cols-2">
         <div className="card p-5">
-          <div className="section-title">Signed in as</div>
+          <div className="section-title">Profile</div>
           <form onSubmit={saveName} className="mt-3">
             <label className="block">
-              <span className="section-title">Display name</span>
+              <span className="text-[12px] font-semibold text-ink-subtle">Display name</span>
               <input
                 className="input mt-1 w-full"
                 required
@@ -49,9 +49,9 @@ export default function AccountPage() {
                 }}
               />
             </label>
-            <p className="mt-1 text-[11.5px] text-ink-subtlest">Shown on tickets, comments and the assignee list.</p>
+            <p className="mt-1 text-[11.5px] text-ink-subtle">Shown on tickets, comments and the assignee list.</p>
             <label className="mt-3 block">
-              <span className="section-title">Email (optional)</span>
+              <span className="text-[12px] font-semibold text-ink-subtle">Email (optional)</span>
               <input
                 className="input mt-1 w-full"
                 type="email"
@@ -62,7 +62,7 @@ export default function AccountPage() {
                 }}
               />
             </label>
-            <p className="mt-1 text-[11.5px] text-ink-subtlest">You can also sign in with it. Leave empty to remove it.</p>
+            <p className="mt-1 text-[11.5px] text-ink-subtle">You can also sign in with it. Leave empty to remove it.</p>
             <button className="btn-primary mt-3" disabled={savingName || !name.trim() || !dirty}>
               {savingName ? "Saving..." : "Save"}
             </button>

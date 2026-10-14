@@ -1,6 +1,6 @@
 import { and, asc, count, desc, eq, gt, inArray, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
 import { Hono } from "hono";
-import { getDb, schema, type DB } from "../db/client";
+import { schema, type DB } from "../db/client";
 import {
   TICKET_PRIORITIES,
   TICKET_STATUSES,
@@ -21,6 +21,7 @@ import {
   saveAttachments,
   str,
   streamAttachment,
+  TooLargeError,
   validateFiles,
 } from "../services/tickets";
 import type { DevApp } from "../types";
@@ -38,6 +39,7 @@ dev.use("/attachments/*", need("it"));
 
 dev.onError((err, c) => {
   if (err instanceof InputError) return c.json({ error: err.message }, 400);
+  if (err instanceof TooLargeError) return c.json({ error: err.message }, 413);
   throw err;
 });
 
@@ -77,7 +79,7 @@ dev.patch("/me", async (c) => {
   }
   if (Object.keys(set).length === 0) return c.json({ error: "Nothing to change" }, 400);
   try {
-    const [user] = await getDb(c.env)
+    const [user] = await c.get("db")
       .update(schema.users)
       .set(set)
       .where(eq(schema.users.id, me.id))
@@ -106,23 +108,25 @@ dev.post("/me/password", async (c) => {
   if (next.length < MIN_PASSWORD || next.length > 200) {
     return c.json({ error: `The new password needs at least ${MIN_PASSWORD} characters` }, 400);
   }
-  await getDb(c.env)
+  await c.get("db")
     .update(schema.users)
     .set({ passwordHash: await hashPassword(next), mustChangePassword: 0 })
     .where(eq(schema.users.id, me.id));
   return c.json({ ok: true });
 });
 
-// Heartbeat from every open portal tab: records the page it is on (devAuth has
-// already bumped last_seen_at) and returns who else is online and where.
-// Tabs check in every 15s while visible, so 60s of silence means gone.
-const ONLINE_MS = 60_000;
+// Heartbeat from every open portal tab: records the page it is on (devAuth
+// bumps last_seen_at at most once a minute) and returns who else is online and
+// where. Tabs check in every 60s while visible, so 150s of silence means gone.
+// ponytail: 2 DB writes per tab per minute; carry presence over the LiveRoom
+// socket (no DB at all) if tab counts grow.
+const ONLINE_MS = 150_000;
 
 dev.post("/presence", async (c) => {
   const b = (await c.req.json().catch(() => ({}))) as { page?: unknown };
   // Only same-site paths; the list links to them.
   const page = typeof b.page === "string" && /^\/(?!\/)/.test(b.page) ? b.page.slice(0, 200) : null;
-  const db = getDb(c.env);
+  const db = c.get("db");
   const u = schema.users;
   await db.update(u).set({ viewingPage: page }).where(eq(u.id, c.get("user").id));
   const since = new Date(Date.now() - ONLINE_MS).toISOString();
@@ -133,8 +137,9 @@ dev.post("/presence", async (c) => {
   return c.json({ online: rows });
 });
 
+// ponytail: whole table on purpose; users is bounded by IT staff headcount. Paginate if that stops being true.
 dev.get("/users", async (c) => {
-  const db = getDb(c.env);
+  const db = c.get("db");
   const rows = await db
     .select({ id: schema.users.id, name: schema.users.name, email: schema.users.email })
     .from(schema.users)
@@ -143,8 +148,9 @@ dev.get("/users", async (c) => {
   return c.json({ users: rows });
 });
 
+// ponytail: whole table on purpose; systems is bounded by the handful of integrated apps. Paginate if that stops being true.
 dev.get("/systems", async (c) => {
-  const db = getDb(c.env);
+  const db = c.get("db");
   const rows = await db
     .select({ code: schema.systems.code, name: schema.systems.name, active: schema.systems.active })
     .from(schema.systems)
@@ -180,6 +186,8 @@ function filterWhere(q: Record<string, string | undefined>, me: User, withStatus
     );
   }
 
+  // ponytail: '%term%' cannot use a btree index, so search scans the filtered set. Add a pg_trgm
+  // GIN index on code, legacy_code, title and reporter_name if "All statuses" searches get slow.
   if (q.q?.trim()) {
     const term = `%${q.q.trim()}%`;
     // ilike: Postgres like is case-sensitive, and the search box should not be.
@@ -205,6 +213,7 @@ function orderFor(sort: string | undefined, dir: string | undefined) {
       return [d(PRIORITY_RANK), desc(t.updatedAt)];
     case "status":
       return [d(STATUS_RANK), desc(t.updatedAt)];
+    // ponytail: no (system_code, id) index; fine while filters keep the set small.
     case "key":
       return [d(t.systemCode), d(t.id)];
     case "assignee":
@@ -215,10 +224,11 @@ function orderFor(sort: string | undefined, dir: string | undefined) {
 }
 
 dev.get("/tickets", async (c) => {
-  const db = getDb(c.env);
+  const db = c.get("db");
   const q = c.req.query();
   const page = Math.max(1, Number(q.page) || 1);
-  const pageSize = Math.min(500, Math.max(1, Number(q.page_size) || PAGE_SIZE));
+  // 200 covers the Board; it shows "N of total" when there are more.
+  const pageSize = Math.min(200, Math.max(1, Number(q.page_size) || PAGE_SIZE));
   const where = filterWhere(q, c.get("user"), true);
 
   const [rows, [total]] = await Promise.all([
@@ -251,15 +261,10 @@ dev.get("/tickets", async (c) => {
   return c.json({ tickets: rows, total: total?.n ?? 0, page, page_size: pageSize });
 });
 
-// Counts per status under the current non-status filters, plus sidebar badges.
+// Sidebar badges: active tickets per system, my active tickets, unread notifications.
 dev.get("/tickets/stats", async (c) => {
-  const db = getDb(c.env);
-  const [rows, bySystem, mine, unreadNotifications] = await Promise.all([
-    db
-      .select({ status: t.status, n: count() })
-      .from(t)
-      .where(filterWhere(c.req.query(), c.get("user"), false))
-      .groupBy(t.status),
+  const db = c.get("db");
+  const [bySystem, mine, unreadNotifications] = await Promise.all([
     db
       .select({ system: t.systemCode, n: count() })
       .from(t)
@@ -272,7 +277,6 @@ dev.get("/tickets/stats", async (c) => {
     countUnread(db, c.get("user")),
   ]);
   return c.json({
-    counts: Object.fromEntries(rows.map((r) => [r.status, r.n])),
     active_by_system: Object.fromEntries(bySystem.map((r) => [r.system, r.n])),
     my_active: mine[0]?.n ?? 0,
     unread_notifications: unreadNotifications,
@@ -285,7 +289,7 @@ async function findTicket(db: DB, code: string) {
 }
 
 dev.get("/tickets/:code", async (c) => {
-  const db = getDb(c.env);
+  const db = c.get("db");
   const ticket = await findTicket(db, c.req.param("code"));
   if (!ticket) return c.json({ error: "Not found" }, 404);
 
@@ -320,46 +324,30 @@ type Changes = {
 // Writes one timeline event per changed field. Status and assignee changes are
 // public (the reporter sees who is on it and where it stands); priority and
 // type are triage detail and stay internal.
+// ponytail: the events insert and the ticket update are two statements without a
+// transaction; wrap them in db.transaction if a half-applied change is ever seen.
 async function applyChanges(db: DB, ticket: Ticket, me: User, ch: Changes, at: string) {
   const patch: Partial<Ticket> = {};
+  const events: (typeof schema.ticketEvents.$inferInsert)[] = [];
+  const event = (kind: "assign" | "status" | "priority" | "type", visibility: "public" | "internal", fromValue: string | null, toValue: string | null) =>
+    events.push({ ticketId: ticket.id, kind, visibility, authorKind: "developer", authorName: me.name, userId: me.id, fromValue, toValue, createdAt: at });
   let publicTouch = false;
 
   if (ch.assigneeId !== undefined && ch.assigneeId !== ticket.assigneeId) {
-    let toName: string | null = null;
-    if (ch.assigneeId !== null) {
-      const [d] = await db.select().from(schema.users).where(eq(schema.users.id, ch.assigneeId));
-      if (!d) throw new InputError("Unknown user");
-      toName = d.name;
-    }
-    const [fromDev] = ticket.assigneeId
-      ? await db.select({ name: schema.users.name }).from(schema.users).where(eq(schema.users.id, ticket.assigneeId))
-      : [];
-    await addEvent(db, ticket.id, {
-      kind: "assign",
-      visibility: "public",
-      authorKind: "developer",
-      authorName: me.name,
-      userId: me.id,
-      fromValue: fromDev?.name ?? null,
-      toValue: toName,
-      at,
-    });
+    // Old and new assignee names in one lookup.
+    const ids = [ch.assigneeId, ticket.assigneeId].filter((id): id is number => id !== null);
+    const names = new Map(
+      (await db.select({ id: schema.users.id, name: schema.users.name }).from(schema.users).where(inArray(schema.users.id, ids))).map((u) => [u.id, u.name]),
+    );
+    if (ch.assigneeId !== null && !names.has(ch.assigneeId)) throw new InputError("Unknown user");
+    event("assign", "public", ticket.assigneeId ? (names.get(ticket.assigneeId) ?? null) : null, ch.assigneeId ? names.get(ch.assigneeId)! : null);
     patch.assigneeId = ch.assigneeId;
     if (ch.assigneeId !== null && !ticket.pickedUpAt) patch.pickedUpAt = at;
     publicTouch = true;
   }
 
   if (ch.status && ch.status !== ticket.status) {
-    await addEvent(db, ticket.id, {
-      kind: "status",
-      visibility: "public",
-      authorKind: "developer",
-      authorName: me.name,
-      userId: me.id,
-      fromValue: ticket.status,
-      toValue: ch.status,
-      at,
-    });
+    event("status", "public", ticket.status, ch.status);
     patch.status = ch.status;
     patch.resolvedAt = ch.status === "resolved" ? at : ch.status === "closed" ? ticket.resolvedAt : null;
     patch.closedAt = ch.status === "closed" || ch.status === "rejected" ? at : null;
@@ -369,20 +357,12 @@ async function applyChanges(db: DB, ticket: Ticket, me: User, ch: Changes, at: s
   for (const field of ["priority", "type"] as const) {
     const next = ch[field];
     if (next && next !== ticket[field]) {
-      await addEvent(db, ticket.id, {
-        kind: field,
-        visibility: "internal",
-        authorKind: "developer",
-        authorName: me.name,
-        userId: me.id,
-        fromValue: ticket[field],
-        toValue: next,
-        at,
-      });
+      event(field, "internal", ticket[field], next);
       (patch as Record<string, unknown>)[field] = next;
     }
   }
 
+  if (events.length) await db.insert(schema.ticketEvents).values(events);
   if (publicTouch) {
     patch.lastPublicActivityAt = at;
     patch.lastPublicActor = "developer";
@@ -407,7 +387,7 @@ function parseChanges(f: Record<string, string | undefined>): Changes {
 }
 
 dev.post("/tickets/:code/pickup", async (c) => {
-  const db = getDb(c.env);
+  const db = c.get("db");
   const me = c.get("user");
   const ticket = await findTicket(db, c.req.param("code"));
   if (!ticket) return c.json({ error: "Not found" }, 404);
@@ -428,7 +408,7 @@ dev.post("/tickets/:code/pickup", async (c) => {
 });
 
 dev.patch("/tickets/:code", async (c) => {
-  const db = getDb(c.env);
+  const db = c.get("db");
   const ticket = await findTicket(db, c.req.param("code"));
   if (!ticket) return c.json({ error: "Not found" }, 404);
   const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
@@ -440,7 +420,7 @@ dev.patch("/tickets/:code", async (c) => {
 
 // Comments and attachment rows go with it (ON DELETE CASCADE, migration 008).
 dev.delete("/tickets/:code", need("delete_tickets"), async (c) => {
-  const db = getDb(c.env);
+  const db = c.get("db");
   const ticket = await findTicket(db, c.req.param("code"));
   if (!ticket) return c.json({ error: "Not found" }, 404);
   const files = await db
@@ -455,7 +435,7 @@ dev.delete("/tickets/:code", need("delete_tickets"), async (c) => {
 // Multipart: body, visibility (public|internal), files, and an optional
 // status to move to in the same action (e.g. reply + Waiting Reporter).
 dev.post("/tickets/:code/comments", async (c) => {
-  const db = getDb(c.env);
+  const db = c.get("db");
   const me = c.get("user");
   const ticket = await findTicket(db, c.req.param("code"));
   if (!ticket) return c.json({ error: "Not found" }, 404);
@@ -496,7 +476,7 @@ dev.post("/tickets/:code/comments", async (c) => {
 });
 
 dev.get("/attachments/:id", async (c) => {
-  const db = getDb(c.env);
+  const db = c.get("db");
   const id = Number(c.req.param("id"));
   if (!Number.isInteger(id)) return c.json({ error: "Not found" }, 404);
   const [att] = await db.select().from(schema.ticketAttachments).where(eq(schema.ticketAttachments.id, id)).limit(1);

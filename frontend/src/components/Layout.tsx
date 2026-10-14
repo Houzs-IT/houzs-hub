@@ -43,7 +43,9 @@ type Ctx = {
   stats: Stats;
   // Bumped after any mutation so every open view refetches.
   version: number;
-  refresh: () => void;
+  // The one ticket the last bump was about, or null for "anything may have changed".
+  changedCode: string | null;
+  refresh: (code?: string) => void;
 };
 const HubContext = createContext<Ctx | null>(null);
 export const useHub = () => useContext(HubContext)!;
@@ -55,7 +57,7 @@ function NavItem({ to, icon, label, count }: { to: string; icon: ReactNode; labe
   return (
     <NavLink
       to={to}
-      className={`relative flex h-9 items-center gap-3 rounded-md px-2.5 text-[13px] transition-colors ${
+      className={`tap relative flex h-9 items-center gap-3 rounded-md px-2.5 text-[13px] transition-colors ${
         active
           ? "bg-[var(--sidebar-active)] font-semibold text-sidebar-ink"
           : "text-sidebar-ink-muted hover:bg-[var(--sidebar-hover)] hover:text-sidebar-ink"
@@ -66,7 +68,7 @@ function NavItem({ to, icon, label, count }: { to: string; icon: ReactNode; labe
       <span className="flex-1 truncate">{label}</span>
       {count !== undefined && count > 0 && (
         <span className="rounded-full bg-[var(--sidebar-hover)] px-1.5 text-[10.5px] font-semibold tabular-nums text-sidebar-ink-muted">
-          {count}
+          {count > 99 ? "99+" : count}
         </span>
       )}
     </NavLink>
@@ -74,7 +76,7 @@ function NavItem({ to, icon, label, count }: { to: string; icon: ReactNode; labe
 }
 
 export default function Layout() {
-  const [base, setBase] = useState<Omit<Ctx, "stats" | "version" | "refresh" | "setMe"> | null>(null);
+  const [base, setBase] = useState<Omit<Ctx, "stats" | "version" | "changedCode" | "refresh" | "setMe"> | null>(null);
   const [stats, setStats] = useState<Stats>({ active_by_system: {}, my_active: 0, unread_notifications: 0 });
   const [version, setVersion] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -86,6 +88,12 @@ export default function Layout() {
   const { pathname, search } = useLocation();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   useEffect(() => setIsMenuOpen(false), [pathname, search]);
+  useEffect(() => {
+    if (!isMenuOpen) return;
+    const closeOnEscape = (e: KeyboardEvent) => e.key === "Escape" && setIsMenuOpen(false);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [isMenuOpen]);
   const [itOpen, setItOpen] = useState(() => {
     try {
       return localStorage.getItem("sidebar.it") !== "closed";
@@ -126,9 +134,14 @@ export default function Layout() {
       .catch(() => {});
   }, [base, pathname, search]);
   useEffect(checkIn, [checkIn]);
-  usePoll(checkIn, 15_000);
+  // Backup heartbeat; navigating checks in at once. The server treats 150s of silence as gone.
+  usePoll(checkIn, 60_000);
 
-  const refresh = useCallback(() => setVersion((v) => v + 1), []);
+  const [changedCode, setChangedCode] = useState<string | null>(null);
+  const refresh = useCallback((code?: string) => {
+    setChangedCode(code ?? null);
+    setVersion((v) => v + 1);
+  }, []);
   const setMe = useCallback(
     (me: User) =>
       setBase((b) => b && { ...b, me, users: b.users.map((d) => (d.id === me.id ? { ...d, name: me.name } : d)) }),
@@ -145,17 +158,38 @@ export default function Layout() {
   const landing = can("users", "roles") ? "/users" : can("integrations") ? "/integrations" : "/account";
   const itActive = Object.values(stats.active_by_system).reduce((a, n) => a + n, 0);
 
+  const signOut = () => fetch("/api/v1/auth/logout", { method: "POST" }).finally(() => location.assign("/login"));
+
   if (firstLogin) return <FirstPasswordPage name={firstLogin} />;
-  if (error) return <div className="p-10 text-center text-loz-red-ink">{error}</div>;
-  if (!base) return <div className="p-10 text-center text-ink-subtlest">Loading...</div>;
+  if (error) {
+    return (
+      <div className="grid h-full place-items-center p-6 text-center">
+        <div>
+          <p role="alert" className="text-sm text-loz-red-ink">
+            {error}
+          </p>
+          <div className="mt-4 flex justify-center gap-2">
+            <button className="btn-primary" onClick={() => location.reload()}>
+              Try again
+            </button>
+            <button className="btn-default" onClick={signOut}>
+              Sign out
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  if (!base) return <div className="p-10 text-center text-ink-subtle">Loading...</div>;
+  const unread = stats.unread_notifications;
 
   return (
-    <HubContext.Provider value={{ ...base, stats, version, refresh, setMe }}>
+    <HubContext.Provider value={{ ...base, stats, version, changedCode, refresh, setMe }}>
       <div className="flex h-full">
         {isMenuOpen && <div className="fixed inset-0 z-30 bg-black/50 lg:hidden" onClick={() => setIsMenuOpen(false)} />}
         <aside
-          className={`fixed inset-y-0 left-0 z-40 flex w-60 shrink-0 flex-col bg-sidebar transition-transform lg:relative lg:translate-x-0 ${
-            isMenuOpen ? "translate-x-0" : "-translate-x-full"
+          className={`fixed inset-y-0 left-0 z-40 flex w-60 shrink-0 flex-col bg-sidebar transition-[transform,visibility] motion-reduce:transition-none lg:relative lg:translate-x-0 ${
+            isMenuOpen ? "translate-x-0" : "-translate-x-full max-lg:invisible"
           }`}
         >
           <div className="pointer-events-none absolute right-0 top-0 h-full w-px bg-gradient-to-b from-transparent via-accent/35 to-transparent" />
@@ -174,6 +208,8 @@ export default function Layout() {
             )}
           </div>
 
+          {/* Scrolls on short screens so the account row and Sign out below stay reachable. */}
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
           <nav className="space-y-0.5 px-3 py-2">
             {/* The IT category (workspace views and its systems), shown with the "it"
                 permission. The server refuses ticket routes without it too. */}
@@ -181,30 +217,31 @@ export default function Layout() {
             <button
               onClick={toggleIt}
               aria-expanded={itOpen}
-              className="flex w-full items-center gap-1.5 px-2.5 pb-1 pt-3 text-[9.5px] font-bold uppercase tracking-brand text-sidebar-ink-muted hover:text-sidebar-ink"
+              className="tap flex w-full items-center gap-1.5 px-2.5 pb-1 pt-3 text-[9.5px] font-bold uppercase tracking-brand text-sidebar-ink-muted hover:text-sidebar-ink"
             >
               <span className="flex-1 text-left">IT</span>
               {!itOpen && itActive > 0 && (
                 <span className="rounded-full bg-[var(--sidebar-hover)] px-1.5 text-[10.5px] normal-case tracking-normal tabular-nums">{itActive}</span>
               )}
-              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${itOpen ? "" : "-rotate-90"}`} />
+              <ChevronDown className={`h-3.5 w-3.5 transition-transform motion-reduce:transition-none ${itOpen ? "" : "-rotate-90"}`} />
             </button>
             )}
             {can("it") && itOpen && (
               <>
-                <div className="px-2.5 pb-1 pt-1.5 text-[9px] font-semibold uppercase tracking-brand text-sidebar-ink-muted/70">Workspace</div>
+                <div className="px-2.5 pb-1 pt-1.5 text-[9px] font-semibold uppercase tracking-brand text-sidebar-ink-muted">Workspace</div>
                 <NavItem to="/tickets" icon={<List className="h-4 w-4" />} label="List" />
                 <NavItem to="/board" icon={<KanbanSquare className="h-4 w-4" />} label="Board" />
                 <NavItem to="/queue" icon={<UserCheck className="h-4 w-4" />} label="My queue" count={stats.my_active} />
                 <NavItem to="/notifications" icon={<Bell className="h-4 w-4" />} label="Notifications" count={stats.unread_notifications} />
 
-                <div className="px-2.5 pb-1 pt-3 text-[9px] font-semibold uppercase tracking-brand text-sidebar-ink-muted/70">Systems</div>
+                <div className="px-2.5 pb-1 pt-3 text-[9px] font-semibold uppercase tracking-brand text-sidebar-ink-muted">Systems</div>
                 {base.systems.map((s) => (
                   <NavItem
                     key={s.code}
                     to={`/tickets?system=${s.code}`}
+                    // Same width for every code, so the system names line up.
                     icon={
-                      <span className="grid h-5 min-w-[22px] place-items-center rounded border border-[var(--sidebar-border)] px-1 font-docno text-[9px] font-semibold text-accent-bright">
+                      <span className="grid h-5 w-12 place-items-center truncate rounded bg-[var(--sidebar-hover)] px-1 font-docno text-[9px] font-semibold text-accent-bright">
                         {s.code}
                       </span>
                     }
@@ -235,7 +272,7 @@ export default function Layout() {
                   <Link
                     key={u.id}
                     to={u.page ?? "/tickets"}
-                    className="flex items-center gap-2 rounded-md px-1 py-0.5 hover:bg-[var(--sidebar-hover)]"
+                    className="tap flex items-center gap-2 rounded-md px-1 py-0.5 hover:bg-[var(--sidebar-hover)]"
                     title={`Go to what ${u.name} is reading`}
                   >
                     <Avatar name={u.name} size={22} />
@@ -246,25 +283,24 @@ export default function Layout() {
               </div>
             </div>
           )}
+          </div>
           <div className="flex items-center gap-2.5 border-t border-[var(--sidebar-border)] px-4 py-3">
-            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--sidebar-active)] text-[10px] font-bold uppercase text-accent-bright shadow-[inset_0_0_0_1px_rgba(161,106,46,0.25)]">
-              {base.me.name.slice(0, 2)}
-            </span>
+            <Avatar name={base.me.name} size={32} />
             <Link to="/account" className="group min-w-0 flex-1" title="My account and password">
               <div className="truncate text-[12px] font-semibold text-sidebar-ink group-hover:text-accent-bright">{base.me.name}</div>
               <div className="truncate text-[10px] text-sidebar-ink-muted">{base.me.email ?? base.me.username}</div>
             </Link>
             <button
               onClick={toggle}
-              className="grid h-8 w-8 place-items-center rounded-md text-sidebar-ink-muted transition-colors hover:bg-[var(--sidebar-hover)] hover:text-accent-bright"
+              className="tap grid h-8 w-8 place-items-center rounded-md text-sidebar-ink-muted transition-colors hover:bg-[var(--sidebar-hover)] hover:text-accent-bright"
               title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
               aria-label="Toggle theme"
             >
               {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </button>
             <button
-              onClick={() => fetch("/api/v1/auth/logout", { method: "POST" }).finally(() => location.assign("/login"))}
-              className="grid h-8 w-8 place-items-center rounded-md text-sidebar-ink-muted transition-colors hover:bg-[var(--sidebar-hover)] hover:text-accent-bright"
+              onClick={signOut}
+              className="tap grid h-8 w-8 place-items-center rounded-md text-sidebar-ink-muted transition-colors hover:bg-[var(--sidebar-hover)] hover:text-accent-bright"
               title="Sign out"
               aria-label="Sign out"
             >
@@ -275,10 +311,25 @@ export default function Layout() {
 
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line bg-surface px-2 lg:hidden">
-            <button className="btn-subtle h-10 px-2" onClick={() => setIsMenuOpen(true)} aria-label="Open menu">
+            <button className="btn-subtle h-10 px-2" onClick={() => setIsMenuOpen(true)} aria-label="Open menu" aria-expanded={isMenuOpen}>
               <Menu className="h-5 w-5" />
             </button>
             <span className="flex-1 text-[14px] font-bold text-ink">Houzs IT Hub</span>
+            {/* New activity stays visible on phones, where the sidebar bell is behind the menu. */}
+            {can("it") && (
+              <Link
+                to="/notifications"
+                className="tap relative grid place-items-center rounded-md text-ink-subtle"
+                aria-label={unread ? `Notifications, ${unread} unread` : "Notifications"}
+              >
+                <Bell className="h-5 w-5" />
+                {unread > 0 && (
+                  <span className="absolute right-0.5 top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-loz-red-ink px-1 text-[10px] font-bold leading-none text-surface">
+                    {unread > 99 ? "99+" : unread}
+                  </span>
+                )}
+              </Link>
+            )}
             <Link to="/account" className="p-1" title="My account" aria-label="My account">
               <Avatar name={base.me.name} size={30} />
             </Link>
