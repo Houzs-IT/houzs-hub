@@ -42,8 +42,8 @@ export const isUniqueViolation = (e: unknown) => {
 };
 
 // Would this change leave nobody active who can manage roles?
-// ponytail: read-then-write without a lock; two admins editing at the same
-// second could both pass. Fine for a handful of admins.
+// ponytail: read-then-write without a lock, and it loads every user and role to
+// check permissions in JS. Fine for a handful of admins and staff headcount.
 async function lockout(
   db: DB,
   change: { user?: Partial<AccessFields> & { id: number }; role?: { key: string; permissions: string } },
@@ -68,6 +68,7 @@ async function roleExists(db: DB, key: unknown) {
 }
 
 // Integrations page: whether each system has a key and when it last used it.
+// ponytail: whole table on purpose; systems is bounded by the handful of integrated apps. Paginate if that stops being true.
 admin.get("/systems", need("integrations"), async (c) => {
   const s = schema.systems;
   const rows = await c.get("db")
@@ -86,6 +87,7 @@ admin.get("/systems", need("integrations"), async (c) => {
 });
 
 // Inactive users too, unlike /users which feeds the assignee picker.
+// ponytail: whole table on purpose; users is bounded by IT staff headcount. Paginate if that stops being true.
 admin.get("/users", need("users", "roles"), async (c) => {
   const users = await c.get("db").select(USER_COLS).from(d).orderBy(asc(d.name));
   return c.json({ users: users.map(userOut) });
@@ -178,6 +180,7 @@ admin.post("/users/:id/reset-password", need("users"), async (c) => {
 });
 
 // Readable with "users" too: the Users page lists role names.
+// ponytail: whole table on purpose; roles is bounded by the few roles an IT team defines. Paginate if that stops being true.
 admin.get("/roles", need("users", "roles"), async (c) => {
   const db = c.get("db");
   const [roles, counts] = await Promise.all([

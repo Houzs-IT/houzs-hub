@@ -159,26 +159,33 @@ sys.get("/tickets", async (c) => {
     eq(t.reporterExternalId, c.get("reporterId")),
     statuses.length ? inArray(t.status, statuses as Ticket["status"][]) : undefined,
   );
+  // Optional paging. Without page / page_size it still returns the newest 200, as systems already expect.
+  const page = Math.max(1, Number(c.req.query("page")) || 1);
+  const pageSize = Math.min(200, Math.max(1, Number(c.req.query("page_size")) || 200));
 
-  const rows = await db
-    .select({
-      code: t.code,
-      type: t.type,
-      priority: t.priority,
-      status: t.status,
-      title: t.title,
-      created_at: t.createdAt,
-      updated_at: t.updatedAt,
-      assignee_name: schema.users.name,
-      unread: unreadExpr,
-    })
-    .from(t)
-    .leftJoin(schema.users, eq(schema.users.id, t.assigneeId))
-    .where(where)
-    .orderBy(desc(t.updatedAt))
-    .limit(200);
+  const [rows, [total]] = await Promise.all([
+    db
+      .select({
+        code: t.code,
+        type: t.type,
+        priority: t.priority,
+        status: t.status,
+        title: t.title,
+        created_at: t.createdAt,
+        updated_at: t.updatedAt,
+        assignee_name: schema.users.name,
+        unread: unreadExpr,
+      })
+      .from(t)
+      .leftJoin(schema.users, eq(schema.users.id, t.assigneeId))
+      .where(where)
+      .orderBy(desc(t.updatedAt))
+      .limit(pageSize)
+      .offset((page - 1) * pageSize),
+    db.select({ n: count() }).from(t).where(where),
+  ]);
 
-  return c.json({ tickets: rows.map((r) => ({ ...r, unread: r.unread === 1 })) });
+  return c.json({ tickets: rows.map((r) => ({ ...r, unread: r.unread === 1 })), total: total?.n ?? 0, page, page_size: pageSize });
 });
 
 sys.get("/tickets/unread-count", async (c) => {
