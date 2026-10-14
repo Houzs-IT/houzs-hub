@@ -13,6 +13,9 @@ type Stats = { active_by_system: Record<string, number>; my_active: number; unre
 
 const IT_PATH = /^\/($|tickets|board|queue|notifications)/;
 
+// Sidebar wording only; everywhere else shows the system's stored name.
+const SIDEBAR_SYSTEM_NAMES: Record<string, string> = { CONTS: "The Conts" };
+
 const PAGE_NAMES: Record<string, string> = {
   "/tickets": "List",
   "/board": "Board",
@@ -239,7 +242,7 @@ export default function Layout() {
                   <NavItem
                     key={s.code}
                     to={`/tickets?system=${s.code}`}
-                    label={s.name}
+                    label={SIDEBAR_SYSTEM_NAMES[s.code] ?? s.name}
                     count={stats.active_by_system[s.code] ?? 0}
                   />
                 ))}
