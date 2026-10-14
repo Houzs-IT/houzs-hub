@@ -1,6 +1,6 @@
 import { and, count, desc, eq, gt, inArray, isNull, max, ne, or, sql, type SQL } from "drizzle-orm";
 import { Hono } from "hono";
-import { getDb, schema, type DB } from "../db/client";
+import { schema, type DB } from "../db/client";
 import { need } from "../middleware/devAuth";
 import type { DevApp, DevVars } from "../types";
 
@@ -57,7 +57,7 @@ export async function countUnread(db: DB, user: DevVars["user"]) {
 // unread=1 lists events after the read mark; `after` pins that mark so marking
 // read while the page is open does not empty the Unread only view.
 notifications.get("/", async (c) => {
-  const db = getDb(c.env);
+  const db = c.get("db");
   const me = c.get("user");
   const query = c.req.query();
   const page = Math.max(1, Number(query.page) || 1);
@@ -94,7 +94,7 @@ notifications.get("/", async (c) => {
 
 // Marks read up to `up_to`, or everything when it is missing. The mark never moves back.
 notifications.post("/read", async (c) => {
-  const db = getDb(c.env);
+  const db = c.get("db");
   const me = c.get("user");
   const body = (await c.req.json().catch(() => ({}))) as { up_to?: unknown };
   const upTo = Number(body.up_to);

@@ -43,7 +43,9 @@ type Ctx = {
   stats: Stats;
   // Bumped after any mutation so every open view refetches.
   version: number;
-  refresh: () => void;
+  // The one ticket the last bump was about, or null for "anything may have changed".
+  changedCode: string | null;
+  refresh: (code?: string) => void;
 };
 const HubContext = createContext<Ctx | null>(null);
 export const useHub = () => useContext(HubContext)!;
@@ -74,7 +76,7 @@ function NavItem({ to, icon, label, count }: { to: string; icon: ReactNode; labe
 }
 
 export default function Layout() {
-  const [base, setBase] = useState<Omit<Ctx, "stats" | "version" | "refresh" | "setMe"> | null>(null);
+  const [base, setBase] = useState<Omit<Ctx, "stats" | "version" | "changedCode" | "refresh" | "setMe"> | null>(null);
   const [stats, setStats] = useState<Stats>({ active_by_system: {}, my_active: 0, unread_notifications: 0 });
   const [version, setVersion] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -129,7 +131,11 @@ export default function Layout() {
   // Backup heartbeat; navigating checks in at once. The server treats 150s of silence as gone.
   usePoll(checkIn, 60_000);
 
-  const refresh = useCallback(() => setVersion((v) => v + 1), []);
+  const [changedCode, setChangedCode] = useState<string | null>(null);
+  const refresh = useCallback((code?: string) => {
+    setChangedCode(code ?? null);
+    setVersion((v) => v + 1);
+  }, []);
   const setMe = useCallback(
     (me: User) =>
       setBase((b) => b && { ...b, me, users: b.users.map((d) => (d.id === me.id ? { ...d, name: me.name } : d)) }),
@@ -151,7 +157,7 @@ export default function Layout() {
   if (!base) return <div className="p-10 text-center text-ink-subtlest">Loading...</div>;
 
   return (
-    <HubContext.Provider value={{ ...base, stats, version, refresh, setMe }}>
+    <HubContext.Provider value={{ ...base, stats, version, changedCode, refresh, setMe }}>
       <div className="flex h-full">
         {isMenuOpen && <div className="fixed inset-0 z-30 bg-black/50 lg:hidden" onClick={() => setIsMenuOpen(false)} />}
         <aside

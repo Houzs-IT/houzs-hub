@@ -302,7 +302,7 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 }
 
 export default function IssueView({ code, variant, onClose }: { code: string; variant: "panel" | "page"; onClose?: () => void }) {
-  const { me, users, refresh, version } = useHub();
+  const { me, users, refresh, version, changedCode } = useHub();
   const [data, setData] = useState<Detail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -325,7 +325,14 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
       .catch((e: Error) => setError(e.message));
   }, [code]);
 
-  useEffect(load, [load, version]);
+  useEffect(load, [load]);
+  // Live updates about other tickets do not reload this one.
+  const seenVersion = useRef(version);
+  useEffect(() => {
+    if (version === seenVersion.current) return;
+    seenVersion.current = version;
+    if (!changedCode || changedCode === code) load();
+  }, [version, changedCode, code, load]);
   usePoll(load, 60_000);
 
   async function patch(body: Record<string, unknown>, path = "") {

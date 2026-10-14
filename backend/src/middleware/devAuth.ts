@@ -69,5 +69,6 @@ export const devAuth = createMiddleware<DevApp>(async (c, next) => {
   }
 
   c.set("user", user);
+  c.set("db", db);
   await next();
 });

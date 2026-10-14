@@ -48,7 +48,7 @@ export default function NotificationsPage() {
         setError(null);
         // Only the All tab marks read on view: a filtered tab would also clear unseen items of other kinds.
         const newestId = response.notifications[0]?.id ?? 0;
-        if (tab === "all" && newestId > response.seen_id) api("/notifications/read", json("POST", { up_to: newestId })).then(refresh).catch(() => {});
+        if (tab === "all" && newestId > response.seen_id) api("/notifications/read", json("POST", { up_to: newestId })).then(() => refresh()).catch(() => {});
       })
       .catch((e: Error) => setError(e.message));
   }, [page, tab, isUnreadOnly, refresh]);

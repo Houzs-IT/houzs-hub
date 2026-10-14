@@ -1,6 +1,6 @@
 import { and, asc, count, desc, eq, gt, inArray, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
 import { Hono } from "hono";
-import { getDb, schema, type DB } from "../db/client";
+import { schema, type DB } from "../db/client";
 import {
   TICKET_PRIORITIES,
   TICKET_STATUSES,
@@ -79,7 +79,7 @@ dev.patch("/me", async (c) => {
   }
   if (Object.keys(set).length === 0) return c.json({ error: "Nothing to change" }, 400);
   try {
-    const [user] = await getDb(c.env)
+    const [user] = await c.get("db")
       .update(schema.users)
       .set(set)
       .where(eq(schema.users.id, me.id))
@@ -108,7 +108,7 @@ dev.post("/me/password", async (c) => {
   if (next.length < MIN_PASSWORD || next.length > 200) {
     return c.json({ error: `The new password needs at least ${MIN_PASSWORD} characters` }, 400);
   }
-  await getDb(c.env)
+  await c.get("db")
     .update(schema.users)
     .set({ passwordHash: await hashPassword(next), mustChangePassword: 0 })
     .where(eq(schema.users.id, me.id));
@@ -126,7 +126,7 @@ dev.post("/presence", async (c) => {
   const b = (await c.req.json().catch(() => ({}))) as { page?: unknown };
   // Only same-site paths; the list links to them.
   const page = typeof b.page === "string" && /^\/(?!\/)/.test(b.page) ? b.page.slice(0, 200) : null;
-  const db = getDb(c.env);
+  const db = c.get("db");
   const u = schema.users;
   await db.update(u).set({ viewingPage: page }).where(eq(u.id, c.get("user").id));
   const since = new Date(Date.now() - ONLINE_MS).toISOString();
@@ -138,7 +138,7 @@ dev.post("/presence", async (c) => {
 });
 
 dev.get("/users", async (c) => {
-  const db = getDb(c.env);
+  const db = c.get("db");
   const rows = await db
     .select({ id: schema.users.id, name: schema.users.name, email: schema.users.email })
     .from(schema.users)
@@ -148,7 +148,7 @@ dev.get("/users", async (c) => {
 });
 
 dev.get("/systems", async (c) => {
-  const db = getDb(c.env);
+  const db = c.get("db");
   const rows = await db
     .select({ code: schema.systems.code, name: schema.systems.name, active: schema.systems.active })
     .from(schema.systems)
@@ -219,7 +219,7 @@ function orderFor(sort: string | undefined, dir: string | undefined) {
 }
 
 dev.get("/tickets", async (c) => {
-  const db = getDb(c.env);
+  const db = c.get("db");
   const q = c.req.query();
   const page = Math.max(1, Number(q.page) || 1);
   // 200 covers the Board; it shows "N of total" when there are more.
@@ -258,7 +258,7 @@ dev.get("/tickets", async (c) => {
 
 // Sidebar badges: active tickets per system, my active tickets, unread notifications.
 dev.get("/tickets/stats", async (c) => {
-  const db = getDb(c.env);
+  const db = c.get("db");
   const [bySystem, mine, unreadNotifications] = await Promise.all([
     db
       .select({ system: t.systemCode, n: count() })
@@ -284,7 +284,7 @@ async function findTicket(db: DB, code: string) {
 }
 
 dev.get("/tickets/:code", async (c) => {
-  const db = getDb(c.env);
+  const db = c.get("db");
   const ticket = await findTicket(db, c.req.param("code"));
   if (!ticket) return c.json({ error: "Not found" }, 404);
 
@@ -406,7 +406,7 @@ function parseChanges(f: Record<string, string | undefined>): Changes {
 }
 
 dev.post("/tickets/:code/pickup", async (c) => {
-  const db = getDb(c.env);
+  const db = c.get("db");
   const me = c.get("user");
   const ticket = await findTicket(db, c.req.param("code"));
   if (!ticket) return c.json({ error: "Not found" }, 404);
@@ -427,7 +427,7 @@ dev.post("/tickets/:code/pickup", async (c) => {
 });
 
 dev.patch("/tickets/:code", async (c) => {
-  const db = getDb(c.env);
+  const db = c.get("db");
   const ticket = await findTicket(db, c.req.param("code"));
   if (!ticket) return c.json({ error: "Not found" }, 404);
   const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
@@ -439,7 +439,7 @@ dev.patch("/tickets/:code", async (c) => {
 
 // Comments and attachment rows go with it (ON DELETE CASCADE, migration 008).
 dev.delete("/tickets/:code", need("delete_tickets"), async (c) => {
-  const db = getDb(c.env);
+  const db = c.get("db");
   const ticket = await findTicket(db, c.req.param("code"));
   if (!ticket) return c.json({ error: "Not found" }, 404);
   const files = await db
@@ -454,7 +454,7 @@ dev.delete("/tickets/:code", need("delete_tickets"), async (c) => {
 // Multipart: body, visibility (public|internal), files, and an optional
 // status to move to in the same action (e.g. reply + Waiting Reporter).
 dev.post("/tickets/:code/comments", async (c) => {
-  const db = getDb(c.env);
+  const db = c.get("db");
   const me = c.get("user");
   const ticket = await findTicket(db, c.req.param("code"));
   if (!ticket) return c.json({ error: "Not found" }, 404);
@@ -495,7 +495,7 @@ dev.post("/tickets/:code/comments", async (c) => {
 });
 
 dev.get("/attachments/:id", async (c) => {
-  const db = getDb(c.env);
+  const db = c.get("db");
   const id = Number(c.req.param("id"));
   if (!Number.isInteger(id)) return c.json({ error: "Not found" }, 404);
   const [att] = await db.select().from(schema.ticketAttachments).where(eq(schema.ticketAttachments.id, id)).limit(1);

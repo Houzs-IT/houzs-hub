@@ -1,6 +1,6 @@
 import { asc, count, eq } from "drizzle-orm";
 import { Hono } from "hono";
-import { getDb, schema, type DB } from "../db/client";
+import { schema, type DB } from "../db/client";
 import { EMAIL_RE, USERNAME_RE, hashPassword, randomPassword } from "../services/crypto";
 import { need } from "../middleware/devAuth";
 import { PERMISSIONS, joinPerms, locksOut, parsePerms } from "../services/perms";
@@ -70,7 +70,7 @@ async function roleExists(db: DB, key: unknown) {
 // Integrations page: whether each system has a key and when it last used it.
 admin.get("/systems", need("integrations"), async (c) => {
   const s = schema.systems;
-  const rows = await getDb(c.env)
+  const rows = await c.get("db")
     .select({
       code: s.code,
       name: s.name,
@@ -87,13 +87,13 @@ admin.get("/systems", need("integrations"), async (c) => {
 
 // Inactive users too, unlike /users which feeds the assignee picker.
 admin.get("/users", need("users", "roles"), async (c) => {
-  const users = await getDb(c.env).select(USER_COLS).from(d).orderBy(asc(d.name));
+  const users = await c.get("db").select(USER_COLS).from(d).orderBy(asc(d.name));
   return c.json({ users: users.map(userOut) });
 });
 
 // The temporary password is returned once in this response and never stored in plain text.
 admin.post("/users", need("users"), async (c) => {
-  const db = getDb(c.env);
+  const db = c.get("db");
   const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
   const email = (typeof b.email === "string" ? b.email.trim().toLowerCase() : "") || null;
   const username = typeof b.username === "string" ? b.username.trim().toLowerCase() : "";
@@ -124,7 +124,7 @@ admin.post("/users", need("users"), async (c) => {
 // change their own role, overrides or on/off, and no change may leave the hub
 // without someone who can manage roles.
 admin.patch("/users/:id", need("users", "roles"), async (c) => {
-  const db = getDb(c.env);
+  const db = c.get("db");
   const me = c.get("user");
   const id = Number(c.req.param("id"));
   if (!Number.isInteger(id)) return c.json({ error: "User not found" }, 404);
@@ -168,7 +168,7 @@ admin.post("/users/:id/reset-password", need("users"), async (c) => {
   const id = Number(c.req.param("id"));
   if (!Number.isInteger(id)) return c.json({ error: "User not found" }, 404);
   const password = randomPassword();
-  const [user] = await getDb(c.env)
+  const [user] = await c.get("db")
     .update(d)
     .set({ passwordHash: await hashPassword(password), mustChangePassword: 1, failedLogins: 0, lockedUntil: null })
     .where(eq(d.id, id))
@@ -179,7 +179,7 @@ admin.post("/users/:id/reset-password", need("users"), async (c) => {
 
 // Readable with "users" too: the Users page lists role names.
 admin.get("/roles", need("users", "roles"), async (c) => {
-  const db = getDb(c.env);
+  const db = c.get("db");
   const [roles, counts] = await Promise.all([
     db.select().from(r).orderBy(asc(r.name)),
     db.select({ role: d.role, n: count() }).from(d).groupBy(d.role),
@@ -200,7 +200,7 @@ admin.get("/roles", need("users", "roles"), async (c) => {
 const roleName = (v: unknown) => (typeof v === "string" ? v.trim().slice(0, 40) : "");
 
 admin.post("/roles", need("roles"), async (c) => {
-  const db = getDb(c.env);
+  const db = c.get("db");
   const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
   const name = roleName(b.name);
   if (!name) return c.json({ error: "Give the role a name" }, 400);
@@ -224,7 +224,7 @@ admin.post("/roles", need("roles"), async (c) => {
 });
 
 admin.patch("/roles/:key", need("roles"), async (c) => {
-  const db = getDb(c.env);
+  const db = c.get("db");
   const key = c.req.param("key");
   const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
   const set: { name?: string; permissions?: string } = {};
@@ -253,7 +253,7 @@ admin.patch("/roles/:key", need("roles"), async (c) => {
 });
 
 admin.delete("/roles/:key", need("roles"), async (c) => {
-  const db = getDb(c.env);
+  const db = c.get("db");
   const key = c.req.param("key");
   if (BUILT_IN.has(key)) return c.json({ error: "Admin and Developer are built in and cannot be deleted" }, 400);
   const [{ n }] = await db.select({ n: count() }).from(d).where(eq(d.role, key));

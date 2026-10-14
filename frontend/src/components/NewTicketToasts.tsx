@@ -70,6 +70,18 @@ export default function NewTicketToasts() {
     let reconnectTimer: ReturnType<typeof setTimeout>;
     let isStopped = false;
     let failedAttempts = 0;
+    // Bursts of changes (a reply that also moves status, several people at once) become one refetch.
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+    let pendingCode: string | null | undefined;
+    function queueRefresh(code: string | null) {
+      pendingCode = pendingCode === undefined || pendingCode === code ? code : null;
+      if (refreshTimer) return;
+      refreshTimer = setTimeout(() => {
+        refresh(pendingCode ?? undefined);
+        refreshTimer = undefined;
+        pendingCode = undefined;
+      }, 1500 + Math.random() * 1000);
+    }
 
     function connect() {
       const protocol = location.protocol === "https:" ? "wss" : "ws";
@@ -81,7 +93,7 @@ export default function NewTicketToasts() {
         try {
           const message = JSON.parse(event.data);
           if (message.type === "ticket.created") showNewTickets([message.ticket]);
-          if (message.type === "tickets.changed") refresh();
+          if (message.type === "tickets.changed") queueRefresh(message.code ?? null);
         } catch {}
       };
       socket.onclose = () => {
@@ -98,6 +110,7 @@ export default function NewTicketToasts() {
     return () => {
       isStopped = true;
       clearTimeout(reconnectTimer);
+      clearTimeout(refreshTimer);
       socket?.close();
     };
   }, [showNewTickets, checkForNewTickets, refresh]);
