@@ -63,7 +63,7 @@ export default function IntegrationsPage() {
 
   return (
     <div className="h-full overflow-auto px-4 py-6 md:px-8">
-      <div className="eyebrow">IT Hub · Admin</div>
+      <div className="eyebrow">Houzs Hub · Admin</div>
       <h1 className="mt-1 text-[24px] font-extrabold tracking-tight text-ink">Integrations</h1>
       <p className="mt-1 max-w-2xl text-[13px] text-ink-subtle">
         Whether each system is linked to the hub, based on its last call with a valid API key. Refreshes every minute.

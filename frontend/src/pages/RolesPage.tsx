@@ -93,7 +93,7 @@ export default function RolesPage() {
     <div className="h-full overflow-auto px-4 py-6 md:px-8">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="max-w-2xl">
-          <div className="eyebrow">IT Hub · Admin</div>
+          <div className="eyebrow">Houzs Hub · Admin</div>
           <h1 className="mt-1 text-[24px] font-extrabold tracking-tight text-ink">Roles</h1>
           <p className="mt-1 text-[13px] text-ink-subtle">
             Tick what each role may do; changes save as you go. To give one person more or less than their role, use

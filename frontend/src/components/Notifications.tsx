@@ -51,10 +51,10 @@ export function NotificationBell() {
   }, [isOpen, version]);
 
   return (
-    <div ref={ref}>
+    <div ref={ref} className="relative">
       <button
         onClick={() => setIsOpen((open) => !open)}
-        className="relative grid h-10 w-10 place-items-center rounded-md text-sidebar-ink-muted transition-colors hover:bg-[var(--sidebar-hover)] hover:text-accent-bright"
+        className="relative grid h-10 w-10 place-items-center rounded-md text-ink-subtle transition-colors hover:bg-hover hover:text-ink"
         aria-label={unread ? `Notifications, ${unread} unread` : "Notifications"}
         aria-expanded={isOpen}
       >
@@ -67,7 +67,7 @@ export function NotificationBell() {
       </button>
 
       {isOpen && (
-        <div className="absolute left-3 top-full z-50 mt-1 w-[min(340px,calc(100vw-32px))] rounded-[10px] border border-transparent bg-overlay text-ink shadow-overlay">
+        <div className="absolute right-0 top-full z-50 mt-1 w-[min(340px,calc(100vw-32px))] rounded-[10px] border border-transparent bg-overlay text-ink shadow-overlay">
           <div className="border-b border-line px-4 py-2.5 text-[13px] font-bold">Notifications</div>
           <div className="max-h-[60vh] overflow-y-auto overscroll-contain">
             {latest?.notifications.map((notification) => (

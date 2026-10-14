@@ -117,10 +117,11 @@ dev.post("/me/password", async (c) => {
 
 // Heartbeat from every open portal tab: records the page it is on (devAuth
 // bumps last_seen_at at most once a minute) and returns who else is online and
-// where. Tabs check in every 60s while visible, so 150s of silence means gone.
+// where. Tabs check in every 60s while visible; the hub calls 150s of silence
+// away, and people drop off the list after 15 minutes.
 // ponytail: 2 DB writes per tab per minute; carry presence over the LiveRoom
 // socket (no DB at all) if tab counts grow.
-const ONLINE_MS = 150_000;
+const LISTED_MS = 15 * 60_000;
 
 dev.post("/presence", async (c) => {
   const b = (await c.req.json().catch(() => ({}))) as { page?: unknown };
@@ -129,12 +130,14 @@ dev.post("/presence", async (c) => {
   const db = c.get("db");
   const u = schema.users;
   await db.update(u).set({ viewingPage: page }).where(eq(u.id, c.get("user").id));
-  const since = new Date(Date.now() - ONLINE_MS).toISOString();
+  const now = Date.now();
   const rows = await db
-    .select({ id: u.id, page: u.viewingPage })
+    .select({ id: u.id, page: u.viewingPage, lastSeenAt: u.lastSeenAt })
     .from(u)
-    .where(and(eq(u.active, 1), gt(u.lastSeenAt, since)));
-  return c.json({ online: rows });
+    .where(and(eq(u.active, 1), gt(u.lastSeenAt, new Date(now - LISTED_MS).toISOString())));
+  // Idle time from the server clock, so a skewed laptop clock cannot misplace anyone.
+  const online = rows.map((row) => ({ id: row.id, page: row.page, idleSeconds: Math.max(0, Math.round((now - Date.parse(row.lastSeenAt!)) / 1000)) }));
+  return c.json({ online });
 });
 
 // ponytail: whole table on purpose; users is bounded by IT staff headcount. Paginate if that stops being true.

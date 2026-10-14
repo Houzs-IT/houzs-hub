@@ -47,7 +47,7 @@ export default function ProjectShell({
         <div className="px-4 pt-4 sm:pt-6 md:px-8">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <div className="eyebrow">IT Hub · Tickets{system && ` · ${view}`}</div>
+              <div className="eyebrow">Houzs Hub · Tickets{system && ` · ${view}`}</div>
               <h1 className="text-[20px] font-extrabold tracking-tight text-ink sm:mt-1 sm:text-[24px]">{system?.name ?? view}</h1>
             </div>
             <div className="inline-flex rounded-[9px] border border-line bg-surface p-1 shadow-stone">
