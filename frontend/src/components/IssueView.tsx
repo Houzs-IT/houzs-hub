@@ -2,6 +2,7 @@ import { ArrowRight, ChevronDown, ExternalLink, FileText, Lock, Maximize2, Messa
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, attachmentUrl, json, type Attachment, type Status, type TicketEvent, type TicketFull } from "../api/client";
+import { compressImage } from "../lib/compressImage";
 import { fmtAgo, fmtDateTime, fmtSize } from "../lib/format";
 import { ACTIVE, PRIORITIES, PRIORITY_LABEL, STATUSES, STATUS_LABEL, STATUS_STYLE, TYPES, TYPE_LABEL } from "../lib/labels";
 import { usePoll } from "../lib/usePoll";
@@ -177,6 +178,7 @@ function Composer({ code, status, onDone }: { code: string; status: Status; onDo
   const [thenStatus, setThenStatus] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
+  const [isPreparing, setIsPreparing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -266,9 +268,10 @@ function Composer({ code, status, onDone }: { code: string; status: Status; onDo
             </div>
           )}
         </div>
+        {isPreparing && <div className="mt-1 text-xs text-ink-subtle">Preparing images...</div>}
         {error && <div className="mt-1 text-xs text-loz-red-ink">{error}</div>}
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <button className="btn-primary" disabled={busy || (!body.trim() && !files.length)} onClick={save}>
+          <button className="btn-primary" disabled={busy || isPreparing || (!body.trim() && !files.length)} onClick={save}>
             {internal ? "Add note" : "Send to reporter"}
           </button>
           <button className="btn-subtle" onClick={cancel}>
@@ -280,16 +283,20 @@ function Composer({ code, status, onDone }: { code: string; status: Status; onDo
             multiple
             accept="image/*,application/pdf,video/mp4,video/quicktime"
             className="hidden"
-            onChange={(e) => {
-              // Same limits as the server, told up front instead of after a long upload.
+            onChange={async (e) => {
               const picked = Array.from(e.target.files ?? []);
-              const tooBig = picked.filter((f) => f.size > MAX_FILE_BYTES);
-              const next = [...files, ...picked.filter((f) => f.size <= MAX_FILE_BYTES)];
+              e.target.value = "";
+              // Shrink first, so a big screenshot that compresses under 10 MB is still accepted.
+              setIsPreparing(true);
+              const prepared = await Promise.all(picked.map(compressImage));
+              setIsPreparing(false);
+              // Same limits as the server, told up front instead of after a long upload.
+              const tooBig = prepared.filter((f) => f.size > MAX_FILE_BYTES);
+              const next = [...files, ...prepared.filter((f) => f.size <= MAX_FILE_BYTES)];
               if (tooBig.length) setError(`${tooBig.map((f) => f.name).join(", ")}: over 10 MB, not attached`);
               else if (next.length > MAX_FILES) setError(`Up to ${MAX_FILES} files per message; the rest were not attached`);
               else setError(null);
               setFiles(next.slice(0, MAX_FILES));
-              e.target.value = "";
             }}
           />
           <button className="btn-subtle px-2" title="Attach files" aria-label="Attach files" onClick={() => fileRef.current?.click()}>
