@@ -97,7 +97,8 @@ sys.post("/tickets", async (c) => {
       status: "open",
       title,
       description: str(fields.description, 10000) ?? "",
-      occurredAt: str(fields.occurred_at, 40),
+      // Reporters rarely say when it happened; submission time is the best guess.
+      occurredAt: str(fields.occurred_at, 40) ?? now,
       reporterExternalId: c.get("reporterId"),
       reporterName,
       reporterEmail: str(fields.reporter_email, 200),
