@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import { Link, Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
 import { api, json, type Perm, type User, type SystemRow } from "../api/client";
 import { useTheme } from "../lib/theme";
+import { useNewVersion } from "../lib/useNewVersion";
 import { usePoll } from "../lib/usePoll";
 import FirstPasswordPage from "../pages/FirstPasswordPage";
 import { Avatar } from "./Bits";
@@ -56,6 +57,7 @@ export const useHub = () => useContext(HubContext)!;
 
 function NavItem({ to, icon, label, count }: { to: string; icon?: ReactNode; label: string; count?: number }) {
   const { pathname, search } = useLocation();
+  const isOutdated = useNewVersion();
   const [path, qs] = to.split("?");
   const active = pathname === path && (qs ? search.includes(qs) : !search.includes("system="));
   return (
@@ -407,6 +409,14 @@ export default function Layout() {
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
+          {isOutdated && (
+            <div role="status" className="flex shrink-0 flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-primary px-4 py-1.5 text-[13px] text-primary-on">
+              <span>A new version of Houzs Hub is available.</span>
+              <button className="tap rounded-md px-2 font-semibold underline underline-offset-2 hover:no-underline" onClick={() => location.reload()}>
+                Refresh
+              </button>
+            </div>
+          )}
           <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line bg-surface px-2 md:px-6">
             <button className="btn-subtle h-10 px-2 lg:hidden" onClick={() => setIsMenuOpen(true)} aria-label="Open menu" aria-expanded={isMenuOpen}>
               <Menu className="h-5 w-5" />
