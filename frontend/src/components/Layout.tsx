@@ -6,6 +6,7 @@ import { useTheme } from "../lib/theme";
 import { usePoll } from "../lib/usePoll";
 import FirstPasswordPage from "../pages/FirstPasswordPage";
 import { Avatar } from "./Bits";
+import { useOutside } from "./FilterButton";
 import NewTicketToasts from "./NewTicketToasts";
 import { NotificationBell } from "./Notifications";
 
@@ -75,6 +76,65 @@ function NavItem({ to, icon, label, count }: { to: string; icon?: ReactNode; lab
         </span>
       )}
     </NavLink>
+  );
+}
+
+const STACK_SIZE = 3;
+
+function OnlineNow({ online }: { online: (User & { page: string | null })[] }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const close = useCallback(() => setIsOpen(false), []);
+  const ref = useOutside<HTMLDivElement>(isOpen, close);
+  if (online.length === 0) return null;
+  const hiddenCount = online.length - STACK_SIZE;
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setIsOpen((open) => !open)}
+        className="flex h-10 items-center gap-2 rounded-md px-2 transition-colors hover:bg-hover"
+        aria-label={`${online.length} online now`}
+        aria-expanded={isOpen}
+      >
+        <span className="relative flex -space-x-2">
+          {online.slice(0, STACK_SIZE).map((user) => (
+            <span key={user.id} className="flex rounded-full ring-2 ring-surface">
+              <Avatar name={user.name} size={26} />
+            </span>
+          ))}
+          <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-loz-green-ink ring-2 ring-surface" />
+        </span>
+        {hiddenCount > 0 && (
+          <span className="whitespace-nowrap rounded-full bg-surface-dim px-2 py-0.5 text-[11px] font-semibold tabular-nums text-ink-subtle">
+            +{hiddenCount} Online
+          </span>
+        )}
+      </button>
+
+      {isOpen && (
+        <div className="absolute right-0 top-full z-50 mt-1 w-[min(300px,calc(100vw-32px))] rounded-[10px] border border-transparent bg-overlay text-ink shadow-overlay max-sm:fixed max-sm:inset-x-4 max-sm:bottom-4 max-sm:top-auto max-sm:w-auto">
+          <div className="border-b border-line px-4 py-2.5 text-[13px] font-bold">Online now · {online.length}</div>
+          <div className="max-h-[60vh] overflow-y-auto overscroll-contain py-1">
+            {online.map((user) => (
+              <Link
+                key={user.id}
+                to={user.page ?? "/tickets"}
+                onClick={close}
+                className="flex min-h-10 items-center gap-2.5 px-4 py-1.5 hover:bg-hover"
+                title={`Go to what ${user.name} is reading`}
+              >
+                <span className="relative flex">
+                  <Avatar name={user.name} size={28} />
+                  <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-loz-green-ink ring-2 ring-overlay" />
+                </span>
+                <span className="min-w-0 flex-1 truncate text-[13px]">{user.name}</span>
+                <span className="max-w-[45%] truncate font-docno text-[11px] text-ink-subtle">{pageLabel(user.page)}</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -204,11 +264,6 @@ export default function Layout() {
               <div className="truncate text-[14px] font-bold text-sidebar-ink">Houzs Hub</div>
               <div className="truncate text-[9.5px] font-bold uppercase tracking-brand text-accent-bright">ENTERPRISE PORTAL</div>
             </div>
-            {can("it") && (
-              <div className="ml-auto">
-                <NotificationBell />
-              </div>
-            )}
           </div>
 
           {/* Scrolls on short screens so the account row and Sign out below stay reachable. */}
@@ -259,27 +314,6 @@ export default function Layout() {
               </>
             )}
           </nav>
-
-          <div className="mt-auto" />
-          {online.length > 0 && (
-            <div className="px-4 pb-3">
-              <div className="pb-1.5 text-[9.5px] font-bold uppercase tracking-brand text-sidebar-ink-muted">Online now</div>
-              <div className="space-y-1">
-                {online.map((u) => (
-                  <Link
-                    key={u.id}
-                    to={u.page ?? "/tickets"}
-                    className="tap flex items-center gap-2 rounded-md px-1 py-0.5 hover:bg-[var(--sidebar-hover)]"
-                    title={`Go to what ${u.name} is reading`}
-                  >
-                    <Avatar name={u.name} size={22} />
-                    <span className="min-w-0 flex-1 truncate text-[12px] text-sidebar-ink">{u.name}</span>
-                    <span className="max-w-[45%] truncate font-docno text-[10.5px] text-sidebar-ink-muted">{pageLabel(u.page)}</span>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          )}
           </div>
           <div className="flex items-center gap-2.5 border-t border-[var(--sidebar-border)] px-4 py-3">
             <Avatar name={base.me.name} size={32} />
@@ -307,16 +341,23 @@ export default function Layout() {
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line bg-surface px-2 lg:hidden">
-            <button className="btn-subtle h-10 px-2" onClick={() => setIsMenuOpen(true)} aria-label="Open menu" aria-expanded={isMenuOpen}>
+          <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line bg-surface px-2 md:px-6">
+            <button className="btn-subtle h-10 px-2 lg:hidden" onClick={() => setIsMenuOpen(true)} aria-label="Open menu" aria-expanded={isMenuOpen}>
               <Menu className="h-5 w-5" />
             </button>
-            <span className="flex-1 text-[14px] font-bold text-ink">Houzs Hub</span>
-            {/* New activity stays visible on phones, where the sidebar bell is behind the menu. */}
+            <span className="text-[14px] font-bold text-ink lg:hidden">Houzs Hub</span>
+            <div className="flex-1" />
+            <OnlineNow online={online} />
+            {can("it") && (
+              <div className="hidden lg:block">
+                <NotificationBell />
+              </div>
+            )}
+            {/* Phones open the full page; the popover would not fit beside the menu. */}
             {can("it") && (
               <Link
                 to="/notifications"
-                className="tap relative grid place-items-center rounded-md text-ink-subtle"
+                className="tap relative grid place-items-center rounded-md text-ink-subtle lg:hidden"
                 aria-label={unread ? `Notifications, ${unread} unread` : "Notifications"}
               >
                 <Bell className="h-5 w-5" />
@@ -327,7 +368,7 @@ export default function Layout() {
                 )}
               </Link>
             )}
-            <Link to="/account" className="p-1" title="My account" aria-label="My account">
+            <Link to="/account" className="p-1 lg:hidden" title="My account" aria-label="My account">
               <Avatar name={base.me.name} size={30} />
             </Link>
           </header>
