@@ -77,8 +77,9 @@ function StatusButton({ status, disabled, onChange }: { status: Status; disabled
         {STATUS_LABEL[status]}
         <ChevronDown className="h-4 w-4" />
       </button>
+      {open && <div className="fixed inset-0 z-20 bg-black/30 sm:hidden" onClick={() => setOpen(false)} />}
       {open && (
-        <div className="absolute left-0 top-10 z-30 max-h-[60vh] min-w-[220px] overflow-y-auto overscroll-contain rounded-[10px] border border-transparent bg-overlay py-1.5 shadow-overlay max-sm:fixed max-sm:inset-x-4 max-sm:bottom-4 max-sm:top-auto">
+        <div role="menu" className="absolute left-0 top-10 z-30 max-h-[60vh] min-w-[220px] overflow-y-auto overscroll-contain rounded-[10px] border border-transparent bg-overlay py-1.5 shadow-overlay max-sm:fixed max-sm:inset-x-4 max-sm:bottom-4 max-sm:top-auto">
           {STATUSES.filter((s) => s !== status).map((s) => (
             <button
               key={s}

@@ -6,14 +6,11 @@ import { Avatar, Lozenge, PriorityIcon, TypeIcon } from "../components/Bits";
 import { useHub } from "../components/Layout";
 import ProjectShell from "../components/ProjectShell";
 import { fmtAgo, fmtDate, fmtDateTime, sla } from "../lib/format";
-import { ACTIVE } from "../lib/labels";
+import { ACTIVE, isReporterWaiting } from "../lib/labels";
 import { useFilters } from "../lib/useFilters";
 import { usePoll } from "../lib/usePoll";
 
 type ListResp = { tickets: TicketRow[]; total: number; page: number; page_size: number };
-
-const isReporterWaiting = (ticket: TicketRow) =>
-  ticket.last_public_actor === "reporter" && ticket.status !== "open" && ACTIVE.includes(ticket.status);
 
 // Reporter only shows from 1440px, so the table fits a 1280-1366px laptop without sideways scroll.
 const WIDE_ONLY = "hidden min-[1440px]:table-cell";
@@ -73,10 +70,27 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
     }
   }
 
+  const canClearFilters = f.hasFilters || !!f.get("status");
+  const emptyState = (
+    <div className="py-16 text-center text-sm text-ink-subtle">
+      {queue && !canClearFilters ? "Nothing is assigned to you right now." : "No tickets match these filters."}
+      {canClearFilters && (
+        <button className="btn-subtle ml-2" onClick={f.clear}>
+          Clear filters
+        </button>
+      )}
+    </div>
+  );
+
   return (
     <ProjectShell view={queue ? "My queue" : "List"} showAssignee={!queue}>
-      {error && <div className="mb-3 rounded bg-loz-red px-3 py-2 text-sm text-loz-red-ink">{error}</div>}
-      <div className="space-y-2 lg:hidden">
+      {error && (
+        <div role="alert" className="mb-3 rounded bg-loz-red px-3 py-2 text-sm text-loz-red-ink">
+          {error}
+        </div>
+      )}
+      {/* With a ticket open beside it, the table would be a sideways-scrolling strip, so the cards show instead. */}
+      <div className={`space-y-2 ${selected ? "" : "lg:hidden"}`}>
         <div className="flex items-center gap-2">
           <label className="flex items-center gap-2 text-xs text-ink-subtle">
             Sort by
@@ -123,22 +137,27 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
                 </span>
                 <span>{fmtAgo(ticket.updated_at)}</span>
                 {ticketSla?.overdue && <span className="pill bg-loz-red text-loz-red-ink">{ticketSla.label}</span>}
-                {isReporterWaiting(ticket) && <MessageSquare className="h-3.5 w-3.5 text-primary" aria-label="Reporter replied" />}
+                {isReporterWaiting(ticket) && (
+                  <span className="inline-flex items-center gap-1 font-medium text-primary">
+                    <MessageSquare className="h-3.5 w-3.5" /> Replied
+                  </span>
+                )}
               </div>
             </button>
           );
         })}
-        {data && data.tickets.length === 0 && <div className="py-16 text-center text-sm text-ink-subtlest">No tickets match these filters</div>}
-        {!data && !error && <div className="py-16 text-center text-sm text-ink-subtlest">Loading...</div>}
+        {data && data.tickets.length === 0 && emptyState}
+        {!data && !error && <div className="py-16 text-center text-sm text-ink-subtle">Loading...</div>}
       </div>
 
-      <div className="card hidden min-w-[970px] lg:block min-[1440px]:min-w-[1130px]">
+      <div className={`card min-w-[970px] min-[1440px]:min-w-[1130px] ${selected ? "hidden" : "hidden lg:block"}`}>
       <table className="w-full table-fixed border-collapse text-[13px]">
         <thead className="sticky top-0 z-10">
           <tr>
             {COLS.map((c) => (
               <th
                 key={c.key}
+                aria-sort={c.sort && sort === c.sort ? (dir === "desc" ? "descending" : "ascending") : undefined}
                 className={`border-b-2 border-line bg-surface-dim px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-brand text-ink-subtle first:rounded-tl-[10px] first:pl-4 last:rounded-tr-[10px] ${c.className ?? ""}`}
               >
                 {c.sort ? (
@@ -204,11 +223,11 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
                     <div className="flex items-center gap-2">
                       <Avatar name={null} size={24} />
                       {/* Touch screens cannot hover, so Pick up is always shown there. */}
-                      <span className={`text-ink-subtlest ${ACTIVE.includes(t.status) ? "group-hover:hidden [@media(hover:none)]:hidden" : ""}`}>
+                      <span className={`text-ink-subtlest ${ACTIVE.includes(t.status) ? "group-hover:hidden group-focus-within:hidden [@media(hover:none)]:hidden" : ""}`}>
                         Unassigned
                       </span>
                       {ACTIVE.includes(t.status) && (
-                        <button className="tap hidden h-6 rounded px-1.5 text-xs font-medium text-primary hover:bg-primary-soft group-hover:inline [@media(hover:none)]:inline-block" onClick={() => pickup(t.code)}>
+                        <button className="tap hidden h-6 rounded px-1.5 text-xs font-medium text-primary hover:bg-primary-soft group-hover:inline group-focus-within:inline [@media(hover:none)]:inline-block" onClick={() => pickup(t.code)}>
                           Pick up
                         </button>
                       )}
@@ -230,14 +249,12 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
           })}
           {data && data.tickets.length === 0 && (
             <tr>
-              <td colSpan={COLS.length} className="py-16 text-center text-ink-subtlest">
-                No tickets match these filters
-              </td>
+              <td colSpan={COLS.length}>{emptyState}</td>
             </tr>
           )}
           {!data && !error && (
             <tr>
-              <td colSpan={COLS.length} className="py-16 text-center text-ink-subtlest">
+              <td colSpan={COLS.length} className="py-16 text-center text-ink-subtle">
                 Loading...
               </td>
             </tr>

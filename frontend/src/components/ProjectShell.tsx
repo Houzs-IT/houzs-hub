@@ -29,6 +29,10 @@ export default function ProjectShell({
   keep.delete("selected");
   keep.delete("page");
   const qs = keep.toString() ? `?${keep}` : "";
+  // My queue's "assigned to me" lives in code, not the URL, so carry it over to the Board.
+  const boardKeep = new URLSearchParams(keep);
+  if (view === "My queue") boardKeep.set("assignee", "me");
+  const boardQs = boardKeep.toString() ? `?${boardKeep}` : "";
 
   // Century FilterPills segmented control: petrol fill on the active segment.
   const tab = ({ isActive }: { isActive: boolean }) =>
@@ -50,7 +54,7 @@ export default function ProjectShell({
               <NavLink to={`/tickets${qs}`} end className={tab}>
                 <List className="h-3.5 w-3.5" /> List
               </NavLink>
-              <NavLink to={`/board${qs}`} className={tab}>
+              <NavLink to={`/board${boardQs}`} className={tab}>
                 <KanbanSquare className="h-3.5 w-3.5" /> Board
               </NavLink>
             </div>

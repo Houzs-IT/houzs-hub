@@ -1,3 +1,4 @@
+import { MessageSquare } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, json, type Status, type TicketRow } from "../api/client";
@@ -5,7 +6,7 @@ import { Avatar, Lozenge, PriorityIcon, SystemTag, TypeIcon } from "../component
 import { useHub } from "../components/Layout";
 import ProjectShell from "../components/ProjectShell";
 import { sla } from "../lib/format";
-import { BOARD_COLUMNS } from "../lib/labels";
+import { BOARD_COLUMNS, isReporterWaiting } from "../lib/labels";
 import { useFilters } from "../lib/useFilters";
 import { usePoll } from "../lib/usePoll";
 
@@ -67,7 +68,7 @@ export default function BoardPage() {
           Showing the {tickets.length} most urgent of {total} tickets. Use the filters to narrow it down.
         </div>
       )}
-      {!tickets && !error && <div className="py-16 text-center text-sm text-ink-subtlest">Loading...</div>}
+      {!tickets && !error && <div className="py-16 text-center text-sm text-ink-subtle">Loading...</div>}
       <div className="flex h-full min-h-[400px] gap-3">
         {BOARD_COLUMNS.map((col) => {
           const cards = tickets?.filter((t) => t.status === col) ?? [];
@@ -85,7 +86,7 @@ export default function BoardPage() {
                 const code = e.dataTransfer.getData("text/plain");
                 if (code) move(code, col);
               }}
-              className={`flex w-[272px] shrink-0 flex-col rounded-[10px] border transition-colors ${
+              className={`flex min-w-[272px] max-w-[360px] flex-1 shrink-0 flex-col rounded-[10px] border transition-colors ${
                 over === col && dragging ? "border-primary/50 bg-primary-soft" : "border-line bg-surface-dim/60"
               }`}
             >
@@ -122,6 +123,11 @@ export default function BoardPage() {
                       <div className="break-words text-[13px] font-medium leading-5 text-ink">{t.title}</div>
                       <div className="mt-2 flex flex-wrap items-center gap-1.5">
                         <SystemTag code={t.system_code} />
+                        {isReporterWaiting(t) && (
+                          <span className="inline-flex items-center gap-1 text-xs font-medium text-primary">
+                            <MessageSquare className="h-3.5 w-3.5" /> Replied
+                          </span>
+                        )}
                         {s?.overdue && (
                           <span className="pill bg-loz-red text-loz-red-ink">
                             {s.label}

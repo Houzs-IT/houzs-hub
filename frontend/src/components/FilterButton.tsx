@@ -24,15 +24,18 @@ export default function FilterButton({
   options,
   selected,
   onChange,
+  isDefault = false,
 }: {
   label: string;
   options: Option[];
   selected: string[];
   onChange: (next: string[]) => void;
+  // A preset selection the user did not choose (Status: Active) looks like an untouched filter.
+  isDefault?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useOutside<HTMLDivElement>(open, () => setOpen(false));
-  const on = selected.length > 0;
+  const on = selected.length > 0 && !isDefault;
 
   function toggle(v: string) {
     onChange(selected.includes(v) ? selected.filter((x) => x !== v) : [...selected, v]);
@@ -42,6 +45,8 @@ export default function FilterButton({
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen(!open)}
+        aria-haspopup="menu"
+        aria-expanded={open}
         className={`btn h-9 px-3 ${
           on
             ? "border border-primary/40 bg-primary-soft text-primary-ink hover:bg-primary-soft-hover"
@@ -52,13 +57,17 @@ export default function FilterButton({
         {on && <span className="rounded-full bg-primary px-1.5 text-[11px] font-bold leading-4 text-primary-on">{selected.length}</span>}
         <ChevronDown className="h-4 w-4" />
       </button>
+      {/* Phones: the backdrop takes the dismissing tap, so it cannot also open whatever is underneath. */}
+      {open && <div className="fixed inset-0 z-20 bg-black/30 sm:hidden" onClick={() => setOpen(false)} />}
       {open && (
-        <div className="absolute left-0 top-10 z-30 max-h-[60vh] min-w-[220px] overflow-y-auto overscroll-contain rounded-[10px] border border-transparent bg-overlay py-1.5 shadow-overlay max-sm:fixed max-sm:inset-x-4 max-sm:bottom-4 max-sm:top-auto">
+        <div role="menu" aria-label={label} className="absolute left-0 top-10 z-30 max-h-[60vh] min-w-[220px] overflow-y-auto overscroll-contain rounded-[10px] border border-transparent bg-overlay py-1.5 shadow-overlay max-sm:fixed max-sm:inset-x-4 max-sm:bottom-4 max-sm:top-auto">
           {options.map((o) => {
             const checked = selected.includes(o.value);
             return (
               <button
                 key={o.value}
+                role="menuitemcheckbox"
+                aria-checked={checked}
                 onClick={() => toggle(o.value)}
                 className="tap flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-[13px] hover:bg-primary-soft"
               >
@@ -74,13 +83,16 @@ export default function FilterButton({
               </button>
             );
           })}
-          {on && (
-            <div className="mt-1 border-t border-line px-3 pt-1.5">
+          <div className={`mt-1 flex items-center border-t border-line px-3 pt-1.5 ${on ? "" : "sm:hidden"}`}>
+            {on && (
               <button className="tap text-sm text-ink-subtle hover:text-primary" onClick={() => onChange([])}>
                 Clear selection
               </button>
-            </div>
-          )}
+            )}
+            <button className="tap ml-auto text-sm font-semibold text-primary sm:hidden" onClick={() => setOpen(false)}>
+              Done
+            </button>
+          </div>
         </div>
       )}
     </div>
