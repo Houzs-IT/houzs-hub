@@ -9,7 +9,8 @@ import { useHub } from "./Layout";
 
 const TOAST_DURATION_MS = 8_000;
 const BACKUP_CHECK_MS = 60_000;
-const RECONNECT_DELAY_MS = 10_000;
+const RECONNECT_FIRST_MS = 2_000;
+const RECONNECT_MAX_MS = 60_000;
 const MAX_TOASTS = 3;
 
 function playChime() {
@@ -68,10 +69,14 @@ export default function NewTicketToasts() {
     let socket: WebSocket | undefined;
     let reconnectTimer: ReturnType<typeof setTimeout>;
     let isStopped = false;
+    let failedAttempts = 0;
 
     function connect() {
       const protocol = location.protocol === "https:" ? "wss" : "ws";
       socket = new WebSocket(`${protocol}://${location.host}/api/v1/dev/live`);
+      socket.onopen = () => {
+        failedAttempts = 0;
+      };
       socket.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
@@ -81,7 +86,9 @@ export default function NewTicketToasts() {
       };
       socket.onclose = () => {
         if (isStopped) return;
-        reconnectTimer = setTimeout(connect, RECONNECT_DELAY_MS);
+        // Doubles up to a minute with jitter, so an outage does not get every tab retrying in step.
+        const delay = Math.min(RECONNECT_MAX_MS, RECONNECT_FIRST_MS * 2 ** failedAttempts++);
+        reconnectTimer = setTimeout(connect, delay * (0.5 + Math.random() / 2));
         checkForNewTickets();
       };
     }

@@ -46,8 +46,9 @@ export default function NotificationsPage() {
         readMarkOnOpen.current ??= response.seen_id;
         setData(response);
         setError(null);
+        // Only the All tab marks read on view: a filtered tab would also clear unseen items of other kinds.
         const newestId = response.notifications[0]?.id ?? 0;
-        if (newestId > response.seen_id) api("/notifications/read", json("POST", { up_to: newestId })).then(refresh).catch(() => {});
+        if (tab === "all" && newestId > response.seen_id) api("/notifications/read", json("POST", { up_to: newestId })).then(refresh).catch(() => {});
       })
       .catch((e: Error) => setError(e.message));
   }, [page, tab, isUnreadOnly, refresh]);
@@ -74,7 +75,7 @@ export default function NotificationsPage() {
         <div className="eyebrow">IT Hub · Activity</div>
         <div className="mt-1 flex flex-wrap items-end justify-between gap-3">
           <h1 className="text-[24px] font-extrabold tracking-tight text-ink">
-            Notifications {data && <span className="text-[15px] font-semibold text-ink-subtle">({data.total})</span>}
+            Notifications {data && <span className="text-[15px] font-semibold text-ink-subtle">({data.total_capped ? "1000+" : data.total})</span>}
           </h1>
           <button className="btn-default" onClick={markAllRead}>
             Mark all as read

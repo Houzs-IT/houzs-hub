@@ -66,7 +66,7 @@ function NavItem({ to, icon, label, count }: { to: string; icon: ReactNode; labe
       <span className="flex-1 truncate">{label}</span>
       {count !== undefined && count > 0 && (
         <span className="rounded-full bg-[var(--sidebar-hover)] px-1.5 text-[10.5px] font-semibold tabular-nums text-sidebar-ink-muted">
-          {count}
+          {count > 99 ? "99+" : count}
         </span>
       )}
     </NavLink>
@@ -126,7 +126,8 @@ export default function Layout() {
       .catch(() => {});
   }, [base, pathname, search]);
   useEffect(checkIn, [checkIn]);
-  usePoll(checkIn, 15_000);
+  // Backup heartbeat; navigating checks in at once. The server treats 150s of silence as gone.
+  usePoll(checkIn, 60_000);
 
   const refresh = useCallback(() => setVersion((v) => v + 1), []);
   const setMe = useCallback(

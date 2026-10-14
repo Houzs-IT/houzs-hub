@@ -14,18 +14,23 @@ export default function BoardPage() {
   const f = useFilters();
   const navigate = useNavigate();
   const [tickets, setTickets] = useState<TicketRow[] | null>(null);
+  const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  // Kept apart from `error` so the reload after a refused move cannot wipe the reason.
+  const [moveError, setMoveError] = useState<string | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<Status | null>(null);
 
-  const query = f.apiQuery({ status: BOARD_COLUMNS.join(","), page_size: "500", sort: "priority", dir: "asc" });
+  // ponytail: one capped page across all columns; switch to per-column pages with "show more" past ~200 open tickets.
+  const query = f.apiQuery({ status: BOARD_COLUMNS.join(","), page_size: "200", sort: "priority", dir: "asc" });
   query.delete("page");
   const qs = query.toString();
 
   const load = useCallback(() => {
-    api<{ tickets: TicketRow[] }>(`/tickets?${qs}`)
+    api<{ tickets: TicketRow[]; total: number }>(`/tickets?${qs}`)
       .then((d) => {
         setTickets(d.tickets);
+        setTotal(d.total);
         setError(null);
       })
       .catch((e: Error) => setError(e.message));
@@ -36,20 +41,33 @@ export default function BoardPage() {
   async function move(code: string, status: Status) {
     const card = tickets?.find((t) => t.code === code);
     if (!card || card.status === status) return;
+    setMoveError(null);
     setTickets((ts) => ts!.map((t) => (t.code === code ? { ...t, status } : t)));
     try {
       await api(`/tickets/${code}`, json("PATCH", { status }));
+      refresh();
     } catch (e) {
-      setError((e as Error).message);
+      setMoveError(`${code} was not moved: ${(e as Error).message}`);
+      load();
     }
-    refresh();
   }
 
   const selected = f.get("selected");
+  const shownError = moveError ?? error;
 
   return (
     <ProjectShell view="Board" showStatus={false}>
-      {error && <div className="mb-3 rounded bg-loz-red px-3 py-2 text-sm text-loz-red-ink">{error}</div>}
+      {shownError && (
+        <div role="alert" className="mb-3 rounded bg-loz-red px-3 py-2 text-sm text-loz-red-ink">
+          {shownError}
+        </div>
+      )}
+      {tickets && total > tickets.length && (
+        <div className="mb-3 text-[12.5px] text-ink-subtle">
+          Showing the {tickets.length} most urgent of {total} tickets. Use the filters to narrow it down.
+        </div>
+      )}
+      {!tickets && !error && <div className="py-16 text-center text-sm text-ink-subtlest">Loading...</div>}
       <div className="flex h-full min-h-[400px] gap-3">
         {BOARD_COLUMNS.map((col) => {
           const cards = tickets?.filter((t) => t.status === col) ?? [];
@@ -101,7 +119,7 @@ export default function BoardPage() {
                         selected === t.code ? "border-primary ring-2 ring-primary/25" : "border-line"
                       } ${dragging === t.code ? "opacity-50" : ""}`}
                     >
-                      <div className="text-[13px] font-medium leading-5 text-ink">{t.title}</div>
+                      <div className="break-words text-[13px] font-medium leading-5 text-ink">{t.title}</div>
                       <div className="mt-2 flex flex-wrap items-center gap-1.5">
                         <SystemTag code={t.system_code} />
                         {s?.overdue && (

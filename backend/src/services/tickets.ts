@@ -11,12 +11,19 @@ const ALLOWED_MIME = /^(image\/|video\/mp4$|video\/quicktime$|application\/pdf$)
 export const nowIso = () => new Date().toISOString();
 
 export class InputError extends Error {}
+export class TooLargeError extends Error {}
+
+// Room for the largest legal upload plus the text fields around it.
+const MAX_BODY_BYTES = MAX_FILES * MAX_FILE_BYTES + 1024 * 1024;
 
 export type Input = { fields: Record<string, string>; files: File[] };
 
 // Systems may send JSON (no files) or multipart (fields + `files`).
 export async function readInput(c: Context): Promise<Input> {
   const ct = c.req.header("Content-Type") ?? "";
+  // formData() buffers the whole body, so refuse oversized ones before reading.
+  // Chunked uploads carry no Content-Length; validateFiles still caps those.
+  if (Number(c.req.header("Content-Length")) > MAX_BODY_BYTES) throw new TooLargeError("Upload is too large (5 files, 10 MB each)");
   if (ct.includes("multipart/form-data")) {
     const form = await c.req.formData();
     const fields: Record<string, string> = {};
@@ -96,21 +103,17 @@ export async function addEvent(
 }
 
 export async function saveAttachments(env: Env, db: DB, ticket: Ticket, eventId: number, files: File[]) {
+  if (!files.length) return;
   const at = nowIso();
-  for (const f of files) {
-    const safe = f.name.replace(/[^\w.\-]+/g, "_").slice(-80) || "file";
-    const key = `tickets/${ticket.code}/${crypto.randomUUID()}-${safe}`;
-    await env.FILES.put(key, f.stream(), { httpMetadata: { contentType: f.type } });
-    await db.insert(schema.ticketAttachments).values({
-      ticketId: ticket.id,
-      eventId,
-      r2Key: key,
-      filename: f.name.slice(0, 200),
-      mime: f.type,
-      size: f.size,
-      createdAt: at,
-    });
-  }
+  const rows = await Promise.all(
+    files.map(async (f) => {
+      const safe = f.name.replace(/[^\w.\-]+/g, "_").slice(-80) || "file";
+      const key = `tickets/${ticket.code}/${crypto.randomUUID()}-${safe}`;
+      await env.FILES.put(key, f.stream(), { httpMetadata: { contentType: f.type } });
+      return { ticketId: ticket.id, eventId, r2Key: key, filename: f.name.slice(0, 200), mime: f.type, size: f.size, createdAt: at };
+    }),
+  );
+  await db.insert(schema.ticketAttachments).values(rows);
 }
 
 export async function streamAttachment(env: Env, att: { r2Key: string; mime: string; filename: string }) {

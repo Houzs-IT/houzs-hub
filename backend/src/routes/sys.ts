@@ -14,6 +14,7 @@ import {
   saveAttachments,
   str,
   streamAttachment,
+  TooLargeError,
   validateFiles,
 } from "../services/tickets";
 import type { SysApp } from "../types";
@@ -36,6 +37,7 @@ sys.onError(async (err, c) => {
       .catch((e) => console.error("could not record send error", e));
   }
   if (err instanceof InputError) return c.json({ error: err.message }, 400);
+  if (err instanceof TooLargeError) return c.json({ error: err.message }, 413);
   throw err;
 });
 

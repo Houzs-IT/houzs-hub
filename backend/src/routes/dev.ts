@@ -21,6 +21,7 @@ import {
   saveAttachments,
   str,
   streamAttachment,
+  TooLargeError,
   validateFiles,
 } from "../services/tickets";
 import type { DevApp } from "../types";
@@ -38,6 +39,7 @@ dev.use("/attachments/*", need("it"));
 
 dev.onError((err, c) => {
   if (err instanceof InputError) return c.json({ error: err.message }, 400);
+  if (err instanceof TooLargeError) return c.json({ error: err.message }, 413);
   throw err;
 });
 
@@ -113,10 +115,12 @@ dev.post("/me/password", async (c) => {
   return c.json({ ok: true });
 });
 
-// Heartbeat from every open portal tab: records the page it is on (devAuth has
-// already bumped last_seen_at) and returns who else is online and where.
-// Tabs check in every 15s while visible, so 60s of silence means gone.
-const ONLINE_MS = 60_000;
+// Heartbeat from every open portal tab: records the page it is on (devAuth
+// bumps last_seen_at at most once a minute) and returns who else is online and
+// where. Tabs check in every 60s while visible, so 150s of silence means gone.
+// ponytail: 2 DB writes per tab per minute; carry presence over the LiveRoom
+// socket (no DB at all) if tab counts grow.
+const ONLINE_MS = 150_000;
 
 dev.post("/presence", async (c) => {
   const b = (await c.req.json().catch(() => ({}))) as { page?: unknown };
@@ -218,7 +222,8 @@ dev.get("/tickets", async (c) => {
   const db = getDb(c.env);
   const q = c.req.query();
   const page = Math.max(1, Number(q.page) || 1);
-  const pageSize = Math.min(500, Math.max(1, Number(q.page_size) || PAGE_SIZE));
+  // 200 covers the Board; it shows "N of total" when there are more.
+  const pageSize = Math.min(200, Math.max(1, Number(q.page_size) || PAGE_SIZE));
   const where = filterWhere(q, c.get("user"), true);
 
   const [rows, [total]] = await Promise.all([
@@ -251,15 +256,10 @@ dev.get("/tickets", async (c) => {
   return c.json({ tickets: rows, total: total?.n ?? 0, page, page_size: pageSize });
 });
 
-// Counts per status under the current non-status filters, plus sidebar badges.
+// Sidebar badges: active tickets per system, my active tickets, unread notifications.
 dev.get("/tickets/stats", async (c) => {
   const db = getDb(c.env);
-  const [rows, bySystem, mine, unreadNotifications] = await Promise.all([
-    db
-      .select({ status: t.status, n: count() })
-      .from(t)
-      .where(filterWhere(c.req.query(), c.get("user"), false))
-      .groupBy(t.status),
+  const [bySystem, mine, unreadNotifications] = await Promise.all([
     db
       .select({ system: t.systemCode, n: count() })
       .from(t)
@@ -272,7 +272,6 @@ dev.get("/tickets/stats", async (c) => {
     countUnread(db, c.get("user")),
   ]);
   return c.json({
-    counts: Object.fromEntries(rows.map((r) => [r.status, r.n])),
     active_by_system: Object.fromEntries(bySystem.map((r) => [r.system, r.n])),
     my_active: mine[0]?.n ?? 0,
     unread_notifications: unreadNotifications,
