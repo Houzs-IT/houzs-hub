@@ -1,6 +1,6 @@
 # Houzs IT Hub
 
-Central ticketing for Hookka (HK), Houzs Century (HC), 2990s (2990) and Conts (CONTS).
+Central ticketing for Hookka (HK), Houzs Century (HC), 2990s (2990), Conts (CONTS) and Houzs Connect (CONNECT).
 One Cloudflare Worker (`backend/`) serves both the API and the developer portal SPA
 (`frontend/dist` via Workers static assets). Supabase Postgres for data (reached
 through Cloudflare Hyperdrive), R2 for attachments.
