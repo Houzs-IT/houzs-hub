@@ -12,6 +12,9 @@ import { useHub } from "./Layout";
 
 type Detail = { ticket: TicketFull; events: TicketEvent[] };
 
+const MAX_FILES = 5;
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
+
 function Attachments({ items }: { items: Attachment[] }) {
   const [viewing, setViewing] = useState<Attachment | null>(null);
   if (!items.length) return null;
@@ -62,6 +65,9 @@ function StatusButton({ status, disabled, onChange }: { status: Status; disabled
       <button
         disabled={disabled}
         onClick={() => setOpen(!open)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Status: ${STATUS_LABEL[status]}. Change status`}
         className={`btn h-9 px-3.5 ${
           status === "in_progress" || status === "open"
             ? "border border-primary bg-primary text-primary-on shadow-sm hover:bg-primary-hover"
@@ -144,7 +150,7 @@ function ActivityItem({ e }: { e: TicketEvent }) {
             {when}
           </div>
           <div className={`mt-1 rounded ${internal ? "border-l-4 border-note-line bg-note px-3 py-2" : ""}`}>
-            {e.body && <div className="whitespace-pre-wrap text-sm leading-6">{e.body}</div>}
+            {e.body && <div className="whitespace-pre-wrap break-words text-sm leading-6">{e.body}</div>}
             <Attachments items={e.attachments} />
           </div>
         </div>
@@ -157,7 +163,7 @@ function ActivityItem({ e }: { e: TicketEvent }) {
       <div className="min-w-0 flex-1 pt-1 text-sm text-ink">
         <span className="font-semibold">{name}</span> <span className="text-ink-subtle">{historyText(e)}</span>
         <div>{when}</div>
-        {e.body && <div className="mt-0.5 text-xs text-ink-subtlest">{e.body}</div>}
+        {e.body && <div className="mt-0.5 break-words text-xs text-ink-subtle">{e.body}</div>}
       </div>
     </div>
   );
@@ -172,6 +178,11 @@ function Composer({ code, status, onDone }: { code: string; status: Status; onDo
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  function cancel() {
+    if ((body.trim() || files.length) && !confirm("Discard what you wrote?")) return;
+    reset();
+  }
 
   function reset() {
     setMode(null);
@@ -235,6 +246,7 @@ function Composer({ code, status, onDone }: { code: string; status: Status; onDo
         <div className={`rounded border-2 ${internal ? "border-note-line bg-note" : "border-primary bg-surface"}`}>
           <textarea
             autoFocus
+            aria-label={internal ? "Internal note" : "Reply to reporter"}
             className="block h-28 w-full resize-y bg-transparent px-3 py-2 text-sm outline-none"
             placeholder={internal ? "Only developers can see internal notes" : "The reporter will see this in their system"}
             value={body}
@@ -243,8 +255,8 @@ function Composer({ code, status, onDone }: { code: string; status: Status; onDo
           {files.length > 0 && (
             <div className="flex flex-wrap gap-1.5 px-3 pb-2">
               {files.map((f, i) => (
-                <span key={i} className="inline-flex items-center gap-1 rounded bg-neutral px-2 py-0.5 text-xs">
-                  {f.name}
+                <span key={i} className="inline-flex max-w-full items-center gap-1 rounded bg-neutral px-2 py-0.5 text-xs">
+                  <span className="truncate">{f.name}</span>
                   <button className="tap grid place-items-center" aria-label={`Remove ${f.name}`} onClick={() => setFiles(files.filter((_, j) => j !== i))}>
                     <X className="h-3 w-3" />
                   </button>
@@ -256,9 +268,9 @@ function Composer({ code, status, onDone }: { code: string; status: Status; onDo
         {error && <div className="mt-1 text-xs text-loz-red-ink">{error}</div>}
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <button className="btn-primary" disabled={busy || (!body.trim() && !files.length)} onClick={save}>
-            Save
+            {internal ? "Add note" : "Send to reporter"}
           </button>
-          <button className="btn-subtle" onClick={reset}>
+          <button className="btn-subtle" onClick={cancel}>
             Cancel
           </button>
           <input
@@ -268,7 +280,14 @@ function Composer({ code, status, onDone }: { code: string; status: Status; onDo
             accept="image/*,application/pdf,video/mp4,video/quicktime"
             className="hidden"
             onChange={(e) => {
-              setFiles([...files, ...Array.from(e.target.files ?? [])].slice(0, 5));
+              // Same limits as the server, told up front instead of after a long upload.
+              const picked = Array.from(e.target.files ?? []);
+              const tooBig = picked.filter((f) => f.size > MAX_FILE_BYTES);
+              const next = [...files, ...picked.filter((f) => f.size <= MAX_FILE_BYTES)];
+              if (tooBig.length) setError(`${tooBig.map((f) => f.name).join(", ")}: over 10 MB, not attached`);
+              else if (next.length > MAX_FILES) setError(`Up to ${MAX_FILES} files per message; the rest were not attached`);
+              else setError(null);
+              setFiles(next.slice(0, MAX_FILES));
               e.target.value = "";
             }}
           />
@@ -362,7 +381,25 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
   }
 
   if (!data) {
-    return <div className="p-8 text-sm text-ink-subtlest">{error ?? "Loading..."}</div>;
+    return (
+      <div className={variant === "panel" ? "flex h-full flex-col" : ""}>
+        {variant === "panel" && (
+          <div className="flex justify-end border-b border-line px-4 py-3 md:px-6">
+            <button className="btn-subtle px-2" title="Close" aria-label="Close" onClick={onClose}>
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+        <div className="flex flex-wrap items-center gap-3 p-8 text-sm text-ink-subtle" role={error ? "alert" : undefined}>
+          {error ?? "Loading..."}
+          {error && (
+            <button className="btn-default" onClick={load}>
+              Try again
+            </button>
+          )}
+        </div>
+      </div>
+    );
   }
 
   const { ticket: t, events } = data;
@@ -430,8 +467,13 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
                 ))}
               </select>
             </div>
-            {t.assigneeId !== me.id && (
-              <button className="ml-8 text-xs font-medium text-primary hover:underline" onClick={() => patch({ assignee_id: me.id })}>
+            {/* Pick up already assigns you (and moves Open to On Going), so only one of them shows. */}
+            {t.assigneeId !== me.id && !canPickUp && (
+              <button
+                className="tap ml-8 inline-flex items-center text-xs font-medium text-primary hover:underline disabled:opacity-50"
+                disabled={saving}
+                onClick={() => patch({ assignee_id: me.id })}
+              >
                 Assign to me
               </button>
             )}
@@ -447,6 +489,8 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
                 <a
                   className="block text-primary hover:underline"
                   href={`https://wa.me/${t.reporterPhone.replace(/\D/g, "").replace(/^0/, "60")}`}
+                  title="Open in WhatsApp"
+                  aria-label={`WhatsApp ${t.reporterPhone}`}
                   target="_blank"
                   rel="noreferrer"
                 >
@@ -529,7 +573,7 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
     <div className="space-y-6">
       <div>
         <div className="section-title mb-2">Description</div>
-        <div className="whitespace-pre-wrap text-sm leading-6">{t.description || <span className="text-ink-subtlest">No description</span>}</div>
+        <div className="whitespace-pre-wrap break-words text-sm leading-6">{t.description || <span className="text-ink-subtlest">No description</span>}</div>
       </div>
 
       {created && created.attachments.length > 0 && (
@@ -595,17 +639,21 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
       </div>
 
       <div className={variant === "panel" ? "flex-1 overflow-y-auto overscroll-contain px-4 py-5 md:px-6" : ""}>
-        <h1 className={`mb-5 font-extrabold tracking-tight text-ink ${variant === "panel" ? "text-[20px]" : "text-[24px]"}`}>{t.title}</h1>
-        {error && <div className="mb-4 rounded bg-loz-red px-3 py-2 text-sm text-loz-red-ink">{error}</div>}
+        <h1 className={`mb-5 break-words font-extrabold tracking-tight text-ink ${variant === "panel" ? "text-[20px]" : "text-[24px]"}`}>{t.title}</h1>
+        {error && (
+          <div role="alert" className="mb-4 rounded bg-loz-red px-3 py-2 text-sm text-loz-red-ink">
+            {error}
+          </div>
+        )}
         {variant === "panel" ? (
           <div className="space-y-6">
             {details}
             {main}
           </div>
         ) : (
-          <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_380px]">
             {main}
-            <div className="lg:sticky lg:top-6 lg:self-start">{details}</div>
+            <div className="xl:sticky xl:top-6 xl:self-start">{details}</div>
           </div>
         )}
       </div>
