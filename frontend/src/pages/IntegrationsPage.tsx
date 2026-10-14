@@ -18,8 +18,8 @@ function Status({ s }: { s: SystemRow }) {
   if (!s.active) return <span className="pill bg-loz-grey text-loz-grey-ink">Off</span>;
   if (!s.hasKey) return <span className="pill bg-loz-red text-loz-red-ink">No key</span>;
   if (s.lastSendErrorAt) return <span className="pill bg-loz-red text-loz-red-ink">Send failed</span>;
-  if (!s.lastCallAt) return <span className="pill bg-loz-orange text-loz-orange-ink">Never called</span>;
-  return <span className="pill bg-loz-green text-loz-green-ink">Connected</span>;
+  if (!s.lastCallAt) return <span className="pill bg-surface-dim text-ink-subtle">Never called</span>;
+  return <span className="pill bg-primary-soft text-primary-ink">Connected</span>;
 }
 
 function Hint({ s }: { s: SystemRow }) {
@@ -75,12 +75,12 @@ export default function IntegrationsPage() {
         </div>
       )}
 
-      {!systems && !error && <div className="py-16 text-center text-sm text-ink-subtlest">Loading...</div>}
-      {systems?.length === 0 && <div className="py-16 text-center text-sm text-ink-subtlest">No systems are set up yet.</div>}
+      {!systems && !error && <div className="py-16 text-center text-sm text-ink-subtle">Loading...</div>}
+      {systems?.length === 0 && <div className="py-16 text-center text-sm text-ink-subtle">No systems are set up yet.</div>}
 
       <div className="mt-4 grid gap-3 md:grid-cols-2 2xl:grid-cols-4">
         {systems?.map((s) => (
-          <section key={s.code} className={`card p-4 ${s.active ? "" : "opacity-60"}`} aria-label={s.name}>
+          <section key={s.code} className="card p-4" aria-label={s.name}>
             <div className="flex items-center gap-2.5">
               <SystemTag code={s.code} />
               <span className="min-w-0 flex-1 truncate font-semibold text-ink">{s.name}</span>

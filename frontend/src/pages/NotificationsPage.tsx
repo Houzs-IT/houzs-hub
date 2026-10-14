@@ -11,7 +11,7 @@ const TABS = [
   { key: "all", label: "All" },
   { key: "tickets", label: "Tickets" },
   { key: "comments", label: "Comments" },
-  { key: "closed", label: "Closed" },
+  { key: "closed", label: "Done / Closed" },
 ];
 
 const dayKey = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kuala_Lumpur" });
@@ -55,9 +55,13 @@ export default function NotificationsPage() {
   useEffect(load, [load, version]);
 
   async function markAllRead() {
-    await api("/notifications/read", json("POST", {})).catch((e: Error) => setError(e.message));
-    readMarkOnOpen.current = Number.MAX_SAFE_INTEGER;
-    refresh();
+    try {
+      await api("/notifications/read", json("POST", {}));
+      readMarkOnOpen.current = Number.MAX_SAFE_INTEGER;
+      refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    }
   }
 
   const readMark = readMarkOnOpen.current ?? data?.seen_id ?? 0;
@@ -87,7 +91,8 @@ export default function NotificationsPage() {
             <button
               key={item.key}
               onClick={() => filters.set({ filter: item.key === "all" ? null : item.key })}
-              className={`h-9 rounded-md px-3 text-[13px] font-semibold ${tab === item.key ? "bg-primary text-primary-on" : "text-ink-subtle hover:bg-hover"}`}
+              aria-pressed={tab === item.key}
+              className={`tap h-9 rounded-md px-3 text-[13px] font-semibold ${tab === item.key ? "bg-primary text-primary-on" : "text-ink-subtle hover:bg-hover"}`}
             >
               {item.label}
             </button>
@@ -95,7 +100,7 @@ export default function NotificationsPage() {
           <button
             onClick={() => filters.set({ unread: isUnreadOnly ? null : "1" })}
             aria-pressed={isUnreadOnly}
-            className={`ml-auto h-9 rounded-full border px-3 text-[13px] font-semibold ${
+            className={`tap ml-auto h-9 rounded-full border px-3 text-[13px] font-semibold ${
               isUnreadOnly ? "border-primary bg-primary-soft text-primary" : "border-line text-ink-subtle hover:bg-hover"
             }`}
           >
@@ -103,7 +108,11 @@ export default function NotificationsPage() {
           </button>
         </div>
 
-        {error && <div className="mt-4 rounded bg-loz-red px-3 py-2 text-sm text-loz-red-ink">{error}</div>}
+        {error && (
+          <div role="alert" className="mt-4 rounded bg-loz-red px-3 py-2 text-sm text-loz-red-ink">
+            {error}
+          </div>
+        )}
 
         {groups.map((group) => (
           <section key={group.label} className="mt-6">
@@ -113,26 +122,26 @@ export default function NotificationsPage() {
                 const isUnread = notification.id > readMark;
                 const { label, color } = kindStyle(notification);
                 return (
-                  <div key={notification.id} className={`flex gap-3 border-l-4 p-4 ${isUnread ? "border-l-primary" : "border-l-transparent"}`}>
+                  <Link
+                    key={notification.id}
+                    to={`/tickets/${notification.ticket_code}`}
+                    className={`flex gap-3 border-l-4 p-4 hover:bg-surface-2 ${isUnread ? "border-l-primary" : "border-l-transparent"}`}
+                  >
+                    {isUnread && <span className="sr-only">Unread:</span>}
                     <NotificationIcon notification={notification} />
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2 text-xs">
                         <span className={`rounded px-1.5 py-0.5 text-[10.5px] font-bold uppercase ${color}`}>{label}</span>
-                        <Link to={`/tickets/${notification.ticket_code}`} className="font-docno font-semibold text-accent hover:underline">
-                          {notification.ticket_code}
-                        </Link>
-                        <span className="text-ink-subtlest" title={fmtDateTime(notification.created_at)}>
+                        <span className="font-docno font-semibold text-accent">{notification.ticket_code}</span>
+                        <span className="text-ink-subtle" title={fmtDateTime(notification.created_at)}>
                           {fmtAgo(notification.created_at)}
                         </span>
                       </div>
-                      <div className="mt-1 truncate text-sm font-semibold text-ink">{notification.ticket_title}</div>
+                      <div className={`mt-1 truncate text-sm text-ink ${isUnread ? "font-bold" : "font-medium"}`}>{notification.ticket_title}</div>
                       <div className="mt-0.5 line-clamp-2 text-[13px] text-ink-subtle">{describeNotification(notification)}</div>
                     </div>
-                    <Link to={`/tickets/${notification.ticket_code}`} className="btn-subtle shrink-0 self-center px-2" title="Open ticket">
-                      <span className="hidden sm:inline">Open ticket</span>
-                      <ExternalLink className="h-4 w-4" />
-                    </Link>
-                  </div>
+                    <ExternalLink className="h-4 w-4 shrink-0 self-center text-ink-subtle" aria-hidden />
+                  </Link>
                 );
               })}
             </div>
@@ -140,9 +149,9 @@ export default function NotificationsPage() {
         ))}
 
         {data && data.notifications.length === 0 && (
-          <div className="py-16 text-center text-sm text-ink-subtlest">{isUnreadOnly ? "No unread notifications" : "No notifications yet"}</div>
+          <div className="py-16 text-center text-sm text-ink-subtle">{isUnreadOnly ? "No unread notifications" : "No notifications yet"}</div>
         )}
-        {!data && !error && <div className="py-16 text-center text-sm text-ink-subtlest">Loading...</div>}
+        {!data && !error && <div className="py-16 text-center text-sm text-ink-subtle">Loading...</div>}
 
         {pages > 1 && (
           <div className="flex items-center justify-end gap-1 py-4 text-sm text-ink-subtle">

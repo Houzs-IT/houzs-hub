@@ -1,5 +1,5 @@
 import { Plus, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { api, json, type Perm, type PermDef, type RoleRow } from "../api/client";
 
 function RoleName({ role, busy, onSave }: { role: RoleRow; busy: boolean; onSave: (name: string) => void }) {
@@ -19,7 +19,15 @@ function RoleName({ role, busy, onSave }: { role: RoleRow; busy: boolean; onSave
       aria-label={`Name of ${role.name}`}
       onChange={(e) => setName(e.target.value)}
       onBlur={save}
-      onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") {
+          setName(role.name);
+          // Blur after the reset lands, so save() sees the original name and does nothing.
+          const input = e.currentTarget;
+          setTimeout(() => input.blur());
+        }
+      }}
     />
   );
 }
@@ -30,6 +38,8 @@ export default function RolesPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [newName, setNewName] = useState("");
+  const [deleting, setDeleting] = useState<RoleRow | null>(null);
+  const confirmDelete = useRef<HTMLDialogElement>(null);
 
   const load = useCallback(() => {
     api<{ roles: RoleRow[]; permissions: PermDef[] }>("/admin/roles")
@@ -41,13 +51,16 @@ export default function RolesPage() {
   }, []);
   useEffect(load, [load]);
 
+  // Resolves true when the change went through, so callers can keep input on failure.
   async function run(fn: () => Promise<unknown>) {
     setBusy(true);
     setError(null);
     try {
       await fn();
+      return true;
     } catch (e) {
       setError((e as Error).message);
+      return false;
     } finally {
       setBusy(false);
       load();
@@ -63,11 +76,17 @@ export default function RolesPage() {
   function add(e: FormEvent) {
     e.preventDefault();
     if (!newName.trim()) return;
-    run(() => api("/admin/roles", json("POST", { name: newName.trim() }))).then(() => setNewName(""));
+    run(() => api("/admin/roles", json("POST", { name: newName.trim() }))).then((ok) => ok && setNewName(""));
   }
 
-  function remove(r: RoleRow) {
-    if (confirm(`Delete the role ${r.name}?`)) run(() => api(`/admin/roles/${encodeURIComponent(r.key)}`, { method: "DELETE" }));
+  function askToDelete(r: RoleRow) {
+    setDeleting(r);
+    confirmDelete.current?.showModal();
+  }
+
+  function remove() {
+    confirmDelete.current?.close();
+    if (deleting) run(() => api(`/admin/roles/${encodeURIComponent(deleting.key)}`, { method: "DELETE" }));
   }
 
   return (
@@ -106,7 +125,29 @@ export default function RolesPage() {
         {busy ? "Saving..." : " "}
       </div>
 
-      {!roles && !error && <div className="py-16 text-center text-sm text-ink-subtlest">Loading...</div>}
+      {!roles && !error && <div className="py-16 text-center text-sm text-ink-subtle">Loading...</div>}
+      {!roles && error && (
+        <div className="py-8 text-center">
+          <button className="btn-default" onClick={load}>
+            Try again
+          </button>
+        </div>
+      )}
+
+      <dialog ref={confirmDelete} className="card w-[400px] max-w-[calc(100vw-32px)] p-0 text-ink backdrop:bg-black/40">
+        <div className="border-b border-line px-5 py-3 text-[15px] font-bold">Delete role</div>
+        <p className="px-5 py-4 text-sm leading-6 text-ink-subtle">
+          Delete the role <span className="font-semibold text-ink">{deleting?.name}</span>? Nobody has it, and this cannot be undone.
+        </p>
+        <div className="flex justify-end gap-2 px-5 pb-4">
+          <button className="btn-default" autoFocus onClick={() => confirmDelete.current?.close()}>
+            Cancel
+          </button>
+          <button className="btn border border-loz-red-ink bg-loz-red-ink text-surface hover:opacity-90" onClick={remove}>
+            Delete
+          </button>
+        </div>
+      </dialog>
 
       <div className="mt-1 grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
         {roles?.map((r) => (
@@ -127,7 +168,7 @@ export default function RolesPage() {
                   disabled={busy || r.users > 0}
                   aria-label={`Delete ${r.name}`}
                   title="Delete role"
-                  onClick={() => remove(r)}
+                  onClick={() => askToDelete(r)}
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>

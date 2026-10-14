@@ -29,7 +29,7 @@ export default function FirstPasswordPage({ name }: { name: string }) {
         </div>
 
         <button
-          className="mt-4 w-full text-center text-[12px] text-ink-subtlest hover:text-ink"
+          className="tap mt-4 w-full text-center text-[12px] text-ink-subtle hover:text-ink"
           onClick={() => fetch("/api/v1/auth/logout", { method: "POST" }).finally(() => location.assign("/login"))}
         >
           Sign out

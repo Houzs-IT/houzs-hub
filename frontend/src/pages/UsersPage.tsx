@@ -398,7 +398,7 @@ export default function UsersPage() {
         </form>
       )}
 
-      {!users && !error && <div className="py-16 text-center text-sm text-ink-subtlest">Loading...</div>}
+      {!users && !error && <div className="py-16 text-center text-sm text-ink-subtle">Loading...</div>}
 
       {/* Below 1280px each user is a card, so nothing scrolls sideways and Permissions opens full width. */}
       <div className="mt-4 grid gap-3 md:grid-cols-2 xl:hidden">

@@ -118,7 +118,7 @@ export default function NewTicketToasts() {
   const dismiss = (code: string) => setToasts((current) => current.filter((ticket) => ticket.code !== code));
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex w-[360px] max-w-[calc(100vw-32px)] flex-col gap-3" aria-live="polite">
+    <div className="fixed bottom-4 right-4 z-50 flex w-[360px] max-w-[calc(100vw-32px)] flex-col gap-3 max-sm:[&>*:nth-child(n+2)]:hidden" aria-live="polite">
       {toasts.map((ticket) => (
         <Toast
           key={ticket.code}
@@ -138,6 +138,7 @@ export default function NewTicketToasts() {
 type ToastProps = { ticket: TicketRow; systemName?: string; onClose: () => void; onView: () => void };
 
 function Toast({ ticket, systemName, onClose, onView }: ToastProps) {
+  // Paused while pointed at, focused or touched, so nobody loses a toast mid-read.
   const [isHovered, setIsHovered] = useState(false);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -149,7 +150,15 @@ function Toast({ ticket, systemName, onClose, onView }: ToastProps) {
   }, [isHovered]);
 
   return (
-    <div className="card p-4" role="status" onMouseEnter={() => setIsHovered(true)} onMouseLeave={() => setIsHovered(false)}>
+    <div
+      className="card p-4"
+      role="status"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      onFocus={() => setIsHovered(true)}
+      onBlur={() => setIsHovered(false)}
+      onTouchStart={() => setIsHovered(true)}
+    >
       <div className="flex items-center gap-2">
         <Inbox className="h-4 w-4 text-primary" />
         <span className="flex-1 text-[10.5px] font-bold uppercase tracking-brand text-primary">New ticket submitted</span>
