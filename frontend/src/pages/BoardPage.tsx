@@ -48,7 +48,7 @@ export default function BoardPage() {
   const selected = f.get("selected");
 
   return (
-    <ProjectShell title="IT Tickets" showStatus={false}>
+    <ProjectShell view="Board" showStatus={false}>
       {error && <div className="mb-3 rounded bg-loz-red px-3 py-2 text-sm text-loz-red-ink">{error}</div>}
       <div className="flex h-full min-h-[400px] gap-3">
         {BOARD_COLUMNS.map((col) => {

@@ -3,21 +3,26 @@ import type { ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useFilters } from "../lib/useFilters";
 import IssueView from "./IssueView";
+import { useHub } from "./Layout";
 import Toolbar from "./Toolbar";
 
 // Header + view tabs + filters + optional issue side panel, shared by List / Board / My queue.
 export default function ProjectShell({
-  title,
+  view,
   children,
   showStatus = true,
   showAssignee = true,
 }: {
-  title: string;
+  view: "List" | "Board" | "My queue";
   children: ReactNode;
   showStatus?: boolean;
   showAssignee?: boolean;
 }) {
   const f = useFilters();
+  const { systems } = useHub();
+  // Opened from a system in the sidebar: the system names the page and the view moves to the eyebrow.
+  const systemCodes = f.list("system");
+  const system = view !== "My queue" && systemCodes.length === 1 ? systems.find((s) => s.code === systemCodes[0]) : undefined;
   const { search } = useLocation();
   const selected = f.get("selected");
   const keep = new URLSearchParams(search);
@@ -34,12 +39,12 @@ export default function ProjectShell({
   return (
     <div className="relative flex h-full">
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Phones drop the eyebrow and shrink the title so the List/Board switch shares its row. */}
+        {/* Phones shrink the title so the List/Board switch shares its row. */}
         <div className="px-4 pt-4 sm:pt-6 md:px-8">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <div className="eyebrow max-sm:hidden">IT Hub · Tickets</div>
-              <h1 className="text-[20px] font-extrabold tracking-tight text-ink sm:mt-1 sm:text-[24px]">{title}</h1>
+              <div className="eyebrow">IT Hub · Tickets{system && ` · ${view}`}</div>
+              <h1 className="text-[20px] font-extrabold tracking-tight text-ink sm:mt-1 sm:text-[24px]">{system?.name ?? view}</h1>
             </div>
             <div className="inline-flex rounded-[9px] border border-line bg-surface p-1 shadow-stone">
               <NavLink to={`/tickets${qs}`} end className={tab}>

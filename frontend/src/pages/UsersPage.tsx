@@ -42,64 +42,62 @@ function Overrides({ u, role, defs, busy, onSave }: {
   const roleName = role?.name ?? u.role;
   const custom = u.permAllow.length + u.permDeny.length > 0;
   return (
-    <div className="px-4 py-3">
-      <div className="rounded-lg border border-line bg-surface-2 p-4">
-        <div className="mb-3 flex flex-wrap items-center gap-3">
-          <div className="text-[13px] font-semibold text-ink">Permissions for {u.name}</div>
-          <span className="text-[11.5px] text-ink-subtlest">{busy ? "Saving..." : "Changes save automatically"}</span>
-          <button
-            className="btn-subtle ml-auto h-7 px-2 text-[12px]"
-            disabled={busy || !custom}
-            onClick={() => onSave({ permAllow: [], permDeny: [] })}
-          >
-            <RotateCcw className="h-3.5 w-3.5" /> Reset to {roleName}
-          </button>
-        </div>
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(20rem,1fr))] gap-2">
-          {defs.map((d) => {
-            const fromRole = !!role?.permissions.includes(d.key);
-            const st = state(d.key);
-            const on = st === "allow" || (st === "inherit" && fromRole);
-            return (
-              <div key={d.key} className="flex items-center justify-between gap-3 rounded-md border border-line-subtle bg-surface px-3 py-2">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 text-[13px] font-medium text-ink">
-                    <span
-                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${on ? "bg-loz-green-ink" : "bg-line-strong"}`}
-                      title={on ? "Effective: allowed" : "Effective: not allowed"}
-                    />
-                    <span className="truncate">{d.label}</span>
-                  </div>
-                  <div className="mt-0.5 text-[11px] text-ink-subtlest">
-                    {st === "inherit" ? `Inherited from ${roleName}` : "Custom override"}
-                  </div>
+    <div className="rounded-lg border border-line bg-surface-2 p-3 sm:p-4">
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        <div className="text-[13px] font-semibold text-ink">Permissions for {u.name}</div>
+        <span className="text-[11.5px] text-ink-subtlest">{busy ? "Saving..." : "Changes save automatically"}</span>
+        <button
+          className="btn-subtle ml-auto h-7 px-2 text-[12px]"
+          disabled={busy || !custom}
+          onClick={() => onSave({ permAllow: [], permDeny: [] })}
+        >
+          <RotateCcw className="h-3.5 w-3.5" /> Reset to {roleName}
+        </button>
+      </div>
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(min(20rem,100%),1fr))] gap-2">
+        {defs.map((d) => {
+          const fromRole = !!role?.permissions.includes(d.key);
+          const st = state(d.key);
+          const on = st === "allow" || (st === "inherit" && fromRole);
+          return (
+            <div key={d.key} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-md border border-line-subtle bg-surface px-3 py-2">
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 text-[13px] font-medium text-ink">
+                  <span
+                    className={`h-1.5 w-1.5 shrink-0 rounded-full ${on ? "bg-loz-green-ink" : "bg-line-strong"}`}
+                    title={on ? "Effective: allowed" : "Effective: not allowed"}
+                  />
+                  <span className="truncate">{d.label}</span>
                 </div>
-                <div className="inline-flex shrink-0 rounded-md bg-surface-2 p-0.5" role="radiogroup" aria-label={d.label}>
-                  {(["inherit", "allow", "deny"] as const).map((o) => (
-                    <button
-                      key={o}
-                      role="radio"
-                      aria-checked={st === o}
-                      disabled={busy}
-                      onClick={() => st !== o && set(d.key, o)}
-                      className={`h-6 rounded px-2 text-[12px] capitalize transition-colors disabled:cursor-not-allowed ${
-                        st === o
-                          ? o === "deny"
-                            ? "bg-loz-red font-semibold text-loz-red-ink"
-                            : o === "allow"
-                              ? "bg-loz-green font-semibold text-loz-green-ink"
-                              : "bg-surface font-semibold text-ink shadow-sm"
-                          : "text-ink-subtle hover:text-ink"
-                      }`}
-                    >
-                      {o}
-                    </button>
-                  ))}
+                <div className="mt-0.5 text-[11px] text-ink-subtlest">
+                  {st === "inherit" ? `Inherited from ${roleName}` : "Custom override"}
                 </div>
               </div>
-            );
-          })}
-        </div>
+              <div className="inline-flex shrink-0 rounded-md bg-surface-2 p-0.5" role="radiogroup" aria-label={d.label}>
+                {(["inherit", "allow", "deny"] as const).map((o) => (
+                  <button
+                    key={o}
+                    role="radio"
+                    aria-checked={st === o}
+                    disabled={busy}
+                    onClick={() => st !== o && set(d.key, o)}
+                    className={`tap h-6 rounded px-2 text-[12px] capitalize transition-colors disabled:cursor-not-allowed ${
+                      st === o
+                        ? o === "deny"
+                          ? "bg-loz-red font-semibold text-loz-red-ink"
+                          : o === "allow"
+                            ? "bg-loz-green font-semibold text-loz-green-ink"
+                            : "bg-surface font-semibold text-ink shadow-sm"
+                        : "text-ink-subtle hover:text-ink"
+                    }`}
+                  >
+                    {o}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -122,7 +120,7 @@ function RowMenu({ items, disabled }: { items: { label: string; danger?: boolean
   return (
     <div ref={ref} className="inline-block">
       <button
-        className="btn-subtle h-8 w-8 px-0"
+        className="tap btn-subtle h-8 w-8 px-0"
         aria-label="More actions"
         disabled={disabled}
         aria-haspopup="menu"
@@ -141,7 +139,7 @@ function RowMenu({ items, disabled }: { items: { label: string; danger?: boolean
             <button
               key={it.label}
               role="menuitem"
-              className={`flex w-full px-3 py-1.5 text-[13px] hover:bg-primary-soft ${it.danger ? "text-loz-red-ink" : "text-ink"}`}
+              className={`tap flex w-full items-center px-3 py-1.5 text-[13px] hover:bg-primary-soft ${it.danger ? "text-loz-red-ink" : "text-ink"}`}
               onClick={() => {
                 close();
                 it.onClick();
@@ -238,6 +236,69 @@ export default function UsersPage() {
     await patch(u, { active: u.active ? 0 : 1 });
   }
 
+  // Shared by the phone/tablet cards and the wide-screen table.
+  function roleSelect(u: UserRow, className: string) {
+    const self = u.id === me.id;
+    return (
+      <select
+        className={className}
+        value={u.role}
+        disabled={self || busy || !canRoles}
+        title={self ? "You cannot change your own role" : !canRoles ? "Needs the Manage roles permission" : undefined}
+        aria-label={`Role for ${u.name}`}
+        onChange={(e) => patch(u, { role: e.target.value })}
+      >
+        {roles.map((r) => (
+          <option key={r.key} value={r.key}>
+            {r.name}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  function overridesNote(u: UserRow) {
+    const count = u.permAllow.length + u.permDeny.length;
+    return count > 0 && <div className="mt-0.5 text-[11px] text-ink-subtlest">{count} override{count > 1 ? "s" : ""}</div>;
+  }
+
+  function permissionsButton(u: UserRow) {
+    return (
+      canRoles && (
+        <button
+          className={`h-8 px-2.5 ${open === u.id ? "btn-default" : "btn-subtle"}`}
+          aria-expanded={open === u.id}
+          onClick={() => setOpen(open === u.id ? null : u.id)}
+        >
+          <SlidersHorizontal className="h-3.5 w-3.5" /> Permissions
+          <ChevronDown className={`h-3.5 w-3.5 transition-transform motion-reduce:transition-none ${open === u.id ? "rotate-180" : ""}`} />
+        </button>
+      )
+    );
+  }
+
+  function rowMenu(u: UserRow) {
+    return (
+      canUsers && (
+        <RowMenu
+          disabled={busy}
+          items={[
+            { label: "Reset password", onClick: () => reset(u) },
+            u.active
+              ? { label: "Deactivate user", danger: true, onClick: () => toggle(u) }
+              : { label: "Reactivate user", onClick: () => toggle(u) },
+          ]}
+        />
+      )
+    );
+  }
+
+  function overrides(u: UserRow) {
+    return (
+      <Overrides u={u} role={roles.find((r) => r.key === u.role)} defs={defs} busy={busy} onSave={(body) => patch(u, body)} />
+    );
+  }
+
   return (
     <div className="h-full overflow-auto px-4 py-6 md:px-8">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -263,7 +324,7 @@ export default function UsersPage() {
               Shown only once. Send it to them privately; they can change it on their Account page.
             </div>
           </div>
-          <code className="rounded-md border border-line bg-surface px-3 py-1.5 font-docno text-[14px] text-ink">
+          <code className="break-all rounded-md border border-line bg-surface px-3 py-1.5 font-docno text-[14px] text-ink">
             {issued.password}
           </code>
           <button
@@ -337,8 +398,51 @@ export default function UsersPage() {
         </form>
       )}
 
-      <div className="card mt-4 overflow-x-auto">
-        <table className="w-full min-w-[820px] border-collapse text-[13px]">
+      {!users && !error && <div className="py-16 text-center text-sm text-ink-subtlest">Loading...</div>}
+
+      {/* Below 1280px each user is a card, so nothing scrolls sideways and Permissions opens full width. */}
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:hidden">
+        {users?.map((u) => {
+          const self = u.id === me.id;
+          return (
+            <div key={u.id} className={`card p-4 ${open === u.id ? "md:col-span-2" : ""}`}>
+              <div className={`flex items-start gap-3 ${u.active ? "" : "opacity-60"}`}>
+                <Avatar name={u.name} size={36} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className="truncate font-medium text-ink">{u.name}</span>
+                    {self && <span className="text-[13px] text-ink-subtlest">(you)</span>}
+                    <Status u={u} />
+                  </div>
+                  <div className="truncate text-xs text-ink-subtlest">
+                    {u.username ? `@${u.username}` : "no username"}
+                    {u.email && ` · ${u.email}`}
+                  </div>
+                  <div className="text-xs text-ink-subtlest">Last seen {u.lastSeenAt ? fmtAgo(u.lastSeenAt) : "never"}</div>
+                </div>
+                {!self && rowMenu(u)}
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  {roleSelect(u, "input w-full")}
+                  {overridesNote(u)}
+                </div>
+                {self ? (
+                  <Link to="/account" className="btn-subtle h-8 px-2.5">
+                    Change my password
+                  </Link>
+                ) : (
+                  permissionsButton(u)
+                )}
+              </div>
+              {open === u.id && !self && <div className="mt-3">{overrides(u)}</div>}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="card mt-4 hidden overflow-x-auto xl:block">
+        <table className="w-full border-collapse text-[13px]">
           <thead>
             <tr>
               {["User", "Email", "Role", "Status", "Last seen", ""].map((h, i) => (
@@ -352,102 +456,57 @@ export default function UsersPage() {
             </tr>
           </thead>
           <tbody>
-            {!users && !error && (
-              <tr>
-                <td colSpan={6} className="p-6 text-center text-ink-subtlest">
-                  Loading...
-                </td>
-              </tr>
-            )}
             {users?.map((u) => {
               const self = u.id === me.id;
-              const overrides = u.permAllow.length + u.permDeny.length;
               return (
                 <Fragment key={u.id}>
-                <tr className={`border-b border-line-subtle last:border-0 ${u.active ? "" : "opacity-60"}`}>
-                  <td className="px-3 py-2.5 pl-4">
-                    <div className="flex items-center gap-2.5">
-                      <Avatar name={u.name} size={28} />
-                      <div className="min-w-0">
-                        <div className="truncate font-medium text-ink">
-                          {u.name} {self && <span className="font-normal text-ink-subtlest">(you)</span>}
+                  <tr className={`border-b border-line-subtle last:border-0 ${u.active ? "" : "opacity-60"}`}>
+                    <td className="px-3 py-2.5 pl-4">
+                      <div className="flex items-center gap-2.5">
+                        <Avatar name={u.name} size={28} />
+                        <div className="min-w-0">
+                          <div className="truncate font-medium text-ink">
+                            {u.name} {self && <span className="font-normal text-ink-subtlest">(you)</span>}
+                          </div>
+                          <div className="truncate text-xs text-ink-subtlest">{u.username ? `@${u.username}` : "no username"}</div>
                         </div>
-                        <div className="truncate text-xs text-ink-subtlest">{u.username ? `@${u.username}` : "no username"}</div>
                       </div>
-                    </div>
-                  </td>
-                  <td className="px-3 py-2.5 text-ink-subtle">{u.email || <span className="text-ink-subtlest">—</span>}</td>
-                  <td className="w-44 px-3 py-2.5">
-                    <select
-                      className="inline-select"
-                      value={u.role}
-                      disabled={self || busy || !canRoles}
-                      title={self ? "You cannot change your own role" : !canRoles ? "Needs the Manage roles permission" : undefined}
-                      onChange={(e) => patch(u, { role: e.target.value })}
-                    >
-                      {roles.map((r) => (
-                        <option key={r.key} value={r.key}>
-                          {r.name}
-                        </option>
-                      ))}
-                    </select>
-                    {overrides > 0 && (
-                      <div className="mt-0.5 text-[11px] text-ink-subtlest">
-                        {overrides} override{overrides > 1 ? "s" : ""}
+                    </td>
+                    <td className="px-3 py-2.5 text-ink-subtle">
+                      <div className="max-w-[16rem] truncate" title={u.email ?? undefined}>
+                        {u.email || <span className="text-ink-subtlest">—</span>}
                       </div>
-                    )}
-                  </td>
-                  <td className="w-24 px-3 py-2.5">
-                    <Status u={u} />
-                  </td>
-                  <td className="w-28 px-3 py-2.5 text-ink-subtle">{u.lastSeenAt ? fmtAgo(u.lastSeenAt) : "Never"}</td>
-                  <td className="w-56 px-3 py-2.5 pr-4">
-                    <div className="flex items-center justify-end gap-1">
-                      {self ? (
-                        <Link to="/account" className="btn-subtle h-8 px-2.5">
-                          Change my password
-                        </Link>
-                      ) : (
-                        <>
-                          {canRoles && (
-                            <button
-                              className={`h-8 px-2.5 ${open === u.id ? "btn-default" : "btn-subtle"}`}
-                              aria-expanded={open === u.id}
-                              onClick={() => setOpen(open === u.id ? null : u.id)}
-                            >
-                              <SlidersHorizontal className="h-3.5 w-3.5" /> Permissions
-                              <ChevronDown className={`h-3.5 w-3.5 transition-transform motion-reduce:transition-none ${open === u.id ? "rotate-180" : ""}`} />
-                            </button>
-                          )}
-                          {canUsers && (
-                            <RowMenu
-                              disabled={busy}
-                              items={[
-                                { label: "Reset password", onClick: () => reset(u) },
-                                u.active
-                                  ? { label: "Deactivate user", danger: true, onClick: () => toggle(u) }
-                                  : { label: "Reactivate user", onClick: () => toggle(u) },
-                              ]}
-                            />
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-                {open === u.id && !self && (
-                  <tr className="border-b border-line-subtle">
-                    <td colSpan={6} className="p-0">
-                      <Overrides
-                        u={u}
-                        role={roles.find((r) => r.key === u.role)}
-                        defs={defs}
-                        busy={busy}
-                        onSave={(body) => patch(u, body)}
-                      />
+                    </td>
+                    <td className="w-44 px-3 py-2.5">
+                      {roleSelect(u, "inline-select")}
+                      {overridesNote(u)}
+                    </td>
+                    <td className="w-24 px-3 py-2.5">
+                      <Status u={u} />
+                    </td>
+                    <td className="w-28 px-3 py-2.5 text-ink-subtle">{u.lastSeenAt ? fmtAgo(u.lastSeenAt) : "Never"}</td>
+                    <td className="w-56 px-3 py-2.5 pr-4">
+                      <div className="flex items-center justify-end gap-1">
+                        {self ? (
+                          <Link to="/account" className="btn-subtle h-8 px-2.5">
+                            Change my password
+                          </Link>
+                        ) : (
+                          <>
+                            {permissionsButton(u)}
+                            {rowMenu(u)}
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
-                )}
+                  {open === u.id && !self && (
+                    <tr className="border-b border-line-subtle">
+                      <td colSpan={6} className="px-4 py-3">
+                        {overrides(u)}
+                      </td>
+                    </tr>
+                  )}
                 </Fragment>
               );
             })}

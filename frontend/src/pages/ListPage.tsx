@@ -74,7 +74,7 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
   }
 
   return (
-    <ProjectShell title={queue ? "My queue" : "IT Tickets"} showAssignee={!queue}>
+    <ProjectShell view={queue ? "My queue" : "List"} showAssignee={!queue}>
       {error && <div className="mb-3 rounded bg-loz-red px-3 py-2 text-sm text-loz-red-ink">{error}</div>}
       <div className="space-y-2 lg:hidden">
         <div className="flex items-center gap-2">

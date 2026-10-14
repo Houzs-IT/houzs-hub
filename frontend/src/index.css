@@ -154,8 +154,9 @@ body {
   .section-title {
     @apply text-[10px] font-bold uppercase tracking-brand text-ink-subtle;
   }
+  /* Hidden on phones, where the title alone says where you are and rows are scarce. */
   .eyebrow {
-    @apply text-[10px] font-bold uppercase tracking-brand text-accent;
+    @apply text-[10px] font-bold uppercase tracking-brand text-accent max-sm:hidden;
   }
   /* Century Badge: rounded-full, uppercase, bold, soft tone. */
   .pill {
