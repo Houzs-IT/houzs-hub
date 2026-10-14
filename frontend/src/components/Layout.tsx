@@ -57,7 +57,6 @@ export const useHub = () => useContext(HubContext)!;
 
 function NavItem({ to, icon, label, count }: { to: string; icon?: ReactNode; label: string; count?: number }) {
   const { pathname, search } = useLocation();
-  const isOutdated = useNewVersion();
   const [path, qs] = to.split("?");
   const active = pathname === path && (qs ? search.includes(qs) : !search.includes("system="));
   return (
@@ -240,6 +239,7 @@ export default function Layout() {
   const [firstLogin, setFirstLogin] = useState<string | null>(null);
   const [presence, setPresence] = useState<{ id: number; page: string | null; idleSeconds: number }[]>([]);
   const { pathname, search } = useLocation();
+  const isOutdated = useNewVersion();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   useEffect(() => setIsMenuOpen(false), [pathname, search]);
   useEffect(() => {
