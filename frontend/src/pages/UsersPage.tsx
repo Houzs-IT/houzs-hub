@@ -136,7 +136,7 @@ function RowMenu({ items, disabled }: { items: { label: string; danger?: boolean
         <MoreHorizontal className="h-4 w-4" />
       </button>
       {at && (
-        <div role="menu" style={at} className="fixed z-30 min-w-[180px] rounded-[10px] bg-overlay py-1.5 text-left shadow-overlay">
+        <div role="menu" style={at} className="fixed z-30 min-w-[180px] rounded-[10px] border border-transparent bg-overlay py-1.5 text-left shadow-overlay">
           {items.map((it) => (
             <button
               key={it.label}

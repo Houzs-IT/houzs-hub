@@ -60,7 +60,7 @@ export default function FilterButton({
               <button
                 key={o.value}
                 onClick={() => toggle(o.value)}
-                className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-[13px] hover:bg-primary-soft"
+                className="tap flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-[13px] hover:bg-primary-soft"
               >
                 <span
                   className={`grid h-4 w-4 shrink-0 place-items-center rounded-[3px] border-2 ${
@@ -76,7 +76,7 @@ export default function FilterButton({
           })}
           {on && (
             <div className="mt-1 border-t border-line px-3 pt-1.5">
-              <button className="text-sm text-ink-subtle hover:text-primary" onClick={() => onChange([])}>
+              <button className="tap text-sm text-ink-subtle hover:text-primary" onClick={() => onChange([])}>
                 Clear selection
               </button>
             </div>

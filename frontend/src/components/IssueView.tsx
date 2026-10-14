@@ -1,4 +1,4 @@
-import { ArrowRight, ChevronDown, ExternalLink, FileText, Lock, Maximize2, Paperclip, Trash2, X } from "lucide-react";
+import { ArrowRight, ChevronDown, ExternalLink, FileText, Lock, Maximize2, MessageSquare, Paperclip, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, attachmentUrl, json, type Attachment, type Status, type TicketEvent, type TicketFull } from "../api/client";
@@ -72,7 +72,7 @@ function StatusButton({ status, disabled, onChange }: { status: Status; disabled
         <ChevronDown className="h-4 w-4" />
       </button>
       {open && (
-        <div className="absolute left-0 top-10 z-30 min-w-[220px] rounded-[10px] bg-overlay py-1.5 shadow-overlay">
+        <div className="absolute left-0 top-10 z-30 max-h-[60vh] min-w-[220px] overflow-y-auto overscroll-contain rounded-[10px] border border-transparent bg-overlay py-1.5 shadow-overlay max-sm:fixed max-sm:inset-x-4 max-sm:bottom-4 max-sm:top-auto">
           {STATUSES.filter((s) => s !== status).map((s) => (
             <button
               key={s}
@@ -80,7 +80,7 @@ function StatusButton({ status, disabled, onChange }: { status: Status; disabled
                 setOpen(false);
                 onChange(s);
               }}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-hover"
+              className="tap flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-hover"
             >
               <ArrowRight className="h-3.5 w-3.5 text-ink-subtlest" />
               <Lozenge status={s} />
@@ -204,11 +204,11 @@ function Composer({ code, status, onDone }: { code: string; status: Status; onDo
       <div className="flex gap-3">
         <Avatar name={me.name} size={32} />
         <div className="flex-1 rounded border border-line px-3 py-2 text-sm text-ink-subtlest">
-          <button className="font-medium text-primary hover:underline" onClick={() => setMode("public")}>
+          <button className="tap font-medium text-primary hover:underline" onClick={() => setMode("public")}>
             Reply to reporter
           </button>
           <span className="mx-2">or</span>
-          <button className="font-medium text-primary hover:underline" onClick={() => setMode("internal")}>
+          <button className="tap font-medium text-primary hover:underline" onClick={() => setMode("internal")}>
             Add internal note
           </button>
         </div>
@@ -226,7 +226,7 @@ function Composer({ code, status, onDone }: { code: string; status: Status; onDo
             <button
               key={m}
               onClick={() => setMode(m)}
-              className={`rounded px-2 py-1 text-xs font-semibold ${mode === m ? "bg-primary-soft text-primary" : "text-ink-subtle hover:bg-hover"}`}
+              className={`tap rounded px-2 py-1 text-xs font-semibold ${mode === m ? "bg-primary-soft text-primary" : "text-ink-subtle hover:bg-hover"}`}
             >
               {m === "public" ? "Reply to reporter" : "Add internal note"}
             </button>
@@ -245,7 +245,7 @@ function Composer({ code, status, onDone }: { code: string; status: Status; onDo
               {files.map((f, i) => (
                 <span key={i} className="inline-flex items-center gap-1 rounded bg-neutral px-2 py-0.5 text-xs">
                   {f.name}
-                  <button onClick={() => setFiles(files.filter((_, j) => j !== i))}>
+                  <button className="tap grid place-items-center" aria-label={`Remove ${f.name}`} onClick={() => setFiles(files.filter((_, j) => j !== i))}>
                     <X className="h-3 w-3" />
                   </button>
                 </span>
@@ -272,7 +272,7 @@ function Composer({ code, status, onDone }: { code: string; status: Status; onDo
               e.target.value = "";
             }}
           />
-          <button className="btn-subtle px-2" title="Attach files" onClick={() => fileRef.current?.click()}>
+          <button className="btn-subtle px-2" title="Attach files" aria-label="Attach files" onClick={() => fileRef.current?.click()}>
             <Paperclip className="h-4 w-4" />
           </button>
           <label className="ml-auto flex items-center gap-1.5 text-xs text-ink-subtle">
@@ -309,6 +309,12 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
   const [tab, setTab] = useState<"all" | "comments" | "history">("all");
   const navigate = useNavigate();
   const confirmDelete = useRef<HTMLDialogElement>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
+
+  function jumpToReply() {
+    composerRef.current?.scrollIntoView({ block: "start" });
+    composerRef.current?.querySelector("button")?.focus({ preventScroll: true });
+  }
 
   const load = useCallback(() => {
     api<Detail>(`/tickets/${code}`)
@@ -534,14 +540,16 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
             <button
               key={k}
               onClick={() => setTab(k)}
-              className={`rounded px-2 py-1 font-medium ${tab === k ? "bg-primary-soft text-primary" : "text-ink-subtle hover:bg-hover"}`}
+              className={`tap rounded px-2 py-1 font-medium ${tab === k ? "bg-primary-soft text-primary" : "text-ink-subtle hover:bg-hover"}`}
             >
               {k === "all" ? "All" : k === "comments" ? "Comments" : "History"}
             </button>
           ))}
         </div>
         <div className="space-y-5">
-          <Composer code={code} status={t.status} onDone={refresh} />
+          <div ref={composerRef} className="scroll-mt-4">
+            <Composer code={code} status={t.status} onDone={refresh} />
+          </div>
           {shown.map((e) => (
             <ActivityItem key={e.id} e={e} />
           ))}
@@ -561,16 +569,22 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
             {t.code}
           </Link>
         </div>
-        {variant === "panel" && (
-          <div className="ml-auto flex items-center gap-1">
-            <Link to={`/tickets/${t.code}`} className="btn-subtle px-2" title="Open full page">
-              <Maximize2 className="h-4 w-4" />
-            </Link>
-            <button className="btn-subtle px-2" title="Close" onClick={onClose}>
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        )}
+        <div className="ml-auto flex items-center gap-1">
+          {/* On phones the reply box sits below every detail row; this jumps straight to it. */}
+          <button className="btn-default px-3 md:hidden" onClick={jumpToReply}>
+            <MessageSquare className="h-4 w-4" /> Reply
+          </button>
+          {variant === "panel" && (
+            <>
+              <Link to={`/tickets/${t.code}`} className="btn-subtle px-2" title="Open full page" aria-label="Open full page">
+                <Maximize2 className="h-4 w-4" />
+              </Link>
+              <button className="btn-subtle px-2" title="Close" aria-label="Close" onClick={onClose}>
+                <X className="h-4 w-4" />
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       <div className={variant === "panel" ? "flex-1 overflow-y-auto overscroll-contain px-4 py-5 md:px-6" : ""}>

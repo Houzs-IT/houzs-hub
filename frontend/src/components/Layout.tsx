@@ -55,7 +55,7 @@ function NavItem({ to, icon, label, count }: { to: string; icon: ReactNode; labe
   return (
     <NavLink
       to={to}
-      className={`relative flex h-9 items-center gap-3 rounded-md px-2.5 text-[13px] transition-colors ${
+      className={`tap relative flex h-9 items-center gap-3 rounded-md px-2.5 text-[13px] transition-colors ${
         active
           ? "bg-[var(--sidebar-active)] font-semibold text-sidebar-ink"
           : "text-sidebar-ink-muted hover:bg-[var(--sidebar-hover)] hover:text-sidebar-ink"
@@ -174,6 +174,8 @@ export default function Layout() {
             )}
           </div>
 
+          {/* Scrolls on short screens so the account row and Sign out below stay reachable. */}
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
           <nav className="space-y-0.5 px-3 py-2">
             {/* The IT category (workspace views and its systems), shown with the "it"
                 permission. The server refuses ticket routes without it too. */}
@@ -181,7 +183,7 @@ export default function Layout() {
             <button
               onClick={toggleIt}
               aria-expanded={itOpen}
-              className="flex w-full items-center gap-1.5 px-2.5 pb-1 pt-3 text-[9.5px] font-bold uppercase tracking-brand text-sidebar-ink-muted hover:text-sidebar-ink"
+              className="tap flex w-full items-center gap-1.5 px-2.5 pb-1 pt-3 text-[9.5px] font-bold uppercase tracking-brand text-sidebar-ink-muted hover:text-sidebar-ink"
             >
               <span className="flex-1 text-left">IT</span>
               {!itOpen && itActive > 0 && (
@@ -246,6 +248,7 @@ export default function Layout() {
               </div>
             </div>
           )}
+          </div>
           <div className="flex items-center gap-2.5 border-t border-[var(--sidebar-border)] px-4 py-3">
             <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--sidebar-active)] text-[10px] font-bold uppercase text-accent-bright shadow-[inset_0_0_0_1px_rgba(161,106,46,0.25)]">
               {base.me.name.slice(0, 2)}
@@ -256,7 +259,7 @@ export default function Layout() {
             </Link>
             <button
               onClick={toggle}
-              className="grid h-8 w-8 place-items-center rounded-md text-sidebar-ink-muted transition-colors hover:bg-[var(--sidebar-hover)] hover:text-accent-bright"
+              className="tap grid h-8 w-8 place-items-center rounded-md text-sidebar-ink-muted transition-colors hover:bg-[var(--sidebar-hover)] hover:text-accent-bright"
               title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
               aria-label="Toggle theme"
             >
@@ -264,7 +267,7 @@ export default function Layout() {
             </button>
             <button
               onClick={() => fetch("/api/v1/auth/logout", { method: "POST" }).finally(() => location.assign("/login"))}
-              className="grid h-8 w-8 place-items-center rounded-md text-sidebar-ink-muted transition-colors hover:bg-[var(--sidebar-hover)] hover:text-accent-bright"
+              className="tap grid h-8 w-8 place-items-center rounded-md text-sidebar-ink-muted transition-colors hover:bg-[var(--sidebar-hover)] hover:text-accent-bright"
               title="Sign out"
               aria-label="Sign out"
             >

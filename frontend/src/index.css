@@ -165,3 +165,25 @@ body {
     @apply rounded-[10px] border border-line bg-surface shadow-stone;
   }
 }
+
+/* Touch screens only; desktop keeps the compact Century sizes. iOS zooms into any
+   field under 16px, and fingers need 40px targets (`tap` marks small custom controls). */
+@media (pointer: coarse) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+  .btn,
+  .btn-primary,
+  .btn-default,
+  .btn-subtle,
+  .input,
+  .inline-select,
+  .tap {
+    min-height: 2.5rem;
+  }
+  .tap {
+    min-width: 2.5rem;
+  }
+}

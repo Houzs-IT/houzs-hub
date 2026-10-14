@@ -192,7 +192,7 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
                         Unassigned
                       </span>
                       {ACTIVE.includes(t.status) && (
-                        <button className="hidden h-6 rounded px-1.5 text-xs font-medium text-primary hover:bg-primary-soft group-hover:inline [@media(hover:none)]:inline" onClick={() => pickup(t.code)}>
+                        <button className="tap hidden h-6 rounded px-1.5 text-xs font-medium text-primary hover:bg-primary-soft group-hover:inline [@media(hover:none)]:inline-block" onClick={() => pickup(t.code)}>
                           Pick up
                         </button>
                       )}

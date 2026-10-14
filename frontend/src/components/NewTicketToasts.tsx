@@ -133,7 +133,7 @@ function Toast({ ticket, systemName, onClose, onView }: ToastProps) {
       <div className="flex items-center gap-2">
         <Inbox className="h-4 w-4 text-primary" />
         <span className="flex-1 text-[10.5px] font-bold uppercase tracking-brand text-primary">New ticket submitted</span>
-        <button className="text-ink-subtlest hover:text-ink" onClick={onClose} aria-label="Dismiss">
+        <button className="tap -m-1 grid place-items-center p-1 text-ink-subtlest hover:text-ink" onClick={onClose} aria-label="Dismiss">
           <X className="h-4 w-4" />
         </button>
       </div>
