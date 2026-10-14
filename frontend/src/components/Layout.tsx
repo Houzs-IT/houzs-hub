@@ -13,6 +13,9 @@ type Stats = { active_by_system: Record<string, number>; my_active: number; unre
 
 const IT_PATH = /^\/($|tickets|board|queue|notifications)/;
 
+// Sidebar wording only; everywhere else shows the system's stored name.
+const SIDEBAR_SYSTEM_NAMES: Record<string, string> = { CONTS: "The Conts" };
+
 const PAGE_NAMES: Record<string, string> = {
   "/tickets": "List",
   "/board": "Board",
@@ -50,7 +53,7 @@ type Ctx = {
 const HubContext = createContext<Ctx | null>(null);
 export const useHub = () => useContext(HubContext)!;
 
-function NavItem({ to, icon, label, count }: { to: string; icon: ReactNode; label: string; count?: number }) {
+function NavItem({ to, icon, label, count }: { to: string; icon?: ReactNode; label: string; count?: number }) {
   const { pathname, search } = useLocation();
   const [path, qs] = to.split("?");
   const active = pathname === path && (qs ? search.includes(qs) : !search.includes("system="));
@@ -64,7 +67,7 @@ function NavItem({ to, icon, label, count }: { to: string; icon: ReactNode; labe
       }`}
     >
       {active && <span className="absolute -left-[10px] bottom-2 top-2 w-[2px] rounded-r bg-primary" />}
-      <span className={active ? "text-primary" : ""}>{icon}</span>
+      {icon && <span className={active ? "text-primary" : ""}>{icon}</span>}
       <span className="flex-1 truncate">{label}</span>
       {count !== undefined && count > 0 && (
         <span className="rounded-full bg-[var(--sidebar-hover)] px-1.5 text-[10.5px] font-semibold tabular-nums text-sidebar-ink-muted">
@@ -239,13 +242,7 @@ export default function Layout() {
                   <NavItem
                     key={s.code}
                     to={`/tickets?system=${s.code}`}
-                    // Same width for every code, so the system names line up.
-                    icon={
-                      <span className="grid h-5 w-12 place-items-center truncate rounded bg-[var(--sidebar-hover)] px-1 font-docno text-[9px] font-semibold text-accent-bright">
-                        {s.code}
-                      </span>
-                    }
-                    label={s.name}
+                    label={SIDEBAR_SYSTEM_NAMES[s.code] ?? s.name}
                     count={stats.active_by_system[s.code] ?? 0}
                   />
                 ))}

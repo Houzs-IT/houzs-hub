@@ -17,8 +17,8 @@ const WIDE_ONLY = "hidden min-[1440px]:table-cell";
 
 type Col = { key: string; label: string; sort?: string; className?: string };
 const COLS: Col[] = [
-  { key: "type", label: "Type", className: "w-16" },
-  { key: "key", label: "Key", sort: "key", className: "w-32" },
+  // The type icon sits in front of the key, as on Board and phone cards; w-36 fits "CONNECT-0001".
+  { key: "key", label: "Key", sort: "key", className: "w-36" },
   { key: "summary", label: "Summary" },
   { key: "status", label: "Status", sort: "status", className: "w-40" },
   { key: "priority", label: "Priority", sort: "priority", className: "w-24" },
@@ -50,7 +50,7 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
   useEffect(load, [load, version]);
   usePoll(load, 60_000);
 
-  const sort = f.get("sort") ?? "updated";
+  const sort = f.get("sort") ?? "created";
   const dir = f.get("dir") ?? "desc";
   const selected = f.get("selected");
   const page = Number(f.get("page") ?? 1);
@@ -90,7 +90,7 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
         </div>
       )}
       {/* With a ticket open beside it, the table would be a sideways-scrolling strip, so the cards show instead. */}
-      <div className={`space-y-2 ${selected ? "" : "lg:hidden"}`}>
+      <div className={`space-y-2 ${selected ? "" : "xl:hidden"}`}>
         <div className="flex items-center gap-2">
           <label className="flex items-center gap-2 text-xs text-ink-subtle">
             Sort by
@@ -150,7 +150,7 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
         {!data && !error && <div className="py-16 text-center text-sm text-ink-subtle">Loading...</div>}
       </div>
 
-      <div className={`card min-w-[970px] min-[1440px]:min-w-[1130px] ${selected ? "hidden" : "hidden lg:block"}`}>
+      <div className={`card min-w-[920px] min-[1440px]:min-w-[1080px] ${selected ? "hidden" : "hidden xl:block"}`}>
       <table className="w-full table-fixed border-collapse text-[13px]">
         <thead className="sticky top-0 z-10">
           <tr>
@@ -187,9 +187,11 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
                 className={`group h-11 cursor-pointer border-b border-line-subtle outline-none last:border-0 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary ${selected === t.code ? "bg-primary-soft" : "hover:bg-surface-2"}`}
               >
                 <td className="pl-4 pr-3">
-                  <TypeIcon type={t.type} />
+                  <div className="flex items-center gap-2">
+                    <TypeIcon type={t.type} />
+                    <span className="truncate font-docno text-[12.5px] font-semibold text-accent">{t.code}</span>
+                  </div>
                 </td>
-                <td className="truncate px-3 font-docno text-[12.5px] font-semibold text-accent">{t.code}</td>
                 <td className="px-3">
                   <div className="flex min-w-0 items-center gap-2">
                     <span className="truncate text-ink">{t.title}</span>

@@ -218,8 +218,11 @@ function orderFor(sort: string | undefined, dir: string | undefined) {
       return [d(t.systemCode), d(t.id)];
     case "assignee":
       return [d(schema.users.name), desc(t.updatedAt)];
-    default:
+    case "updated":
       return [d(t.updatedAt)];
+    // The List opens newest submitted first.
+    default:
+      return [d(t.createdAt)];
   }
 }
 

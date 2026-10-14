@@ -414,10 +414,8 @@ export default function UsersPage() {
                     {self && <span className="text-[13px] text-ink-subtlest">(you)</span>}
                     <Status u={u} />
                   </div>
-                  <div className="truncate text-xs text-ink-subtlest">
-                    {u.username ? `@${u.username}` : "no username"}
-                    {u.email && ` · ${u.email}`}
-                  </div>
+                  <div className="truncate text-xs text-ink-subtle">{u.username ? `@${u.username}` : "no username"}</div>
+                  {u.email && <div className="break-all text-xs text-ink-subtle">{u.email}</div>}
                   <div className="text-xs text-ink-subtlest">Last seen {u.lastSeenAt ? fmtAgo(u.lastSeenAt) : "never"}</div>
                 </div>
                 {!self && rowMenu(u)}
@@ -473,9 +471,7 @@ export default function UsersPage() {
                       </div>
                     </td>
                     <td className="px-3 py-2.5 text-ink-subtle">
-                      <div className="max-w-[16rem] truncate" title={u.email ?? undefined}>
-                        {u.email || <span className="text-ink-subtlest">—</span>}
-                      </div>
+                      <div className="max-w-[16rem] break-all">{u.email || <span className="text-ink-subtlest">—</span>}</div>
                     </td>
                     <td className="w-44 px-3 py-2.5">
                       {roleSelect(u, "inline-select")}

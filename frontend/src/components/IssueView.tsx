@@ -2,7 +2,7 @@ import { ArrowRight, ChevronDown, ExternalLink, FileText, Lock, Maximize2, Messa
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, attachmentUrl, json, type Attachment, type Status, type TicketEvent, type TicketFull } from "../api/client";
-import { fmtAgo, fmtDateTime, fmtSize, sla } from "../lib/format";
+import { fmtAgo, fmtDateTime, fmtSize } from "../lib/format";
 import { ACTIVE, PRIORITIES, PRIORITY_LABEL, STATUSES, STATUS_LABEL, STATUS_STYLE, TYPES, TYPE_LABEL } from "../lib/labels";
 import { usePoll } from "../lib/usePoll";
 import { Avatar, Lozenge, PriorityIcon, SystemTag, TypeIcon } from "./Bits";
@@ -404,7 +404,6 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
   }
 
   const { ticket: t, events } = data;
-  const s = sla(t.createdAt, t.priority, t.status, t.legacyCode);
   const created = events.find((e) => e.kind === "created");
   const shown = events
     .filter((e) => e.kind !== "created" || tab !== "comments")
@@ -499,7 +498,7 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
                 </a>
               )}
               {t.reporterEmail && (
-                <a className="block truncate text-primary hover:underline" href={`mailto:${t.reporterEmail}`}>
+                <a className="block break-all text-primary hover:underline" href={`mailto:${t.reporterEmail}`}>
                   {t.reporterEmail}
                 </a>
               )}
@@ -534,26 +533,14 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
               </select>
             </div>
           </Row>
-          {s && (
-            <Row label="SLA">
-              <span className={`font-medium ${s.overdue ? "text-loz-red-ink" : "text-ink"}`}>{s.label}</span>
-            </Row>
-          )}
-          <Row label="Occurred">{fmtDateTime(t.occurredAt)}</Row>
+          {/* Tickets from before occurred_at defaulted to submission time fall back to it here too. */}
+          <Row label="Occurred">{fmtDateTime(t.occurredAt ?? t.createdAt)}</Row>
           {t.pageUrl && (
             <Row label="Page">
-              <a className="inline-flex max-w-full items-center gap-1 text-primary hover:underline" href={t.pageUrl} target="_blank" rel="noreferrer">
-                <span className="truncate">{t.pageUrl}</span>
-                <ExternalLink className="h-3 w-3 shrink-0" />
+              <a className="break-all text-primary hover:underline" href={t.pageUrl} target="_blank" rel="noreferrer">
+                {t.pageUrl}
+                <ExternalLink className="ml-1 inline h-3 w-3 align-[-1px]" />
               </a>
-            </Row>
-          )}
-          {(t.appVersion || t.userAgent) && (
-            <Row label="Client">
-              <span className="block truncate text-xs text-ink-subtle" title={t.userAgent ?? ""}>
-                {t.appVersion ? `v${t.appVersion} ` : ""}
-                {t.userAgent}
-              </span>
             </Row>
           )}
           {t.legacyCode && <Row label="Sheet ID">{t.legacyCode}</Row>}
@@ -561,7 +548,6 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
       </div>
 
       <div className="space-y-0.5 text-xs text-ink-subtlest">
-        <div>Created {fmtDateTime(t.createdAt)}</div>
         <div>Updated {fmtDateTime(t.updatedAt)}</div>
         {t.pickedUpAt && <div>Picked up {fmtDateTime(t.pickedUpAt)}</div>}
         {t.resolvedAt && <div>Done {fmtDateTime(t.resolvedAt)}</div>}
