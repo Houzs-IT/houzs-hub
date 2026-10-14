@@ -1,4 +1,4 @@
-import { Bell, ChevronDown, KanbanSquare, List, LogOut, Menu, Moon, Plug, ShieldCheck, Sun, UserCheck, Users } from "lucide-react";
+import { Bell, ChevronDown, KanbanSquare, List, LogOut, Menu, Moon, Plug, ShieldCheck, Sun, UserCheck, UserCog, Users } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { Link, Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
 import { api, json, type Perm, type User, type SystemRow } from "../api/client";
@@ -79,59 +79,150 @@ function NavItem({ to, icon, label, count }: { to: string; icon?: ReactNode; lab
   );
 }
 
-const STACK_SIZE = 3;
+// Matches the server: check-ins every 60s, last-seen written at most once a minute.
+const ACTIVE_SECONDS = 150;
 
-function OnlineNow({ online }: { online: (User & { page: string | null })[] }) {
+type Teammate = User & { page: string | null; idleSeconds: number };
+
+function TeamActivity({ teammates, canManage }: { teammates: Teammate[]; canManage: boolean }) {
   const [isOpen, setIsOpen] = useState(false);
   const close = useCallback(() => setIsOpen(false), []);
   const ref = useOutside<HTMLDivElement>(isOpen, close);
-  if (online.length === 0) return null;
-  const hiddenCount = online.length - STACK_SIZE;
+  const active = teammates.filter((t) => t.idleSeconds < ACTIVE_SECONDS);
+  const away = teammates.filter((t) => t.idleSeconds >= ACTIVE_SECONDS);
 
   return (
     <div ref={ref} className="relative">
       <button
         onClick={() => setIsOpen((open) => !open)}
-        className="flex h-10 items-center gap-2 rounded-md px-2 transition-colors hover:bg-hover"
-        aria-label={`${online.length} online now`}
+        className="relative grid h-10 w-10 place-items-center rounded-md text-ink-subtle transition-colors hover:bg-hover hover:text-ink"
+        aria-label={`Team activity, ${active.length} online`}
         aria-expanded={isOpen}
       >
-        <span className="relative flex -space-x-2">
-          {online.slice(0, STACK_SIZE).map((user) => (
-            <span key={user.id} className="flex rounded-full ring-2 ring-surface">
-              <Avatar name={user.name} size={26} />
-            </span>
-          ))}
-          <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-loz-green-ink ring-2 ring-surface" />
-        </span>
-        {hiddenCount > 0 && (
-          <span className="whitespace-nowrap rounded-full bg-surface-dim px-2 py-0.5 text-[11px] font-semibold tabular-nums text-ink-subtle">
-            +{hiddenCount} Online
+        <Users className="h-[18px] w-[18px]" />
+        {active.length > 0 && (
+          <span className="absolute right-1 top-1 grid h-4 min-w-4 place-items-center rounded-full bg-loz-green-ink px-1 text-[10px] font-bold leading-none text-surface">
+            {active.length}
           </span>
         )}
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 top-full z-50 mt-1 w-[min(300px,calc(100vw-32px))] rounded-[10px] border border-transparent bg-overlay text-ink shadow-overlay max-sm:fixed max-sm:inset-x-4 max-sm:bottom-4 max-sm:top-auto max-sm:w-auto">
-          <div className="border-b border-line px-4 py-2.5 text-[13px] font-bold">Online now · {online.length}</div>
-          <div className="max-h-[60vh] overflow-y-auto overscroll-contain py-1">
-            {online.map((user) => (
-              <Link
-                key={user.id}
-                to={user.page ?? "/tickets"}
-                onClick={close}
-                className="flex min-h-10 items-center gap-2.5 px-4 py-1.5 hover:bg-hover"
-                title={`Go to what ${user.name} is reading`}
-              >
-                <span className="relative flex">
-                  <Avatar name={user.name} size={28} />
-                  <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-loz-green-ink ring-2 ring-overlay" />
-                </span>
-                <span className="min-w-0 flex-1 truncate text-[13px]">{user.name}</span>
-                <span className="max-w-[45%] truncate font-docno text-[11px] text-ink-subtle">{pageLabel(user.page)}</span>
-              </Link>
-            ))}
+        <div className="absolute right-0 top-full z-50 mt-1 w-[min(340px,calc(100vw-32px))] overflow-hidden rounded-[10px] border border-transparent bg-overlay text-ink shadow-overlay max-sm:fixed max-sm:inset-x-4 max-sm:bottom-4 max-sm:top-auto max-sm:w-auto">
+          <div className="flex items-center gap-2 bg-primary px-4 py-3 text-primary-on">
+            <span className="flex-1 text-[11px] font-bold uppercase tracking-brand">Team activity</span>
+            <span className="flex items-center gap-1.5 rounded-full bg-loz-green-ink px-2 py-0.5 text-[10px] font-bold uppercase text-surface">
+              <span className="h-1.5 w-1.5 rounded-full bg-surface" />
+              {active.length} online
+            </span>
+            {away.length > 0 && (
+              <span className="flex items-center gap-1.5 rounded-full bg-surface-dim px-2 py-0.5 text-[10px] font-bold uppercase text-ink-subtle">
+                <span className="h-1.5 w-1.5 rounded-full bg-ink-subtle" />
+                {away.length} away
+              </span>
+            )}
           </div>
+          <div className="max-h-[60vh] overflow-y-auto overscroll-contain">
+            {teammates.length === 0 && <div className="px-4 py-8 text-center text-sm text-ink-subtle">Nobody else is online</div>}
+            {active.length > 0 && <TeammateGroup label="Active now" teammates={active} isActive onPick={close} />}
+            {away.length > 0 && <TeammateGroup label="Away" teammates={away} isActive={false} onPick={close} />}
+          </div>
+          <div className="flex items-center gap-2 border-t border-line px-4 py-2.5 text-[11px] text-ink-subtle">
+            <span className="flex-1">Away after 2½ min quiet · gone after 15</span>
+            {canManage && (
+              <Link to="/users" onClick={close} className="tap font-bold uppercase tracking-wide text-primary hover:underline">
+                Manage access
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TeammateGroup({ label, teammates, isActive, onPick }: { label: string; teammates: Teammate[]; isActive: boolean; onPick: () => void }) {
+  return (
+    <div className="border-b border-line py-2 last:border-b-0">
+      <div className="px-4 py-1">
+        <span
+          className={`rounded-full px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-brand ${
+            isActive ? "bg-loz-green text-loz-green-ink" : "bg-surface-dim text-ink-subtle"
+          }`}
+        >
+          {label}
+        </span>
+      </div>
+      {teammates.map((teammate) => (
+        <Link
+          key={teammate.id}
+          to={teammate.page ?? "/tickets"}
+          onClick={onPick}
+          className="flex min-h-10 items-center gap-3 px-4 py-2 hover:bg-hover"
+          title={`Go to what ${teammate.name} is reading`}
+        >
+          <span className={`relative flex ${isActive ? "" : "opacity-60"}`}>
+            <Avatar name={teammate.name} size={32} />
+            <span
+              className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full ring-2 ring-overlay ${
+                isActive ? "bg-loz-green-ink" : "border-2 border-ink-subtle bg-overlay"
+              }`}
+            />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[13px] font-semibold">{teammate.name}</span>
+            <span className="block truncate text-[11.5px] text-ink-subtle">{pageLabel(teammate.page)}</span>
+          </span>
+          <span className={`shrink-0 text-[10.5px] font-bold uppercase tabular-nums ${isActive ? "text-loz-green-ink" : "text-ink-subtle"}`}>
+            {isActive ? "Now" : `${Math.floor(teammate.idleSeconds / 60)}m idle`}
+          </span>
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+function ProfileMenu({ me, onSignOut }: { me: User; onSignOut: () => void }) {
+  const { theme, toggle } = useTheme();
+  const [isOpen, setIsOpen] = useState(false);
+  const close = useCallback(() => setIsOpen(false), []);
+  const ref = useOutside<HTMLDivElement>(isOpen, close);
+  const itemClass = "tap flex min-h-10 w-full items-center gap-2.5 px-4 text-left text-[13px] hover:bg-hover";
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setIsOpen((open) => !open)}
+        className="flex h-10 items-center gap-2.5 rounded-md px-1.5 transition-colors hover:bg-hover"
+        aria-label="My account menu"
+        aria-expanded={isOpen}
+      >
+        <span className="relative flex">
+          <Avatar name={me.name} size={30} />
+          <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-loz-green-ink ring-2 ring-surface" />
+        </span>
+        <span className="hidden min-w-0 max-w-[160px] text-left sm:block">
+          <span className="block truncate text-[13px] font-bold leading-tight text-ink">{me.name}</span>
+          <span className="block truncate text-[11px] leading-tight text-ink-subtle">{me.roleName ?? me.email ?? me.username}</span>
+        </span>
+      </button>
+
+      {isOpen && (
+        <div role="menu" className="absolute right-0 top-full z-50 mt-1 w-[min(240px,calc(100vw-32px))] rounded-[10px] border border-transparent bg-overlay py-1.5 text-ink shadow-overlay max-sm:fixed max-sm:inset-x-4 max-sm:bottom-4 max-sm:top-auto max-sm:w-auto">
+          <div className="border-b border-line px-4 pb-2 pt-1">
+            <div className="truncate text-[13px] font-semibold">{me.name}</div>
+            <div className="truncate text-[11px] text-ink-subtle">{me.email ?? me.username}</div>
+          </div>
+          <Link to="/account" onClick={close} className={itemClass} role="menuitem">
+            <UserCog className="h-4 w-4 text-ink-subtle" /> My account
+          </Link>
+          <button onClick={toggle} className={itemClass} role="menuitem">
+            {theme === "dark" ? <Sun className="h-4 w-4 text-ink-subtle" /> : <Moon className="h-4 w-4 text-ink-subtle" />}
+            {theme === "dark" ? "Light theme" : "Dark theme"}
+          </button>
+          <button onClick={onSignOut} className={itemClass} role="menuitem">
+            <LogOut className="h-4 w-4 text-ink-subtle" /> Sign out
+          </button>
         </div>
       )}
     </div>
@@ -146,8 +237,7 @@ export default function Layout() {
   // Set when the account still has a handed-out password; the server refuses
   // everything but /me and /me/password until it is replaced.
   const [firstLogin, setFirstLogin] = useState<string | null>(null);
-  const { theme, toggle } = useTheme();
-  const [presence, setPresence] = useState<{ id: number; page: string | null }[]>([]);
+  const [presence, setPresence] = useState<{ id: number; page: string | null; idleSeconds: number }[]>([]);
   const { pathname, search } = useLocation();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   useEffect(() => setIsMenuOpen(false), [pathname, search]);
@@ -213,7 +303,7 @@ export default function Layout() {
 
   const online = presence.flatMap((p) => {
     const u = base?.users.find((d) => d.id === p.id);
-    return u && u.id !== base!.me.id ? [{ ...u, page: p.page }] : [];
+    return u && u.id !== base!.me.id ? [{ ...u, page: p.page, idleSeconds: p.idleSeconds }] : [];
   });
 
   const can = (...p: Perm[]) => p.some((x) => base?.me.perms?.includes(x));
@@ -315,29 +405,6 @@ export default function Layout() {
             )}
           </nav>
           </div>
-          <div className="flex items-center gap-2.5 border-t border-[var(--sidebar-border)] px-4 py-3">
-            <Avatar name={base.me.name} size={32} />
-            <Link to="/account" className="group min-w-0 flex-1" title="My account and password">
-              <div className="truncate text-[12px] font-semibold text-sidebar-ink group-hover:text-accent-bright">{base.me.name}</div>
-              <div className="truncate text-[10px] text-sidebar-ink-muted">{base.me.email ?? base.me.username}</div>
-            </Link>
-            <button
-              onClick={toggle}
-              className="tap grid h-8 w-8 place-items-center rounded-md text-sidebar-ink-muted transition-colors hover:bg-[var(--sidebar-hover)] hover:text-accent-bright"
-              title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-              aria-label="Toggle theme"
-            >
-              {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </button>
-            <button
-              onClick={signOut}
-              className="tap grid h-8 w-8 place-items-center rounded-md text-sidebar-ink-muted transition-colors hover:bg-[var(--sidebar-hover)] hover:text-accent-bright"
-              title="Sign out"
-              aria-label="Sign out"
-            >
-              <LogOut className="h-4 w-4" />
-            </button>
-          </div>
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
@@ -347,7 +414,7 @@ export default function Layout() {
             </button>
             <span className="text-[14px] font-bold text-ink lg:hidden">Houzs Hub</span>
             <div className="flex-1" />
-            <OnlineNow online={online} />
+            <TeamActivity teammates={online} canManage={can("users", "roles")} />
             {can("it") && (
               <div className="hidden lg:block">
                 <NotificationBell />
@@ -368,9 +435,7 @@ export default function Layout() {
                 )}
               </Link>
             )}
-            <Link to="/account" className="p-1 lg:hidden" title="My account" aria-label="My account">
-              <Avatar name={base.me.name} size={30} />
-            </Link>
+            <ProfileMenu me={base.me} onSignOut={signOut} />
           </header>
           <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
             {!can("it") && IT_PATH.test(pathname) ? <Navigate to={landing} replace /> : <Outlet />}
