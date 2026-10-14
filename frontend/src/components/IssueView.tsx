@@ -548,7 +548,6 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
       </div>
 
       <div className="space-y-0.5 text-xs text-ink-subtlest">
-        <div>Created {fmtDateTime(t.createdAt)}</div>
         <div>Updated {fmtDateTime(t.updatedAt)}</div>
         {t.pickedUpAt && <div>Picked up {fmtDateTime(t.pickedUpAt)}</div>}
         {t.resolvedAt && <div>Done {fmtDateTime(t.resolvedAt)}</div>}
