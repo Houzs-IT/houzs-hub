@@ -134,7 +134,7 @@ body {
 @layer components {
   /* Century Button: h-9, 13px semibold, petrol primary with border. */
   .btn {
-    @apply inline-flex h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-4 text-[13px] font-semibold tracking-wide transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-4 text-[13px] font-semibold tracking-wide transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50;
   }
   .btn-primary {
     @apply btn border border-primary bg-primary text-primary-on shadow-sm hover:border-primary-hover hover:bg-primary-hover;

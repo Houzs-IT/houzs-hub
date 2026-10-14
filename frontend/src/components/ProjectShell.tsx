@@ -27,7 +27,7 @@ export default function ProjectShell({
 
   // Century FilterPills segmented control: petrol fill on the active segment.
   const tab = ({ isActive }: { isActive: boolean }) =>
-    `tap flex items-center gap-1.5 whitespace-nowrap rounded px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-all duration-150 ${
+    `tap flex items-center gap-1.5 whitespace-nowrap rounded px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-colors duration-150 ${
       isActive ? "bg-primary text-primary-on shadow-sm" : "text-ink-subtle hover:bg-primary-soft hover:text-primary"
     }`;
 

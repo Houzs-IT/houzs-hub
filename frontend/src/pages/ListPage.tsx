@@ -15,15 +15,18 @@ type ListResp = { tickets: TicketRow[]; total: number; page: number; page_size: 
 const isReporterWaiting = (ticket: TicketRow) =>
   ticket.last_public_actor === "reporter" && ticket.status !== "open" && ACTIVE.includes(ticket.status);
 
+// Reporter only shows from 1440px, so the table fits a 1280-1366px laptop without sideways scroll.
+const WIDE_ONLY = "hidden min-[1440px]:table-cell";
+
 type Col = { key: string; label: string; sort?: string; className?: string };
 const COLS: Col[] = [
   { key: "type", label: "Type", className: "w-16" },
   { key: "key", label: "Key", sort: "key", className: "w-32" },
   { key: "summary", label: "Summary" },
-  { key: "status", label: "Status", sort: "status", className: "w-44" },
+  { key: "status", label: "Status", sort: "status", className: "w-40" },
   { key: "priority", label: "Priority", sort: "priority", className: "w-24" },
   { key: "assignee", label: "Assignee", sort: "assignee", className: "w-36" },
-  { key: "reporter", label: "Reporter", className: "w-36" },
+  { key: "reporter", label: "Reporter", className: `w-36 ${WIDE_ONLY}` },
   { key: "created", label: "Created", sort: "created", className: "w-28" },
   { key: "updated", label: "Updated", sort: "updated", className: "w-24" },
 ];
@@ -74,16 +77,26 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
     <ProjectShell title={queue ? "My queue" : "IT Tickets"} showAssignee={!queue}>
       {error && <div className="mb-3 rounded bg-loz-red px-3 py-2 text-sm text-loz-red-ink">{error}</div>}
       <div className="space-y-2 lg:hidden">
-        <label className="flex items-center gap-2 text-xs text-ink-subtle">
-          Sort by
-          <select className="input" value={sort} onChange={(e) => f.set({ sort: e.target.value, dir: "desc" })}>
-            {COLS.filter((column) => column.sort).map((column) => (
-              <option key={column.key} value={column.sort}>
-                {column.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-2 text-xs text-ink-subtle">
+            Sort by
+            <select className="input" value={sort} onChange={(e) => f.set({ sort: e.target.value, dir: "desc" })}>
+              {COLS.filter((column) => column.sort).map((column) => (
+                <option key={column.key} value={column.sort}>
+                  {column.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            className="btn-default px-2.5"
+            onClick={() => sortBy(sort)}
+            aria-label={dir === "desc" ? "Sorted descending, switch to ascending" : "Sorted ascending, switch to descending"}
+          >
+            {dir === "desc" ? <ArrowDown className="h-4 w-4" /> : <ArrowUp className="h-4 w-4" />}
+          </button>
+        </div>
         {data?.tickets.map((ticket) => {
           const ticketSla = sla(ticket.created_at, ticket.priority, ticket.status, ticket.legacy_code);
           return (
@@ -119,7 +132,7 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
         {!data && !error && <div className="py-16 text-center text-sm text-ink-subtlest">Loading...</div>}
       </div>
 
-      <div className="card hidden min-w-[1130px] lg:block">
+      <div className="card hidden min-w-[970px] lg:block min-[1440px]:min-w-[1130px]">
       <table className="w-full table-fixed border-collapse text-[13px]">
         <thead className="sticky top-0 z-10">
           <tr>
@@ -149,7 +162,10 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
                 key={t.code}
                 onClick={() => f.set({ selected: t.code })}
                 onDoubleClick={() => navigate(`/tickets/${t.code}`)}
-                className={`group h-11 cursor-pointer border-b border-line-subtle last:border-0 ${selected === t.code ? "bg-primary-soft" : "hover:bg-surface-2"}`}
+                tabIndex={0}
+                aria-label={`${t.code} ${t.title}`}
+                onKeyDown={(e) => e.key === "Enter" && e.target === e.currentTarget && f.set({ selected: t.code })}
+                className={`group h-11 cursor-pointer border-b border-line-subtle outline-none last:border-0 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary ${selected === t.code ? "bg-primary-soft" : "hover:bg-surface-2"}`}
               >
                 <td className="pl-4 pr-3">
                   <TypeIcon type={t.type} />
@@ -199,7 +215,7 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
                     </div>
                   )}
                 </td>
-                <td className="px-3">
+                <td className={`px-3 ${WIDE_ONLY}`}>
                   <div className="flex items-center gap-2">
                     <Avatar name={t.reporter_name} size={24} />
                     <span className="truncate">{t.reporter_name}</span>
@@ -237,13 +253,13 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
           </span>
           {pages > 1 && (
             <div className="flex items-center gap-1">
-              <button className="btn-subtle px-2" disabled={page <= 1} onClick={() => f.set({ page: String(page - 1) })}>
+              <button className="btn-subtle px-2" aria-label="Previous page" disabled={page <= 1} onClick={() => f.set({ page: String(page - 1) })}>
                 <ChevronLeft className="h-4 w-4" />
               </button>
               <span className="px-2">
                 {page} / {pages}
               </span>
-              <button className="btn-subtle px-2" disabled={page >= pages} onClick={() => f.set({ page: String(page + 1) })}>
+              <button className="btn-subtle px-2" aria-label="Next page" disabled={page >= pages} onClick={() => f.set({ page: String(page + 1) })}>
                 <ChevronRight className="h-4 w-4" />
               </button>
             </div>

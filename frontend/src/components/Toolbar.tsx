@@ -36,8 +36,8 @@ export default function Toolbar({ showStatus = true, showAssignee = true }: { sh
   return (
     <div className="flex flex-wrap items-center gap-2">
       <div className="relative min-w-0 flex-1 sm:flex-none">
-        <Search className="pointer-events-none absolute left-2 top-2 h-4 w-4 text-ink-subtle" />
-        <input className="input w-full pl-8 sm:w-56" placeholder="Search tickets" value={q} onChange={(e) => setQ(e.target.value)} />
+        <Search className="pointer-events-none absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-subtle" />
+        <input className="input block w-full pl-8 sm:w-56" placeholder="Search tickets" value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
       <button className="btn-default sm:hidden" onClick={() => setIsFiltersOpen((open) => !open)} aria-expanded={isFiltersOpen}>
         <SlidersHorizontal className="h-4 w-4" /> Filters{activeFilterCount > 0 && ` (${activeFilterCount})`}

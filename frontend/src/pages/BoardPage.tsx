@@ -89,7 +89,15 @@ export default function BoardPage() {
                       onDragEnd={() => setDragging(null)}
                       onClick={() => f.set({ selected: t.code })}
                       onDoubleClick={() => navigate(`/tickets/${t.code}`)}
-                      className={`cursor-pointer rounded-[10px] border bg-surface p-3 shadow-stone transition-colors hover:border-primary/50 ${
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`${t.code} ${t.title}`}
+                      onKeyDown={(e) => {
+                        if (e.key !== "Enter" && e.key !== " ") return;
+                        e.preventDefault();
+                        f.set({ selected: t.code });
+                      }}
+                      className={`cursor-pointer rounded-[10px] border bg-surface p-3 shadow-stone outline-none transition-colors hover:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary ${
                         selected === t.code ? "border-primary ring-2 ring-primary/25" : "border-line"
                       } ${dragging === t.code ? "opacity-50" : ""}`}
                     >
@@ -114,7 +122,11 @@ export default function BoardPage() {
                   );
                 })}
                 {tickets && cards.length === 0 && (
-                  <div className="rounded-[10px] border-2 border-dashed border-line py-6 text-center text-xs text-ink-subtlest">Drop here</div>
+                  <div className="rounded-[10px] border-2 border-dashed border-line py-6 text-center text-xs text-ink-subtlest">
+                    {/* Touch screens cannot drag cards; status changes there go through the ticket. */}
+                    <span className="[@media(pointer:coarse)]:hidden">Drop here</span>
+                    <span className="hidden [@media(pointer:coarse)]:inline">No tickets</span>
+                  </div>
                 )}
               </div>
             </div>
