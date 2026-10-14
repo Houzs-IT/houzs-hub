@@ -7,17 +7,32 @@ import { ACTIVE, PRIORITIES, PRIORITY_LABEL, STATUSES, STATUS_LABEL, STATUS_STYL
 import { usePoll } from "../lib/usePoll";
 import { Avatar, Lozenge, PriorityIcon, SystemTag, TypeIcon } from "./Bits";
 import { useOutside } from "./FilterButton";
+import ImageLightbox from "./ImageLightbox";
 import { useHub } from "./Layout";
 
 type Detail = { ticket: TicketFull; events: TicketEvent[] };
 
 function Attachments({ items }: { items: Attachment[] }) {
+  const [viewing, setViewing] = useState<Attachment | null>(null);
   if (!items.length) return null;
   return (
     <div className="mt-2 flex flex-wrap gap-2">
+      {viewing && <ImageLightbox src={attachmentUrl(viewing.id)} alt={viewing.filename} onClose={() => setViewing(null)} />}
       {items.map((a) =>
         a.mime.startsWith("image/") ? (
-          <a key={a.id} href={attachmentUrl(a.id)} target="_blank" rel="noreferrer" className="group block w-40 overflow-hidden rounded border border-line">
+          <a
+            key={a.id}
+            href={attachmentUrl(a.id)}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(e) => {
+              // Ctrl/Cmd/Shift-click (and middle-click, which never fires onClick) still open the file in a new tab.
+              if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+              e.preventDefault();
+              setViewing(a);
+            }}
+            className="group block w-40 overflow-hidden rounded border border-line"
+          >
             <img src={attachmentUrl(a.id)} alt={a.filename} className="h-24 w-full object-cover group-hover:opacity-90" />
             <div className="truncate border-t border-line px-2 py-1 text-xs text-ink-subtle">{a.filename}</div>
           </a>
