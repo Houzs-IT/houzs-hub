@@ -50,7 +50,7 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
   useEffect(load, [load, version]);
   usePoll(load, 60_000);
 
-  const sort = f.get("sort") ?? "updated";
+  const sort = f.get("sort") ?? "created";
   const dir = f.get("dir") ?? "desc";
   const selected = f.get("selected");
   const page = Number(f.get("page") ?? 1);
