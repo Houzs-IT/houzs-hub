@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { connect } from "./db.mjs";
 
 const DIR = "src/db/migrations";
+const BASELINE = "000_baseline.sql";
 const { sql, target } = connect();
 
 try {
@@ -14,6 +15,13 @@ try {
   await sql`ALTER TABLE _migrations ENABLE ROW LEVEL SECURITY`;
 
   const applied = new Set((await sql`SELECT name FROM _migrations`).map((r) => r.name));
+  // 000_baseline.sql is migrations 001 to 019 in one file. A database that ran them
+  // already has all of it, so it is recorded, never run.
+  if (applied.has("019_board_rank.sql") && !applied.has(BASELINE)) {
+    await sql`INSERT INTO _migrations (name) VALUES (${BASELINE})`;
+    applied.add(BASELINE);
+    console.log(`Recorded ${BASELINE} as applied (the database already had 001 to 019).`);
+  }
   const pending = readdirSync(DIR)
     .filter((f) => f.endsWith(".sql"))
     .sort()
