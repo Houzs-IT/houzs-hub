@@ -5,7 +5,7 @@ import { api, type TicketRow } from "../api/client";
 import { Avatar, Lozenge, PriorityIcon, TypeIcon } from "../components/Bits";
 import { useHub } from "../components/Layout";
 import ProjectShell from "../components/ProjectShell";
-import { fmtAgo, fmtDate, fmtDateTime, sla } from "../lib/format";
+import { fmtAgo, fmtDate, fmtDateTime } from "../lib/format";
 import { ACTIVE, isReporterWaiting } from "../lib/labels";
 import { useFilters } from "../lib/useFilters";
 import { usePoll } from "../lib/usePoll";
@@ -111,9 +111,7 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
             {dir === "desc" ? <ArrowDown className="h-4 w-4" /> : <ArrowUp className="h-4 w-4" />}
           </button>
         </div>
-        {data?.tickets.map((ticket) => {
-          const ticketSla = sla(ticket.created_at, ticket.priority, ticket.status, ticket.legacy_code);
-          return (
+        {data?.tickets.map((ticket) => (
             <button
               key={ticket.code}
               onClick={() => f.set({ selected: ticket.code })}
@@ -136,7 +134,6 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
                   <span className="truncate">{ticket.assignee_name ?? "Unassigned"}</span>
                 </span>
                 <span>{fmtAgo(ticket.updated_at)}</span>
-                {ticketSla?.overdue && <span className="pill bg-loz-red text-loz-red-ink">{ticketSla.label}</span>}
                 {isReporterWaiting(ticket) && (
                   <span className="inline-flex items-center gap-1 font-medium text-primary">
                     <MessageSquare className="h-3.5 w-3.5" /> Replied
@@ -144,8 +141,7 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
                 )}
               </div>
             </button>
-          );
-        })}
+        ))}
         {data && data.tickets.length === 0 && emptyState}
         {!data && !error && <div className="py-16 text-center text-sm text-ink-subtle">Loading...</div>}
       </div>
@@ -174,7 +170,6 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
         </thead>
         <tbody>
           {data?.tickets.map((t) => {
-            const s = sla(t.created_at, t.priority, t.status, t.legacy_code);
             const reporterReplied = isReporterWaiting(t);
             return (
               <tr
@@ -195,11 +190,6 @@ export default function ListPage({ queue = false }: { queue?: boolean }) {
                 <td className="px-3">
                   <div className="flex min-w-0 items-center gap-2">
                     <span className="truncate text-ink">{t.title}</span>
-                    {s?.overdue && (
-                      <span className="pill bg-loz-red text-loz-red-ink">
-                        {s.label}
-                      </span>
-                    )}
                     {reporterReplied && (
                       <span title="Reporter replied" className="inline-flex shrink-0 items-center gap-0.5 text-xs font-medium text-primary">
                         <MessageSquare className="h-3.5 w-3.5" />

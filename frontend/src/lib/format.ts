@@ -1,6 +1,3 @@
-import type { Priority, Status } from "../api/client";
-import { SLA_HOURS, SLA_RUNNING } from "./labels";
-
 const dt = new Intl.DateTimeFormat("en-GB", {
   timeZone: "Asia/Kuala_Lumpur",
   day: "2-digit",
@@ -22,20 +19,6 @@ export function fmtAgo(iso: string): string {
   if (s < 3600) return `${Math.floor(s / 60)}m ago`;
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
   return `${Math.floor(s / 86400)}d ago`;
-}
-
-function span(ms: number) {
-  const h = Math.abs(ms) / 3600_000;
-  return h < 24 ? `${Math.max(1, Math.round(h))}h` : `${Math.round(h / 24)}d`;
-}
-
-// Tickets imported from the old Google Form (legacyCode set) predate the SLA: no clock.
-export function sla(createdAt: string, priority: Priority, status: Status, legacyCode: string | null) {
-  if (legacyCode || !SLA_RUNNING.includes(status)) return null;
-  const left = new Date(createdAt).getTime() + SLA_HOURS[priority] * 3600_000 - Date.now();
-  return left < 0
-    ? { overdue: true, label: `Overdue ${span(left)}` }
-    : { overdue: false, label: `Due in ${span(left)}` };
 }
 
 export const fmtSize = (b: number) =>

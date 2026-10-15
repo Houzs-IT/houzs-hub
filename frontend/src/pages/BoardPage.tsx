@@ -5,7 +5,7 @@ import { api, json, type Status, type TicketRow } from "../api/client";
 import { Avatar, Lozenge, PriorityIcon, SystemTag, TypeIcon } from "../components/Bits";
 import { useHub } from "../components/Layout";
 import ProjectShell from "../components/ProjectShell";
-import { fmtAgo, sla } from "../lib/format";
+import { fmtAgo } from "../lib/format";
 import { BOARD_COLUMNS, isReporterWaiting } from "../lib/labels";
 import { useFilters } from "../lib/useFilters";
 import { usePoll } from "../lib/usePoll";
@@ -217,7 +217,6 @@ export default function BoardPage() {
               </div>
               <div data-cards className="flex-1 space-y-2 overflow-y-auto px-2 pb-3 pt-1.5">
                 {cards.map((t, i) => {
-                  const s = sla(t.created_at, t.priority, t.status, t.legacy_code);
                   return (
                     <div
                       key={t.code}
@@ -260,16 +259,10 @@ export default function BoardPage() {
                             <MessageSquare className="h-3.5 w-3.5" /> Replied
                           </span>
                         )}
-                        {s?.overdue && (
-                          <span className="pill bg-loz-red text-loz-red-ink">
-                            {s.label}
-                          </span>
-                        )}
                       </div>
                       <div className="mt-2.5 flex items-center gap-1.5">
                         <TypeIcon type={t.type} />
                         <span className="font-docno text-[12px] font-semibold text-accent">{t.code}</span>
-                        {/* Age since submitted, the same clock the Overdue badge uses. */}
                         <span className="text-[11px] text-ink-subtle">· {fmtAgo(t.created_at)}</span>
                         <span className="ml-auto flex items-center gap-1.5">
                           <PriorityIcon priority={t.priority} />
