@@ -446,7 +446,7 @@ dev.post("/tickets/reorder", async (c) => {
   return c.json({ ok: true });
 });
 
-// Comments and attachment rows go with it (ON DELETE CASCADE, migration 008).
+// Comments and attachment rows go with it (ON DELETE CASCADE, see 000_baseline.sql).
 dev.delete("/tickets/:code", need("delete_tickets"), async (c) => {
   const db = c.get("db");
   const ticket = await findTicket(db, c.req.param("code"));

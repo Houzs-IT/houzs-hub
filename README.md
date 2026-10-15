@@ -120,7 +120,8 @@ Secrets such as `SESSION_SECRET` stay in Cloudflare and are not touched by a dep
 
 Migrations are the numbered files in `backend/src/db/migrations`. Each runs once and
 is recorded by file name, so never edit one that has already been applied; add a new
-file instead.
+file instead. `000_baseline.sql` is the whole database as of 2026-10-15 (it replaced
+001 to 019); new changes start at 020.
 
 ## System API (`/api/v1/sys`)
 
