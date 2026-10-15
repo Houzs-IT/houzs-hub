@@ -43,8 +43,3 @@ export const ACTIVE: Status[] = ["open", "in_progress", "on_hold", "testing", "w
 export const isReporterWaiting = (ticket: TicketRow) =>
   ticket.last_public_actor === "reporter" && ticket.status !== "open" && ACTIVE.includes(ticket.status);
 export const BOARD_COLUMNS: Status[] = ["open", "in_progress", "on_hold", "testing", "waiting_reporter", "resolved"];
-// On Hold is parked on purpose, so it does not burn SLA.
-export const SLA_RUNNING: Status[] = ["open", "in_progress", "testing", "waiting_reporter"];
-
-// Target hours to resolve, by priority. Placeholder until the team agrees SLA.
-export const SLA_HOURS: Record<Priority, number> = { urgent: 4, high: 24, medium: 72, low: 168 };
