@@ -225,6 +225,9 @@ function orderFor(sort: string | undefined, dir: string | undefined) {
       return [d(schema.users.name), desc(t.updatedAt)];
     case "updated":
       return [d(t.updatedAt)];
+    // Hand-sorted Board order. Cards not placed yet show first, most urgent on top.
+    case "board":
+      return [sql`${t.boardRank} ASC NULLS FIRST`, asc(PRIORITY_RANK), desc(t.updatedAt)];
     // The List opens newest submitted first.
     default:
       return [d(t.createdAt)];
@@ -359,6 +362,8 @@ async function applyChanges(db: DB, ticket: Ticket, me: User, ch: Changes, at: s
     patch.status = ch.status;
     patch.resolvedAt = ch.status === "resolved" ? at : ch.status === "closed" ? ticket.resolvedAt : null;
     patch.closedAt = ch.status === "closed" || ch.status === "rejected" ? at : null;
+    // Its place in the old column means nothing in the new one; it lands on top.
+    patch.boardRank = null;
     publicTouch = true;
   }
 
@@ -423,6 +428,21 @@ dev.patch("/tickets/:code", async (c) => {
   const fields: Record<string, string> = {};
   for (const [k, v] of Object.entries(body)) fields[k] = v === null ? "null" : String(v);
   await applyChanges(db, ticket, c.get("user"), parseChanges(fields), nowIso());
+  return c.json({ ok: true });
+});
+
+// Saves the hand-sorted order of one Board column: rank = position in `codes`.
+// Not a timeline event and no updated_at bump, so the List and the reporter see nothing.
+// ponytail: under a filter only the visible cards are renumbered, so hidden ones can tie;
+// the priority tie-break keeps that tidy. Switch to fractional ranks if it ever confuses people.
+dev.post("/tickets/reorder", async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as { codes?: unknown };
+  const codes = body.codes;
+  if (!Array.isArray(codes) || codes.length === 0 || codes.length > 200 || !codes.every((code) => typeof code === "string")) {
+    throw new InputError("codes must be a list of 1 to 200 ticket codes");
+  }
+  const list = sql`ARRAY[${sql.join(codes.map((code) => sql`${code}`), sql`, `)}]::text[]`;
+  await c.get("db").update(t).set({ boardRank: sql`array_position(${list}, ${t.code})` }).where(inArray(t.code, codes));
   return c.json({ ok: true });
 });
 

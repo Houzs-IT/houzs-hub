@@ -19,8 +19,18 @@ const EDGE_SCROLL_PX = 48;
 
 type Drag = { code: string; title: string; pointerId: number; startX: number; startY: number; isTouch: boolean; isActive: boolean };
 
-function columnAt(x: number, y: number) {
-  return (document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-column]")?.dataset.column as Status | undefined) ?? null;
+// Where a card lands: a column, and the card it goes above (null means the bottom).
+type DropSpot = { column: Status; before: string | null };
+
+function dropSpotAt(x: number, y: number, draggedCode: string): DropSpot | null {
+  const column = document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-column]");
+  if (!column) return null;
+  const below = [...column.querySelectorAll<HTMLElement>("[data-card]")].find((card) => {
+    if (card.dataset.card === draggedCode) return false;
+    const rect = card.getBoundingClientRect();
+    return y < rect.top + rect.height / 2;
+  });
+  return { column: column.dataset.column as Status, before: below?.dataset.card ?? null };
 }
 
 export default function BoardPage() {
@@ -33,7 +43,7 @@ export default function BoardPage() {
   // Kept apart from `error` so the reload after a refused move cannot wipe the reason.
   const [moveError, setMoveError] = useState<string | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
-  const [over, setOver] = useState<Status | null>(null);
+  const [spot, setSpot] = useState<DropSpot | null>(null);
   const [ghost, setGhost] = useState<{ title: string; x: number; y: number } | null>(null);
   const drag = useRef<Drag | null>(null);
   const holdTimer = useRef<ReturnType<typeof setTimeout>>();
@@ -41,7 +51,7 @@ export default function BoardPage() {
   const boardRef = useRef<HTMLDivElement>(null);
 
   // ponytail: one capped page across all columns; switch to per-column pages with "show more" past ~200 open tickets.
-  const query = f.apiQuery({ status: BOARD_COLUMNS.join(","), page_size: "200", sort: "priority", dir: "asc" });
+  const query = f.apiQuery({ status: BOARD_COLUMNS.join(","), page_size: "200", sort: "board" });
   query.delete("page");
   const qs = query.toString();
 
@@ -57,13 +67,22 @@ export default function BoardPage() {
   useEffect(load, [load, version]);
   usePoll(load, 60_000);
 
-  async function move(code: string, status: Status) {
+  // The tickets array is in display order, so splicing the card in is the new column order.
+  async function place(code: string, { column, before }: DropSpot) {
     const card = tickets?.find((t) => t.code === code);
-    if (!card || card.status === status) return;
+    if (!tickets || !card) return;
+    const next = tickets.filter((t) => t.code !== code);
+    const at = before ? next.findIndex((t) => t.code === before) : -1;
+    next.splice(at < 0 ? next.length : at, 0, { ...card, status: column });
+    const codesIn = (list: TicketRow[]) => list.filter((t) => t.status === column).map((t) => t.code);
+    const codes = codesIn(next);
+    if (card.status === column && codes.join() === codesIn(tickets).join()) return;
+
     setMoveError(null);
-    setTickets((ts) => ts!.map((t) => (t.code === code ? { ...t, status } : t)));
+    setTickets(next);
     try {
-      await api(`/tickets/${code}`, json("PATCH", { status }));
+      if (card.status !== column) await api(`/tickets/${code}`, json("PATCH", { status: column }));
+      await api("/tickets/reorder", json("POST", { codes }));
       refresh();
     } catch (e) {
       setMoveError(`${code} was not moved: ${(e as Error).message}`);
@@ -71,8 +90,8 @@ export default function BoardPage() {
     }
   }
 
-  const moveRef = useRef(move);
-  moveRef.current = move;
+  const placeRef = useRef(place);
+  placeRef.current = place;
 
   function startDrag(e: ReactPointerEvent, t: TicketRow) {
     if (e.button !== 0) return;
@@ -88,7 +107,7 @@ export default function BoardPage() {
     d.isActive = true;
     setDragging(d.code);
     setGhost({ title: d.title, x, y });
-    setOver(columnAt(x, y));
+    setSpot(dropSpotAt(x, y, d.code));
   }
 
   function endDrag() {
@@ -96,7 +115,7 @@ export default function BoardPage() {
     drag.current = null;
     setDragging(null);
     setGhost(null);
-    setOver(null);
+    setSpot(null);
   }
 
   useEffect(() => {
@@ -111,13 +130,20 @@ export default function BoardPage() {
         return;
       }
       setGhost((g) => g && { ...g, x: e.clientX, y: e.clientY });
-      setOver(columnAt(e.clientX, e.clientY));
+      setSpot(dropSpotAt(e.clientX, e.clientY, d.code));
       // Near the board's left or right edge, scroll it so off-screen columns can be reached.
       const scroller = boardRef.current?.parentElement;
       const rect = scroller?.getBoundingClientRect();
       if (scroller && rect) {
         if (e.clientX < rect.left + EDGE_SCROLL_PX) scroller.scrollBy({ left: -16 });
         else if (e.clientX > rect.right - EDGE_SCROLL_PX) scroller.scrollBy({ left: 16 });
+      }
+      // Same for the top and bottom of a long column, so a finger can reach every slot.
+      const list = document.elementFromPoint(e.clientX, e.clientY)?.closest("[data-column]")?.querySelector<HTMLElement>("[data-cards]");
+      const listRect = list?.getBoundingClientRect();
+      if (list && listRect) {
+        if (e.clientY < listRect.top + EDGE_SCROLL_PX) list.scrollBy({ top: -16 });
+        else if (e.clientY > listRect.bottom - EDGE_SCROLL_PX) list.scrollBy({ top: 16 });
       }
     }
     function onUp(e: PointerEvent) {
@@ -127,8 +153,8 @@ export default function BoardPage() {
         // The click that follows a drop must not also open the ticket.
         justDropped.current = true;
         setTimeout(() => (justDropped.current = false));
-        const column = columnAt(e.clientX, e.clientY);
-        if (column) moveRef.current(d.code, column);
+        const target = dropSpotAt(e.clientX, e.clientY, d.code);
+        if (target) placeRef.current(d.code, target);
       }
       endDrag();
     }
@@ -169,46 +195,63 @@ export default function BoardPage() {
       )}
       {tickets && total > tickets.length && (
         <div className="mb-3 text-[12.5px] text-ink-subtle">
-          Showing the {tickets.length} most urgent of {total} tickets. Use the filters to narrow it down.
+          Showing {tickets.length} of {total} tickets. Use the filters to narrow it down.
         </div>
       )}
       {!tickets && !error && <div className="py-16 text-center text-sm text-ink-subtle">Loading...</div>}
       <div ref={boardRef} className={`flex h-full min-h-[400px] gap-3 ${dragging ? "cursor-grabbing select-none" : ""}`}>
         {BOARD_COLUMNS.map((col) => {
           const cards = tickets?.filter((t) => t.status === col) ?? [];
+          const dropLine = dragging && spot?.column === col ? spot.before : undefined;
           return (
             <div
               key={col}
               data-column={col}
               className={`flex min-w-[272px] max-w-[360px] flex-1 shrink-0 flex-col rounded-[10px] border transition-colors ${
-                over === col && dragging ? "border-primary/50 bg-primary-soft" : "border-line bg-surface-dim/60"
+                dropLine !== undefined ? "border-primary/50 bg-primary-soft" : "border-line bg-surface-dim/60"
               }`}
             >
               <div className="flex items-center gap-2 px-3 pb-2 pt-3">
                 <Lozenge status={col} />
                 <span className="text-[11px] font-semibold tabular-nums text-ink-subtlest">{cards.length}</span>
               </div>
-              <div className="flex-1 space-y-2 overflow-y-auto px-2 pb-3">
-                {cards.map((t) => {
+              <div data-cards className="flex-1 space-y-2 overflow-y-auto px-2 pb-3 pt-1.5">
+                {cards.map((t, i) => {
                   const s = sla(t.created_at, t.priority, t.status, t.legacy_code);
                   return (
                     <div
                       key={t.code}
+                      data-card={t.code}
                       onPointerDown={(e) => startDrag(e, t)}
                       onClick={() => !justDropped.current && f.set({ selected: t.code })}
                       onDoubleClick={() => navigate(`/tickets/${t.code}`)}
                       role="button"
                       tabIndex={0}
                       aria-label={`${t.code} ${t.title}`}
+                      aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
                       onKeyDown={(e) => {
+                        // Alt+Up / Alt+Down moves the card one place, for keyboards and screen readers.
+                        if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+                          e.preventDefault();
+                          const target = e.key === "ArrowUp" ? i - 1 : i + 2;
+                          if (target < 0 || target > cards.length) return;
+                          place(t.code, { column: col, before: cards[target]?.code ?? null });
+                          requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-card="${t.code}"]`)?.focus());
+                          return;
+                        }
                         if (e.key !== "Enter" && e.key !== " ") return;
                         e.preventDefault();
                         f.set({ selected: t.code });
                       }}
-                      className={`cursor-pointer select-none rounded-[10px] border bg-surface p-3 shadow-stone outline-none [-webkit-touch-callout:none] transition-colors hover:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary ${
+                      className={`relative cursor-pointer select-none rounded-[10px] border bg-surface p-3 shadow-stone outline-none [-webkit-touch-callout:none] transition-colors hover:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary ${
                         selected === t.code ? "border-primary ring-2 ring-primary/25" : "border-line"
                       } ${dragging === t.code ? "opacity-50" : ""}`}
                     >
+                      {/* Drawn in the gap between cards, so showing it never shifts the card under the pointer. */}
+                      {dropLine === t.code && <span aria-hidden className="absolute inset-x-0 -top-[5px] h-0.5 rounded bg-primary" />}
+                      {dropLine === null && i === cards.length - 1 && (
+                        <span aria-hidden className="absolute inset-x-0 -bottom-[5px] h-0.5 rounded bg-primary" />
+                      )}
                       <div className="break-words text-[13px] font-medium leading-5 text-ink">{t.title}</div>
                       <div className="mt-2 flex flex-wrap items-center gap-1.5">
                         <SystemTag code={t.system_code} />
