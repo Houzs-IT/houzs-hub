@@ -93,6 +93,7 @@ export const tickets = pgTable("tickets", {
   reporterSeenAt: text("reporter_seen_at"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
+  boardRank: integer("board_rank"),
 });
 
 export const ticketEvents = pgTable("ticket_events", {
