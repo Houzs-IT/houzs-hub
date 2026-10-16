@@ -1,9 +1,9 @@
 import { ChevronLeft, ChevronRight, ExternalLink } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, json, type Notification, type NotificationsResponse } from "../api/client";
+import { api, type Notification, type NotificationsResponse } from "../api/client";
 import { useHub } from "../components/Layout";
-import { NotificationIcon, describeNotification, kindStyle } from "../components/Notifications";
+import { MarkReadButton, NotificationIcon, describeNotification, kindStyle, markRead } from "../components/Notifications";
 import { fmtAgo, fmtDateTime } from "../lib/format";
 import { useFilters } from "../lib/useFilters";
 
@@ -31,40 +31,25 @@ export default function NotificationsPage() {
   const page = Number(filters.get("page") ?? 1);
   const [data, setData] = useState<NotificationsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // The read mark when this page opened. Rows after it stay marked unread for this visit.
-  const readMarkOnOpen = useRef<number | null>(null);
 
   const load = useCallback(() => {
     const query = new URLSearchParams({ page: String(page) });
     if (tab !== "all") query.set("filter", tab);
-    if (isUnreadOnly) {
-      query.set("unread", "1");
-      if (readMarkOnOpen.current !== null) query.set("after", String(readMarkOnOpen.current));
-    }
+    if (isUnreadOnly) query.set("unread", "1");
     api<NotificationsResponse>(`/notifications?${query}`)
       .then((response) => {
-        readMarkOnOpen.current ??= response.seen_id;
         setData(response);
         setError(null);
-        // Only the All tab marks read on view: a filtered tab would also clear unseen items of other kinds.
-        const newestId = response.notifications[0]?.id ?? 0;
-        if (tab === "all" && newestId > response.seen_id) api("/notifications/read", json("POST", { up_to: newestId })).then(() => refresh()).catch(() => {});
       })
       .catch((e: Error) => setError(e.message));
-  }, [page, tab, isUnreadOnly, refresh]);
+  }, [page, tab, isUnreadOnly]);
   useEffect(load, [load, version]);
 
-  async function markAllRead() {
-    try {
-      await api("/notifications/read", json("POST", {}));
-      readMarkOnOpen.current = Number.MAX_SAFE_INTEGER;
-      refresh();
-    } catch (e) {
-      setError((e as Error).message);
-    }
+  function markAndRefresh(id?: number) {
+    markRead(id)
+      .then(() => refresh())
+      .catch((e: Error) => setError(e.message));
   }
-
-  const readMark = readMarkOnOpen.current ?? data?.seen_id ?? 0;
   const pages = data ? Math.max(1, Math.ceil(data.total / data.page_size)) : 1;
   const groups: { label: string; items: Notification[] }[] = [];
   for (const notification of data?.notifications ?? []) {
@@ -81,7 +66,7 @@ export default function NotificationsPage() {
           <h1 className="text-[24px] font-extrabold tracking-tight text-ink">
             Notifications {data && <span className="text-[15px] font-semibold text-ink-subtle">({data.total_capped ? "1000+" : data.total})</span>}
           </h1>
-          <button className="btn-default" onClick={markAllRead}>
+          <button className="btn-default" onClick={() => markAndRefresh()}>
             Mark all as read
           </button>
         </div>
@@ -119,29 +104,35 @@ export default function NotificationsPage() {
             <div className="section-title mb-2">{group.label}</div>
             <div className="card divide-y divide-line-subtle">
               {group.items.map((notification) => {
-                const isUnread = notification.id > readMark;
+                const isUnread = !notification.is_read;
                 const { label, color } = kindStyle(notification);
                 return (
-                  <Link
+                  <div
                     key={notification.id}
-                    to={`/tickets/${notification.ticket_code}`}
-                    className={`flex gap-3 border-l-4 p-4 hover:bg-surface-2 ${isUnread ? "border-l-primary" : "border-l-transparent"}`}
+                    className={`flex items-center border-l-4 pr-2 hover:bg-surface-2 ${isUnread ? "border-l-primary" : "border-l-transparent"}`}
                   >
-                    {isUnread && <span className="sr-only">Unread:</span>}
-                    <NotificationIcon notification={notification} />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2 text-xs">
-                        <span className={`rounded px-1.5 py-0.5 text-[10.5px] font-bold uppercase ${color}`}>{label}</span>
-                        <span className="font-docno font-semibold text-accent">{notification.ticket_code}</span>
-                        <span className="text-ink-subtle" title={fmtDateTime(notification.created_at)}>
-                          {fmtAgo(notification.created_at)}
-                        </span>
+                    <Link
+                      to={`/tickets/${notification.ticket_code}`}
+                      onClick={() => isUnread && markAndRefresh(notification.id)}
+                      className="flex min-w-0 flex-1 gap-3 p-4"
+                    >
+                      {isUnread && <span className="sr-only">Unread:</span>}
+                      <NotificationIcon notification={notification} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                          <span className={`rounded px-1.5 py-0.5 text-[10.5px] font-bold uppercase ${color}`}>{label}</span>
+                          <span className="font-docno font-semibold text-accent">{notification.ticket_code}</span>
+                          <span className="text-ink-subtle" title={fmtDateTime(notification.created_at)}>
+                            {fmtAgo(notification.created_at)}
+                          </span>
+                        </div>
+                        <div className={`mt-1 truncate text-sm text-ink ${isUnread ? "font-bold" : "font-medium"}`}>{notification.ticket_title}</div>
+                        <div className="mt-0.5 line-clamp-2 text-[13px] text-ink-subtle">{describeNotification(notification)}</div>
                       </div>
-                      <div className={`mt-1 truncate text-sm text-ink ${isUnread ? "font-bold" : "font-medium"}`}>{notification.ticket_title}</div>
-                      <div className="mt-0.5 line-clamp-2 text-[13px] text-ink-subtle">{describeNotification(notification)}</div>
-                    </div>
-                    <ExternalLink className="h-4 w-4 shrink-0 self-center text-ink-subtle" aria-hidden />
-                  </Link>
+                      <ExternalLink className="h-4 w-4 shrink-0 self-center text-ink-subtle" aria-hidden />
+                    </Link>
+                    {isUnread && <MarkReadButton onClick={() => markAndRefresh(notification.id)} />}
+                  </div>
                 );
               })}
             </div>

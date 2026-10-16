@@ -46,6 +46,7 @@ export type Notification = {
   created_at: string;
   ticket_code: string;
   ticket_title: string;
+  is_read: boolean;
 };
 
 export type NotificationsResponse = {
@@ -55,7 +56,6 @@ export type NotificationsResponse = {
   total_capped: boolean;
   page: number;
   page_size: number;
-  seen_id: number;
 };
 
 export type Attachment = { id: number; event_id: number; filename: string; mime: string; size: number };

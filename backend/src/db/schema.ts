@@ -1,4 +1,4 @@
-import { integer, pgTable, text } from "drizzle-orm/pg-core";
+import { integer, pgTable, primaryKey, text } from "drizzle-orm/pg-core";
 
 export const TICKET_TYPES = ["bug", "development"] as const;
 export const TICKET_PRIORITIES = ["urgent", "high", "medium", "low"] as const;
@@ -57,6 +57,16 @@ export const users = pgTable("users", {
   permDeny: text("perm_deny").notNull().default(""),
   notificationsSeenId: integer("notifications_seen_id"),
 });
+
+// Notifications read one by one above users.notificationsSeenId.
+export const notificationReads = pgTable(
+  "notification_reads",
+  {
+    userId: integer("user_id").notNull(),
+    eventId: integer("event_id").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.eventId] })],
+);
 
 export const roles = pgTable("roles", {
   key: text("key").primaryKey(),
