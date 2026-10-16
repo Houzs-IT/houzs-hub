@@ -503,6 +503,58 @@ dev.post("/tickets/:code/comments", async (c) => {
   return c.json({ ok: true, event_id: ev.id }, 201);
 });
 
+async function findComment(db: DB, code: string, id: string) {
+  if (!/^\d+$/.test(id)) return null;
+  const [row] = await db
+    .select({ event: schema.ticketEvents })
+    .from(schema.ticketEvents)
+    .innerJoin(t, eq(t.id, schema.ticketEvents.ticketId))
+    .where(and(eq(t.code, code), eq(schema.ticketEvents.id, Number(id)), eq(schema.ticketEvents.kind, "comment")))
+    .limit(1);
+  return row?.event ?? null;
+}
+
+// Only the author edits, and only the text; files stay as they were.
+dev.patch("/tickets/:code/comments/:id", async (c) => {
+  const db = c.get("db");
+  const comment = await findComment(db, c.req.param("code"), c.req.param("id"));
+  if (!comment) return c.json({ error: "Not found" }, 404);
+  if (comment.userId !== c.get("user").id) return c.json({ error: "You can only edit your own comments" }, 403);
+  const fields = (await c.req.json().catch(() => ({}))) as { body?: unknown };
+  const body = str(typeof fields.body === "string" ? fields.body : undefined, 10000);
+  if (!body) {
+    const [file] = await db
+      .select({ id: schema.ticketAttachments.id })
+      .from(schema.ticketAttachments)
+      .where(eq(schema.ticketAttachments.eventId, comment.id))
+      .limit(1);
+    if (!file) throw new InputError("A comment with no files needs some text");
+  }
+  const at = nowIso();
+  await db.update(schema.ticketEvents).set({ body, editedAt: at }).where(eq(schema.ticketEvents.id, comment.id));
+  await db.update(t).set({ updatedAt: at }).where(eq(t.id, comment.ticketId));
+  return c.json({ ok: true });
+});
+
+// The author, or anyone who may delete tickets. Its files go too.
+dev.delete("/tickets/:code/comments/:id", async (c) => {
+  const db = c.get("db");
+  const me = c.get("user");
+  const comment = await findComment(db, c.req.param("code"), c.req.param("id"));
+  if (!comment) return c.json({ error: "Not found" }, 404);
+  if (comment.userId !== me.id && !me.perms.includes("delete_tickets")) {
+    return c.json({ error: "You can only delete your own comments" }, 403);
+  }
+  const files = await db
+    .select({ key: schema.ticketAttachments.r2Key })
+    .from(schema.ticketAttachments)
+    .where(eq(schema.ticketAttachments.eventId, comment.id));
+  await db.delete(schema.ticketEvents).where(eq(schema.ticketEvents.id, comment.id));
+  await db.update(t).set({ updatedAt: nowIso() }).where(eq(t.id, comment.ticketId));
+  if (files.length) await c.env.FILES.delete(files.map((f) => f.key));
+  return c.json({ ok: true });
+});
+
 dev.get("/attachments/:id", async (c) => {
   const db = c.get("db");
   const id = Number(c.req.param("id"));

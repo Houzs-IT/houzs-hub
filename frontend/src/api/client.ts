@@ -66,10 +66,12 @@ export type TicketEvent = {
   visibility: "public" | "internal";
   authorKind: "reporter" | "developer" | "system";
   authorName: string;
+  userId: number | null;
   body: string | null;
   fromValue: string | null;
   toValue: string | null;
   createdAt: string;
+  editedAt: string | null;
   attachments: Attachment[];
 };
 
