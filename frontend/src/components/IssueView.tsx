@@ -124,18 +124,21 @@ function historyText(e: TicketEvent): ReactNode {
 function CommentActions({ code, e, onEdit, onDone }: { code: string; e: TicketEvent; onEdit: () => void; onDone: () => void }) {
   const { me } = useHub();
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const confirmDelete = useRef<HTMLDialogElement>(null);
   const isMine = e.userId === me.id;
   if (!isMine && !me.perms?.includes("delete_tickets")) return null;
+  const what = e.visibility === "internal" ? "internal note" : "reply";
 
   async function remove() {
-    const what = e.visibility === "internal" ? "internal note" : "comment";
-    if (!confirm(`Delete this ${what}${e.attachments.length ? " and its files" : ""}? This cannot be undone.`)) return;
     setBusy(true);
+    setError(null);
     try {
       await api(`/tickets/${code}/comments/${e.id}`, { method: "DELETE" });
+      confirmDelete.current?.close();
       onDone();
     } catch (err) {
-      alert((err as Error).message);
+      setError((err as Error).message);
       setBusy(false);
     }
   }
@@ -147,9 +150,35 @@ function CommentActions({ code, e, onEdit, onDone }: { code: string; e: TicketEv
           Edit
         </button>
       )}
-      <button className="tap px-2 font-medium text-ink-subtle hover:text-loz-red-ink hover:underline" disabled={busy} onClick={remove}>
+      <button
+        className="tap px-2 font-medium text-ink-subtle hover:text-loz-red-ink hover:underline"
+        onClick={() => {
+          setError(null);
+          confirmDelete.current?.showModal();
+        }}
+      >
         Delete
       </button>
+      <dialog ref={confirmDelete} className="card w-[400px] max-w-[calc(100vw-32px)] p-0 text-ink backdrop:bg-black/40">
+        <div className="border-b border-line px-5 py-3 text-[15px] font-bold">Delete {what}</div>
+        <p className="px-5 py-4 text-sm leading-6 text-ink-subtle">
+          Delete this {what} by <span className="font-semibold text-ink">{e.authorName}</span>
+          {e.attachments.length ? " and its files" : ""}? This action cannot be undone.
+        </p>
+        {error && (
+          <p className="px-5 pb-3 text-sm text-loz-red-ink" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="flex justify-end gap-2 px-5 pb-4">
+          <button className="btn-default" autoFocus onClick={() => confirmDelete.current?.close()}>
+            Cancel
+          </button>
+          <button className="btn border border-loz-red-ink bg-loz-red-ink text-surface hover:opacity-90" disabled={busy} onClick={remove}>
+            {busy ? "Deleting..." : "Delete"}
+          </button>
+        </div>
+      </dialog>
     </span>
   );
 }
