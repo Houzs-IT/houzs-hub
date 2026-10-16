@@ -276,9 +276,9 @@ sys.post("/tickets/:code/replies", async (c) => {
   });
   await saveAttachments(c.env, db, ticket, ev.id, files);
 
-  // A reply on Waiting Reporter or Resolved means the ball is back with dev.
+  // A reply on Waiting Reporter means the ball is back with dev. Done stays Done; dev decides what happens next.
   let status = ticket.status;
-  if (status === "waiting_reporter" || status === "resolved") {
+  if (status === "waiting_reporter") {
     status = "in_progress";
     await addEvent(db, ticket.id, {
       kind: "status",
