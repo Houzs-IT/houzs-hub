@@ -1,7 +1,7 @@
-import { Bell, CheckCircle2, Inbox, MessageSquare } from "lucide-react";
+import { Bell, Check, CheckCircle2, Inbox, MessageSquare } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, type Notification, type NotificationsResponse, type Status } from "../api/client";
+import { api, json, type Notification, type NotificationsResponse, type Status } from "../api/client";
 import { fmtAgo } from "../lib/format";
 import { STATUS_LABEL } from "../lib/labels";
 import { useOutside } from "./FilterButton";
@@ -38,13 +38,37 @@ export function NotificationIcon({ notification }: { notification: Notification 
   );
 }
 
+// One notification with `id`, or all of them without it.
+export function markRead(id?: number) {
+  return api("/notifications/read", json("POST", id ? { id } : {}));
+}
+
+export function MarkReadButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className="btn-subtle tap shrink-0 self-center px-2" title="Mark as read" aria-label="Mark as read">
+      <Check className="h-4 w-4" />
+    </button>
+  );
+}
+
 export function NotificationBell() {
-  const { stats, version } = useHub();
+  const { stats, version, refresh } = useHub();
   const [isOpen, setIsOpen] = useState(false);
   const [latest, setLatest] = useState<NotificationsResponse | null>(null);
   const close = useCallback(() => setIsOpen(false), []);
   const ref = useOutside<HTMLDivElement>(isOpen, close);
   const unread = stats.unread_notifications;
+
+  function markAndRefresh(id?: number) {
+    markRead(id)
+      .then(() => refresh())
+      .catch(() => {});
+  }
+
+  function openNotification(notification: Notification) {
+    close();
+    if (!notification.is_read) markAndRefresh(notification.id);
+  }
 
   useEffect(() => {
     if (isOpen) api<NotificationsResponse>("/notifications?page_size=5").then(setLatest).catch(() => {});
@@ -68,26 +92,35 @@ export function NotificationBell() {
 
       {isOpen && (
         <div className="absolute right-0 top-full z-50 mt-1 w-[min(340px,calc(100vw-32px))] rounded-[10px] border border-transparent bg-overlay text-ink shadow-overlay">
-          <div className="border-b border-line px-4 py-2.5 text-[13px] font-bold">Notifications</div>
+          <div className="flex min-h-10 items-center justify-between border-b border-line px-4 py-1">
+            <span className="text-[13px] font-bold">Notifications</span>
+            {unread > 0 && (
+              <button type="button" onClick={() => markAndRefresh()} className="btn-subtle px-2 text-xs font-semibold text-primary">
+                Mark all as read
+              </button>
+            )}
+          </div>
           <div className="max-h-[60vh] overflow-y-auto overscroll-contain">
             {latest?.notifications.map((notification) => (
-              <Link
-                key={notification.id}
-                to={`/tickets/${notification.ticket_code}`}
-                onClick={close}
-                className="flex gap-3 px-4 py-2.5 hover:bg-hover"
-              >
-                <NotificationIcon notification={notification} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 text-xs">
-                    <span className="font-docno font-semibold text-accent">{notification.ticket_code}</span>
-                    <span className="text-ink-subtle">{fmtAgo(notification.created_at)}</span>
-                    {notification.id > latest.seen_id && <span className="ml-auto h-2 w-2 rounded-full bg-primary" aria-label="Unread" />}
+              <div key={notification.id} className="flex items-center pr-2 hover:bg-hover">
+                <Link
+                  to={`/tickets/${notification.ticket_code}`}
+                  onClick={() => openNotification(notification)}
+                  className="flex min-w-0 flex-1 gap-3 py-2.5 pl-4 pr-2"
+                >
+                  <NotificationIcon notification={notification} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="font-docno font-semibold text-accent">{notification.ticket_code}</span>
+                      <span className="text-ink-subtle">{fmtAgo(notification.created_at)}</span>
+                      {!notification.is_read && <span className="h-2 w-2 rounded-full bg-primary" aria-label="Unread" />}
+                    </div>
+                    <div className="truncate text-[13px] text-ink">{notification.ticket_title}</div>
+                    <div className="truncate text-xs text-ink-subtle">{describeNotification(notification)}</div>
                   </div>
-                  <div className="truncate text-[13px] text-ink">{notification.ticket_title}</div>
-                  <div className="truncate text-xs text-ink-subtle">{describeNotification(notification)}</div>
-                </div>
-              </Link>
+                </Link>
+                {!notification.is_read && <MarkReadButton onClick={() => markAndRefresh(notification.id)} />}
+              </div>
             ))}
             {latest && latest.notifications.length === 0 && <div className="px-4 py-8 text-center text-sm text-ink-subtle">Nothing yet</div>}
             {!latest && <div className="px-4 py-8 text-center text-sm text-ink-subtle">Loading...</div>}

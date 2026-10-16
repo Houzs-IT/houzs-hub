@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gt, inArray, isNull, max, ne, or, sql, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, gt, inArray, isNull, lte, max, ne, not, or, sql, type SQL } from "drizzle-orm";
 import { Hono } from "hono";
 import { schema, type DB } from "../db/client";
 import { need } from "../middleware/devAuth";
@@ -9,6 +9,7 @@ notifications.use("*", need("it"));
 
 const events = schema.ticketEvents;
 const tickets = schema.tickets;
+const reads = schema.notificationReads;
 const PAGE_SIZE = 20;
 
 const FILTERS: Record<string, SQL> = {
@@ -17,12 +18,17 @@ const FILTERS: Record<string, SQL> = {
   closed: and(eq(events.kind, "status"), inArray(events.toValue, ["resolved", "closed"]))!,
 };
 
+function readOneByOne(userId: number) {
+  return sql<boolean>`EXISTS (SELECT 1 FROM ${reads} WHERE ${reads.userId} = ${userId} AND ${reads.eventId} = ${events.id})`;
+}
+
 // New tickets, comments, and tickets resolved or closed, done by someone else.
-function notificationWhere(userId: number, filter?: string, afterId?: number) {
+// With `unreadAfter` (the read mark), only the ones after it not read one by one.
+function notificationWhere(userId: number, filter?: string, unreadAfter?: number) {
   return and(
     FILTERS[filter ?? ""] ?? or(...Object.values(FILTERS)),
     or(isNull(events.userId), ne(events.userId, userId)),
-    afterId ? gt(events.id, afterId) : undefined,
+    unreadAfter !== undefined ? and(gt(events.id, unreadAfter), not(readOneByOne(userId))) : undefined,
   );
 }
 
@@ -54,8 +60,6 @@ export async function countUnread(db: DB, user: DevVars["user"]) {
   return cappedCount(db, notificationWhere(user.id, undefined, seenId), UNREAD_CAP);
 }
 
-// unread=1 lists events after the read mark; `after` pins that mark so marking
-// read while the page is open does not empty the Unread only view.
 notifications.get("/", async (c) => {
   const db = c.get("db");
   const me = c.get("user");
@@ -63,8 +67,7 @@ notifications.get("/", async (c) => {
   const page = Math.max(1, Number(query.page) || 1);
   const pageSize = Math.min(50, Math.max(1, Number(query.page_size) || PAGE_SIZE));
   const seenId = await getSeenId(db, me);
-  const afterId = query.unread === "1" ? Number(query.after) || seenId : undefined;
-  const where = notificationWhere(me.id, query.filter, afterId);
+  const where = notificationWhere(me.id, query.filter, query.unread === "1" ? seenId : undefined);
 
   const [rows, total] = await Promise.all([
     db
@@ -78,6 +81,7 @@ notifications.get("/", async (c) => {
         created_at: events.createdAt,
         ticket_code: tickets.code,
         ticket_title: tickets.title,
+        is_read: sql<boolean>`${events.id} <= ${seenId} OR ${readOneByOne(me.id)}`,
       })
       .from(events)
       .innerJoin(tickets, eq(tickets.id, events.ticketId))
@@ -89,20 +93,30 @@ notifications.get("/", async (c) => {
   ]);
 
   // ponytail: OFFSET paging and a capped total; switch to "older than id" paging if people dig past ~50 pages.
-  return c.json({ notifications: rows, total, total_capped: total >= TOTAL_CAP, page, page_size: pageSize, seen_id: seenId });
+  return c.json({ notifications: rows, total, total_capped: total >= TOTAL_CAP, page, page_size: pageSize });
 });
 
-// Marks read up to `up_to`, or everything when it is missing. The mark never moves back.
+// Marks one notification read with `id`, or all of them without it.
 notifications.post("/read", async (c) => {
   const db = c.get("db");
   const me = c.get("user");
-  const body = (await c.req.json().catch(() => ({}))) as { up_to?: unknown };
-  const upTo = Number(body.up_to);
-  const seenId = Number.isInteger(upTo) && upTo > 0 ? upTo : await newestEventId(db);
+  const body = (await c.req.json().catch(() => ({}))) as { id?: unknown };
+
+  if (body.id !== undefined) {
+    const eventId = Number(body.id);
+    if (!Number.isInteger(eventId) || eventId <= 0) return c.json({ error: "Invalid notification id" }, 400);
+    await db.execute(
+      sql`INSERT INTO ${reads} (user_id, event_id) SELECT ${me.id}, ${events.id} FROM ${events} WHERE ${events.id} = ${eventId} ON CONFLICT DO NOTHING`,
+    );
+    return c.json({ ok: true });
+  }
+
+  const seenId = await newestEventId(db);
   await db
     .update(schema.users)
     .set({ notificationsSeenId: sql`GREATEST(COALESCE(${schema.users.notificationsSeenId}, 0), ${seenId})` })
     .where(eq(schema.users.id, me.id));
+  await db.delete(reads).where(and(eq(reads.userId, me.id), lte(reads.eventId, seenId)));
   return c.json({ ok: true });
 });
 
