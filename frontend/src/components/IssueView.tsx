@@ -121,7 +121,80 @@ function historyText(e: TicketEvent): ReactNode {
   );
 }
 
-function ActivityItem({ e }: { e: TicketEvent }) {
+function CommentActions({ code, e, onEdit, onDone }: { code: string; e: TicketEvent; onEdit: () => void; onDone: () => void }) {
+  const { me } = useHub();
+  const [busy, setBusy] = useState(false);
+  const isMine = e.userId === me.id;
+  if (!isMine && !me.perms?.includes("delete_tickets")) return null;
+
+  async function remove() {
+    const what = e.visibility === "internal" ? "internal note" : "comment";
+    if (!confirm(`Delete this ${what}${e.attachments.length ? " and its files" : ""}? This cannot be undone.`)) return;
+    setBusy(true);
+    try {
+      await api(`/tickets/${code}/comments/${e.id}`, { method: "DELETE" });
+      onDone();
+    } catch (err) {
+      alert((err as Error).message);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <span className="ml-auto flex items-center text-xs">
+      {isMine && (
+        <button className="tap px-2 font-medium text-ink-subtle hover:text-ink hover:underline" onClick={onEdit}>
+          Edit
+        </button>
+      )}
+      <button className="tap px-2 font-medium text-ink-subtle hover:text-loz-red-ink hover:underline" disabled={busy} onClick={remove}>
+        Delete
+      </button>
+    </span>
+  );
+}
+
+function CommentEditor({ code, e, onClose, onDone }: { code: string; e: TicketEvent; onClose: () => void; onDone: () => void }) {
+  const [body, setBody] = useState(e.body ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    setBusy(true);
+    try {
+      await api(`/tickets/${code}/comments/${e.id}`, json("PATCH", { body }));
+      onClose();
+      onDone();
+    } catch (err) {
+      setError((err as Error).message);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-1">
+      <textarea
+        autoFocus
+        value={body}
+        onChange={(ev) => setBody(ev.target.value)}
+        aria-label="Edit comment"
+        className="block h-28 w-full resize-y rounded border-2 border-primary bg-surface px-3 py-2 text-sm outline-none"
+      />
+      {error && <div className="mt-1 text-xs text-loz-red-ink">{error}</div>}
+      <div className="mt-2 flex gap-2">
+        <button className="btn-primary" disabled={busy || body.trim() === (e.body ?? "")} onClick={save}>
+          Save
+        </button>
+        <button className="btn-subtle" onClick={onClose}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ActivityItem({ code, e, onChanged }: { code: string; e: TicketEvent; onChanged: () => void }) {
+  const [isEditing, setIsEditing] = useState(false);
   const name = e.authorKind === "system" ? "System" : e.authorName;
   const when = (
     <span className="text-xs text-ink-subtlest" title={fmtDateTime(e.createdAt)}>
@@ -149,11 +222,21 @@ function ActivityItem({ e }: { e: TicketEvent }) {
               )
             )}
             {when}
+            {e.editedAt && (
+              <span className="text-xs text-ink-subtlest" title={`Edited ${fmtDateTime(e.editedAt)}`}>
+                (edited)
+              </span>
+            )}
+            {!isEditing && <CommentActions code={code} e={e} onEdit={() => setIsEditing(true)} onDone={onChanged} />}
           </div>
-          <div className={`mt-1 rounded ${internal ? "border-l-4 border-note-line bg-note px-3 py-2" : ""}`}>
-            {e.body && <div className="whitespace-pre-wrap break-words text-sm leading-6">{e.body}</div>}
-            <Attachments items={e.attachments} />
-          </div>
+          {isEditing ? (
+            <CommentEditor code={code} e={e} onClose={() => setIsEditing(false)} onDone={onChanged} />
+          ) : (
+            <div className={`mt-1 rounded ${internal ? "border-l-4 border-note-line bg-note px-3 py-2" : ""}`}>
+              {e.body && <div className="whitespace-pre-wrap break-words text-sm leading-6">{e.body}</div>}
+              <Attachments items={e.attachments} />
+            </div>
+          )}
         </div>
       </div>
     );
@@ -589,7 +672,7 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
             <Composer code={code} status={t.status} onDone={refresh} />
           </div>
           {shown.map((e) => (
-            <ActivityItem key={e.id} e={e} />
+            <ActivityItem key={e.id} code={code} e={e} onChanged={refresh} />
           ))}
         </div>
       </div>

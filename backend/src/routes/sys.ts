@@ -247,6 +247,7 @@ sys.get("/tickets/:code", async (c) => {
       from_value: e.fromValue,
       to_value: e.toValue,
       created_at: e.createdAt,
+      edited_at: e.editedAt,
       attachments: atts.filter((a) => a.event_id === e.id),
     })),
   });

@@ -118,6 +118,7 @@ export const ticketEvents = pgTable("ticket_events", {
   fromValue: text("from_value"),
   toValue: text("to_value"),
   createdAt: text("created_at").notNull(),
+  editedAt: text("edited_at"),
 });
 
 export const ticketAttachments = pgTable("ticket_attachments", {
