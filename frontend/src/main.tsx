@@ -9,6 +9,7 @@ import ListPage from "./pages/ListPage";
 import LoginPage from "./pages/LoginPage";
 import NotificationsPage from "./pages/NotificationsPage";
 import IntegrationsPage from "./pages/IntegrationsPage";
+import ReportsPage from "./pages/ReportsPage";
 import RolesPage from "./pages/RolesPage";
 import UsersPage from "./pages/UsersPage";
 import "./index.css";
@@ -24,6 +25,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
           <Route path="/board" element={<BoardPage />} />
           <Route path="/queue" element={<ListPage queue />} />
           <Route path="/notifications" element={<NotificationsPage />} />
+          <Route path="/reports" element={<ReportsPage />} />
           <Route path="/tickets/:code" element={<IssuePage />} />
           <Route path="/users" element={<UsersPage />} />
           <Route path="/integrations" element={<IntegrationsPage />} />

@@ -113,6 +113,14 @@ staging (`hookka-erp-staging-sg`), feature PR goes to staging first.
 ## Later (same hub)
 
 - [ ] System Health — ping each system's health endpoint on cron, status page
-- [ ] Dashboard — ticket volume / SLA by system
+- [ ] Dashboard — ticket volume / SLA by system (volume part started: Reports page below)
+
+## 5. Reports page — boss 2026-10-20 ("check the case of bugs is decreasing")
+
+- [x] `GET /dev/tickets/monthly?months=` — tickets per submitted month (Malaysia time) x system x current type
+- [x] `/reports` page under IT Workspace: 6 / 12 / 24 months, system filter, Bug vs Development bars,
+      tiles for last month vs month before, per-system table (Bug / Development)
+- [x] Counts use the ticket's current type, so IT re-typing a mis-picked ticket fixes the numbers
+- [ ] Later if asked: resolved per month, SLA, by priority
 - [ ] AI usage per system + monthly charges
 - [ ] Email / WhatsApp notify on status change

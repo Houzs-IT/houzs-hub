@@ -1,4 +1,4 @@
-import { Bell, ChevronDown, KanbanSquare, List, LogOut, Menu, Moon, Plug, ShieldCheck, Sun, UserCheck, UserCog, Users } from "lucide-react";
+import { BarChart3, Bell, ChevronDown, KanbanSquare, List, LogOut, Menu, Moon, Plug, ShieldCheck, Sun, UserCheck, UserCog, Users } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { Link, Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
 import { api, json, type Perm, type User, type SystemRow } from "../api/client";
@@ -13,7 +13,7 @@ import { NotificationBell } from "./Notifications";
 
 type Stats = { active_by_system: Record<string, number>; my_active: number; unread_notifications: number };
 
-const IT_PATH = /^\/($|tickets|board|queue|notifications)/;
+const IT_PATH = /^\/($|tickets|board|queue|notifications|reports)/;
 
 // Sidebar wording only; everywhere else shows the system's stored name.
 const SIDEBAR_SYSTEM_NAMES: Record<string, string> = { CONTS: "The Conts" };
@@ -23,6 +23,7 @@ const PAGE_NAMES: Record<string, string> = {
   "/board": "Board",
   "/queue": "My queue",
   "/notifications": "Notifications",
+  "/reports": "Reports",
   "/users": "Users",
   "/account": "My account",
   "/integrations": "Integrations",
@@ -58,7 +59,8 @@ export const useHub = () => useContext(HubContext)!;
 function NavItem({ to, icon, label, count }: { to: string; icon?: ReactNode; label: string; count?: number }) {
   const { pathname, search } = useLocation();
   const [path, qs] = to.split("?");
-  const active = pathname === path && (qs ? search.includes(qs) : !search.includes("system="));
+  // A system filter on the List lights that system's item instead of List.
+  const active = pathname === path && (qs ? search.includes(qs) : path !== "/tickets" || !search.includes("system="));
   return (
     <NavLink
       to={to}
@@ -382,6 +384,7 @@ export default function Layout() {
                 <NavItem to="/board" icon={<KanbanSquare className="h-4 w-4" />} label="Board" />
                 <NavItem to="/queue" icon={<UserCheck className="h-4 w-4" />} label="My queue" count={stats.my_active} />
                 <NavItem to="/notifications" icon={<Bell className="h-4 w-4" />} label="Notifications" count={stats.unread_notifications} />
+                <NavItem to="/reports" icon={<BarChart3 className="h-4 w-4" />} label="Reports" />
 
                 <div className="px-2.5 pb-1 pt-3 text-[9px] font-semibold uppercase tracking-brand text-sidebar-ink-muted">Systems</div>
                 {base.systems.map((s) => (

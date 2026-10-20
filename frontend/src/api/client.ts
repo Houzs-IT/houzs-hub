@@ -104,6 +104,12 @@ export type TicketFull = {
   updatedAt: string;
 };
 
+// Tickets submitted per month; months with no tickets have no rows.
+export type MonthlyStats = {
+  months: string[];
+  rows: { month: string; system: string; type: TicketType; n: number }[];
+};
+
 const BASE = "/api/v1/dev";
 
 export class ApiError extends Error {

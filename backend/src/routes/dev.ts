@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, gt, inArray, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, gte, inArray, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
 import { Hono } from "hono";
 import { schema, type DB } from "../db/client";
 import {
@@ -292,6 +292,26 @@ dev.get("/tickets/stats", async (c) => {
     my_active: mine[0]?.n ?? 0,
     unread_notifications: unreadNotifications,
   });
+});
+
+// Reports page: tickets submitted per month (Malaysia time) by system and type.
+// The type is the current one, so a ticket IT re-typed counts where it belongs.
+dev.get("/tickets/monthly", async (c) => {
+  const db = c.get("db");
+  const months = Math.min(36, Math.max(1, Number(c.req.query("months")) || 12));
+  const myNow = new Date(Date.now() + 8 * 3600_000);
+  const keys = Array.from({ length: months }, (_, i) =>
+    new Date(Date.UTC(myNow.getUTCFullYear(), myNow.getUTCMonth() - (months - 1 - i), 1)).toISOString().slice(0, 7),
+  );
+  // created_at is a toISOString() string, so comparing text compares instants.
+  const from = new Date(Date.parse(`${keys[0]}-01T00:00:00+08:00`)).toISOString();
+  const month = sql<string>`to_char(${t.createdAt}::timestamptz AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM')`;
+  const rows = await db
+    .select({ month, system: t.systemCode, type: t.type, n: count() })
+    .from(t)
+    .where(gte(t.createdAt, from))
+    .groupBy(month, t.systemCode, t.type);
+  return c.json({ months: keys, rows });
 });
 
 async function findTicket(db: DB, code: string) {
