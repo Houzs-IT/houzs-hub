@@ -1,4 +1,4 @@
-import { integer, pgTable, primaryKey, text } from "drizzle-orm/pg-core";
+import { integer, numeric, pgTable, primaryKey, text } from "drizzle-orm/pg-core";
 
 export const TICKET_TYPES = ["bug", "development"] as const;
 export const TICKET_PRIORITIES = ["urgent", "high", "medium", "low"] as const;
@@ -148,6 +148,51 @@ export const accounts = pgTable("accounts", {
   billsTo: text("bills_to").notNull().default(""),
   registerIds: text("register_ids").notNull().default(""),
   nextStep: text("next_step").notNull().default(""),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  updatedBy: text("updated_by"),
+});
+
+// Company cards, last 4 digits only.
+export const cards = pgTable("cards", {
+  id: id(),
+  nickname: text("nickname").notNull(),
+  last4: text("last4").notNull().default(""),
+  bank: text("bank").notNull().default(""),
+  holder: text("holder").notNull().default(""),
+  company: text("company").notNull().default(""),
+  statementDay: integer("statement_day"),
+  notes: text("notes").notNull().default(""),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  updatedBy: text("updated_by"),
+});
+
+export const CHARGE_STATUSES = ["confirmed", "to_confirm", "to_fill_in", "not_active", "cancelled"] as const;
+export type ChargeStatus = (typeof CHARGE_STATUSES)[number];
+export const CHARGE_BILLED = ["", "monthly", "yearly"] as const;
+export const CURRENCIES = ["USD", "MYR"] as const;
+
+// One bill line per row, like a row of the sheet's Register tab.
+export const charges = pgTable("charges", {
+  id: id(),
+  registerId: text("register_id").notNull().default(""),
+  accountId: integer("account_id"),
+  company: text("company").notNull().default(""),
+  system: text("system").notNull().default(""),
+  vendor: text("vendor").notNull(),
+  serviceType: text("service_type").notNull().default(""),
+  usedFor: text("used_for").notNull().default(""),
+  plan: text("plan").notNull().default(""),
+  // numeric comes back from Postgres as a string; the API turns it into a number.
+  amount: numeric("amount", { precision: 12, scale: 2 }),
+  currency: text("currency").notNull().default("USD"),
+  billed: text("billed").notNull().default(""),
+  card: text("card").notNull().default(""),
+  status: text("status").$type<ChargeStatus>().notNull().default("to_confirm"),
+  checkedOn: text("checked_on"),
+  keyName: text("key_name").notNull().default(""),
+  notes: text("notes").notNull().default(""),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
   updatedBy: text("updated_by"),

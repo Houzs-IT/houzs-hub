@@ -61,11 +61,19 @@ comes from their role, set on the **Roles** page:
 | See Integrations | The Integrations page: whether each system is connected |
 | See accounts | The Accounts page: every outside account and who controls it |
 | Edit accounts | Adding, changing and removing accounts on the Accounts page |
+| See billing | The Billing page: what each service costs and which card pays |
+| Edit billing | Adding, changing and removing charges and cards on the Billing page |
 
-The Accounts page replaces the Ownership tab of the API card register sheet. It holds
-names, emails and roles only, never passwords, API keys or card numbers. To load the
-sheet once, copy the tab's account list (with its header row) into a `.tsv` file and run
-`node scripts/import-accounts.mjs <file.tsv>` from `backend/`, then again with `--apply`.
+The Accounts and Billing pages replace the API card register sheet (its Ownership,
+Register, Overview and Cards tabs). They hold names, emails, roles, amounts and the last
+4 digits of a card only, never passwords, API keys or full card numbers. To load the
+sheet once, copy each tab (with its header row) into a `.tsv` file and run, from
+`backend/`, each command first as a dry run and then again with `--apply`:
+
+```bash
+node scripts/import-accounts.mjs ownership.tsv
+node scripts/import-billing.mjs --register register.tsv --cards cards.tsv
+```
 
 Two roles are built in and can be renamed but not deleted: **Admin** has every
 permission and **Developer** has IT tickets. New permissions are added in

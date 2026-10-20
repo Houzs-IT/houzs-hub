@@ -4,7 +4,16 @@ export type TicketType = "bug" | "development";
 
 // Permission keys come from the server (services/perms.ts); these are the ones
 // the portal checks to show or hide things.
-export type Perm = "it" | "delete_tickets" | "users" | "roles" | "integrations" | "accounts_view" | "accounts_edit";
+export type Perm =
+  | "it"
+  | "delete_tickets"
+  | "users"
+  | "roles"
+  | "integrations"
+  | "accounts_view"
+  | "accounts_edit"
+  | "billing_view"
+  | "billing_edit";
 export type User = {
   id: number;
   name: string;
@@ -18,6 +27,41 @@ export type User = {
 export type PermDef = { key: Perm; label: string; hint: string };
 export type RoleRow = { key: string; name: string; permissions: Perm[]; users: number; builtIn: boolean };
 export type SystemRow = { code: string; name: string; active: number };
+
+export type ChargeStatus = "confirmed" | "to_confirm" | "to_fill_in" | "not_active" | "cancelled";
+export type ChargeRow = {
+  id: number;
+  registerId: string;
+  accountId: number | null;
+  company: string;
+  system: string;
+  vendor: string;
+  serviceType: string;
+  usedFor: string;
+  plan: string;
+  amount: number | null;
+  currency: "USD" | "MYR";
+  billed: "" | "monthly" | "yearly";
+  card: string;
+  status: ChargeStatus;
+  checkedOn: string | null;
+  keyName: string;
+  notes: string;
+  updatedAt: string;
+  updatedBy: string | null;
+};
+export type CardRow = {
+  id: number;
+  nickname: string;
+  last4: string;
+  bank: string;
+  holder: string;
+  company: string;
+  statementDay: number | null;
+  notes: string;
+  updatedAt: string;
+  updatedBy: string | null;
+};
 
 export type AccountStatus = "yes" | "partly" | "not_yet" | "cant_move";
 export type AccountRow = {
