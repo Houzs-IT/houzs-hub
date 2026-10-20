@@ -26,6 +26,7 @@ import {
 } from "../services/tickets";
 import type { DevApp } from "../types";
 import { broadcastTicketChanges, getLiveRoom } from "../live";
+import accounts from "./accounts";
 import admin, { isUniqueViolation } from "./admin";
 import notifications, { countUnread } from "./notifications";
 
@@ -47,6 +48,7 @@ const t = schema.tickets;
 const PAGE_SIZE = 50;
 
 dev.route("/admin", admin);
+dev.route("/accounts", accounts);
 dev.route("/notifications", notifications);
 
 dev.get("/live", need("it"), (c) => {

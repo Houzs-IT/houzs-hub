@@ -6,6 +6,8 @@ export const PERMISSIONS = [
   { key: "users", label: "Manage users", hint: "Add users, reset passwords, switch accounts off" },
   { key: "roles", label: "Manage roles", hint: "Create and rename roles, set permissions, assign roles and overrides" },
   { key: "integrations", label: "See Integrations", hint: "Whether each system is connected to the hub" },
+  { key: "accounts_view", label: "See accounts", hint: "The Accounts page: every outside account and who controls it" },
+  { key: "accounts_edit", label: "Edit accounts", hint: "Add, change and remove accounts on the Accounts page" },
 ] as const;
 
 export type Perm = (typeof PERMISSIONS)[number]["key"];

@@ -132,6 +132,27 @@ export const ticketAttachments = pgTable("ticket_attachments", {
   createdAt: text("created_at").notNull(),
 });
 
+export const ACCOUNT_STATUSES = ["yes", "partly", "not_yet", "cant_move"] as const;
+export type AccountStatus = (typeof ACCOUNT_STATUSES)[number];
+
+// Outside accounts and who controls them. Never passwords, keys or card numbers.
+export const accounts = pgTable("accounts", {
+  id: id(),
+  name: text("name").notNull(),
+  companies: text("companies").notNull().default(""),
+  vendor: text("vendor").notNull().default(""),
+  mainOwner: text("main_owner").notNull().default(""),
+  control: text("control").notNull().default(""),
+  itAccess: text("it_access").notNull().default(""),
+  status: text("status").$type<AccountStatus>().notNull().default("not_yet"),
+  billsTo: text("bills_to").notNull().default(""),
+  registerIds: text("register_ids").notNull().default(""),
+  nextStep: text("next_step").notNull().default(""),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  updatedBy: text("updated_by"),
+});
+
 export type Ticket = typeof tickets.$inferSelect;
 export type TicketEvent = typeof ticketEvents.$inferSelect;
 export type TicketAttachment = typeof ticketAttachments.$inferSelect;

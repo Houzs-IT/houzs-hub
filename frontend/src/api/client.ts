@@ -4,7 +4,7 @@ export type TicketType = "bug" | "development";
 
 // Permission keys come from the server (services/perms.ts); these are the ones
 // the portal checks to show or hide things.
-export type Perm = "it" | "delete_tickets" | "users" | "roles" | "integrations";
+export type Perm = "it" | "delete_tickets" | "users" | "roles" | "integrations" | "accounts_view" | "accounts_edit";
 export type User = {
   id: number;
   name: string;
@@ -18,6 +18,24 @@ export type User = {
 export type PermDef = { key: Perm; label: string; hint: string };
 export type RoleRow = { key: string; name: string; permissions: Perm[]; users: number; builtIn: boolean };
 export type SystemRow = { code: string; name: string; active: number };
+
+export type AccountStatus = "yes" | "partly" | "not_yet" | "cant_move";
+export type AccountRow = {
+  id: number;
+  name: string;
+  companies: string;
+  vendor: string;
+  mainOwner: string;
+  control: string;
+  itAccess: string;
+  status: AccountStatus;
+  billsTo: string;
+  registerIds: string;
+  nextStep: string;
+  createdAt: string;
+  updatedAt: string;
+  updatedBy: string | null;
+};
 
 export type TicketRow = {
   code: string;

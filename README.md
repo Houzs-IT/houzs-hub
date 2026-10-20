@@ -59,6 +59,13 @@ comes from their role, set on the **Roles** page:
 | Manage users | The Users page: add people, reset passwords, switch accounts off or on |
 | Manage roles | The Roles page, plus assigning roles and per-person overrides on Users |
 | See Integrations | The Integrations page: whether each system is connected |
+| See accounts | The Accounts page: every outside account and who controls it |
+| Edit accounts | Adding, changing and removing accounts on the Accounts page |
+
+The Accounts page replaces the Ownership tab of the API card register sheet. It holds
+names, emails and roles only, never passwords, API keys or card numbers. To load the
+sheet once, copy the tab's account list (with its header row) into a `.tsv` file and run
+`node scripts/import-accounts.mjs <file.tsv>` from `backend/`, then again with `--apply`.
 
 Two roles are built in and can be renamed but not deleted: **Admin** has every
 permission and **Developer** has IT tickets. New permissions are added in
