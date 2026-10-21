@@ -4,7 +4,39 @@ export type TicketType = "bug" | "development";
 
 // Permission keys come from the server (services/perms.ts); these are the ones
 // the portal checks to show or hide things.
-export type Perm = "it" | "delete_tickets" | "users" | "roles" | "integrations";
+export type Perm = "it" | "delete_tickets" | "users" | "roles" | "integrations" | "health_view" | "health_edit";
+
+export type HealthTarget = {
+  id: number;
+  name: string;
+  systemCode: string | null;
+  checkUrl: string;
+  pageUrl: string;
+  sort: number;
+  active: number;
+  updatedAt: string;
+  updatedBy: string | null;
+};
+export type HealthStatus = "ok" | "warning" | "critical" | "off";
+export type HealthReport = {
+  ok: boolean;
+  time: string | null;
+  db: { ok: boolean; latency_ms: number | null; error?: string } | null;
+  storage: { bound: boolean; ok: boolean; latency_ms: number | null } | null;
+  counts: Record<string, number | string | null>;
+  checks: { key: string; label: string; value: string; status: HealthStatus; summary: string; detail?: string }[];
+  problems: { at: string; what: string; where?: string | null; error?: string | null }[];
+};
+export type HealthReportRow = { systemCode: string; receivedAt: string; ok: number; report: HealthReport };
+export type HealthCheck = {
+  targetId: number;
+  checkedAt: string;
+  ok: number;
+  status: number | null;
+  ms: number | null;
+  version: string | null;
+  error: string | null;
+};
 export type User = {
   id: number;
   name: string;

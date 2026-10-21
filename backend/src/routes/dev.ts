@@ -27,6 +27,7 @@ import {
 import type { DevApp } from "../types";
 import { broadcastTicketChanges, getLiveRoom } from "../live";
 import admin, { isUniqueViolation } from "./admin";
+import health from "./health";
 import notifications, { countUnread } from "./notifications";
 
 const dev = new Hono<DevApp>();
@@ -47,6 +48,7 @@ const t = schema.tickets;
 const PAGE_SIZE = 50;
 
 dev.route("/admin", admin);
+dev.route("/health", health);
 dev.route("/notifications", notifications);
 
 dev.get("/live", need("it"), (c) => {
