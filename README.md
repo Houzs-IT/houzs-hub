@@ -28,14 +28,14 @@ npm run db:migrate
 npm --prefix backend run key:issue -- HK
 npm --prefix backend run user:set -- you@gmail.com yourname   # prints a password
 npm run build            # wrangler needs frontend/dist to exist
-npm run dev:backend      # http://127.0.0.1:8787
-npm run dev:frontend     # http://localhost:5180, proxies /api to :8787
+npm run dev              # backend on :8787, frontend on http://localhost:5180
 ```
 
 Where each part reads its database from:
 
 - `wrangler dev` uses `localConnectionString` in `backend/wrangler.toml` (the Docker
-  Postgres above).
+  Postgres above), unless `DATABASE_URL` in `backend/.env` is Supabase. Then
+  `npm run dev` points it at that database through the transaction pooler.
 - The scripts (`db:migrate`, `key:issue`, `user:set`) use `DATABASE_URL` from
   `backend/.env`.
 
