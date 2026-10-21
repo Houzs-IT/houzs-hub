@@ -1,12 +1,14 @@
 import { and, eq } from "drizzle-orm";
+import type { Context } from "hono";
 import { createMiddleware } from "hono/factory";
 import { getDb, schema } from "../db/client";
 import { sha256Hex } from "../services/crypto";
-import type { SysApp } from "../types";
+import type { Env, SysApp } from "../types";
 
-// Server-to-server only: the calling system's backend holds the key and
-// vouches for the reporter via X-Reporter-Id. Browsers never see the key.
-export const systemAuth = createMiddleware<SysApp>(async (c, next) => {
+// The calling system for a Bearer hub key, or the refusal to send. Also notes the
+// call for the Integrations page, at most one write a minute per system, since
+// every reporter's unread badge polls through here.
+export async function systemForKey<E extends { Bindings: Env }>(c: Context<E>): Promise<{ code: string } | Response> {
   const header = c.req.header("Authorization") ?? "";
   const key = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
   if (!key) return c.json({ error: "Missing API key" }, 401);
@@ -19,12 +21,18 @@ export const systemAuth = createMiddleware<SysApp>(async (c, next) => {
     .limit(1);
   if (!system) return c.json({ error: "Invalid API key" }, 401);
 
-  // For the Integrations page. At most one write a minute per system, since
-  // every reporter's unread badge polls through here.
   const now = new Date();
   if (!system.lastCallAt || now.getTime() - Date.parse(system.lastCallAt) > 60_000) {
     await db.update(schema.systems).set({ lastCallAt: now.toISOString() }).where(eq(schema.systems.code, system.code));
   }
+  return { code: system.code };
+}
+
+// Server-to-server only: the calling system's backend holds the key and
+// vouches for the reporter via X-Reporter-Id. Browsers never see the key.
+export const systemAuth = createMiddleware<SysApp>(async (c, next) => {
+  const system = await systemForKey(c);
+  if (system instanceof Response) return system;
 
   const reporterId = (c.req.header("X-Reporter-Id") ?? "").trim();
   if (!reporterId) return c.json({ error: "Missing X-Reporter-Id" }, 400);

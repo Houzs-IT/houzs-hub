@@ -59,6 +59,8 @@ comes from their role, set on the **Roles** page:
 | Manage users | The Users page: add people, reset passwords, switch accounts off or on |
 | Manage roles | The Roles page, plus assigning roles and per-person overrides on Users |
 | See Integrations | The Integrations page: whether each system is connected |
+| See system health | The System health page: each system up or down, its speed and version, checked every 5 minutes, and the health report it sends |
+| Edit system health | Adding, changing and pausing the systems the hub checks, and Check now |
 
 Two roles are built in and can be renamed but not deleted: **Admin** has every
 permission and **Developer** has IT tickets. New permissions are added in
@@ -141,3 +143,33 @@ replies.
 
 Statuses: `open`, `in_progress` (On Going), `on_hold`, `testing`, `waiting_reporter`,
 `resolved` (Done), `closed`, `rejected`. Done tickets close themselves after 7 days.
+
+### Health report (`POST /api/v1/sys/health`)
+
+A system sends its own health report every 5 minutes with the same key, and **no**
+`X-Reporter-Id` (no person is involved). The System health page shows the newest one in
+that system's tab and warns when none has arrived for 15 minutes; 7 days are kept. The
+body is JSON, 64 KB at most, in the shape The Conts' `GET /api/system/health` already
+returns (`measureHealth` in Conts-ERP `functions/_lib/systemHealth.ts`, sent by its cron
+worker's `hubHealthReport`). Every field is optional except `ok`; anything else is dropped.
+
+```json
+{
+  "ok": true,
+  "time": "2026-10-21T04:00:00Z",
+  "db": { "ok": true, "latency_ms": 19 },
+  "r2": { "bound": true, "ok": true, "latency_ms": 40 },
+  "counts": { "users_active": 12, "audit_24h": 140, "last_event_at": "2026-10-21T03:58:00Z" },
+  "checks": [
+    { "key": "email", "label": "Email", "value": "Set", "status": "ok", "summary": "52 sent in 7 days", "detail": "optional longer note" }
+  ],
+  "problems": [
+    { "at": "2026-10-21T02:10:00Z", "what": "A guest message could not be sent", "where": "Unit 12-3", "error": "Refused (429)" }
+  ]
+}
+```
+
+`ok` false means something needs attention. `status` is `ok`, `warning`, `critical` or
+`off`. `storage` may be sent instead of `r2`. Never put a password, key or personal data
+beyond what the system's own health page shows. The answer is `201 { ok: true }`, or 401
+for a wrong key.

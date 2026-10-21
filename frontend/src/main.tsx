@@ -8,6 +8,7 @@ import AccountPage from "./pages/AccountPage";
 import ListPage from "./pages/ListPage";
 import LoginPage from "./pages/LoginPage";
 import NotificationsPage from "./pages/NotificationsPage";
+import HealthPage from "./pages/HealthPage";
 import IntegrationsPage from "./pages/IntegrationsPage";
 import ReportsPage from "./pages/ReportsPage";
 import RolesPage from "./pages/RolesPage";
@@ -29,6 +30,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
           <Route path="/tickets/:code" element={<IssuePage />} />
           <Route path="/users" element={<UsersPage />} />
           <Route path="/integrations" element={<IntegrationsPage />} />
+          <Route path="/health" element={<HealthPage />} />
           <Route path="/roles" element={<RolesPage />} />
           <Route path="/account" element={<AccountPage />} />
           <Route path="*" element={<Navigate to="/tickets" replace />} />

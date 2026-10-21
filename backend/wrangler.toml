@@ -42,8 +42,9 @@ tag = "v1"
 new_sqlite_classes = ["LiveRoom"]
 
 [triggers]
-# 02:00 UTC = 10:00 GMT+8. Auto-closes tickets left in Resolved for 7 days.
-crons = ["0 2 * * *"]
+# Every 5 minutes: system health checks. The ticket auto-close (tickets left in
+# Resolved for 7 days) runs inside the 02:00 UTC = 10:00 GMT+8 one only; see index.ts.
+crons = ["*/5 * * * *"]
 
 [observability]
 [observability.logs]

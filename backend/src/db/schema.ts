@@ -1,4 +1,4 @@
-import { integer, pgTable, primaryKey, text } from "drizzle-orm/pg-core";
+import { integer, jsonb, pgTable, primaryKey, text } from "drizzle-orm/pg-core";
 
 export const TICKET_TYPES = ["bug", "development"] as const;
 export const TICKET_PRIORITIES = ["urgent", "high", "medium", "low"] as const;
@@ -131,6 +131,51 @@ export const ticketAttachments = pgTable("ticket_attachments", {
   size: integer("size").notNull(),
   createdAt: text("created_at").notNull(),
 });
+
+// System health: what the hub checks, and the results (7 days kept).
+export const healthTargets = pgTable("health_targets", {
+  id: id(),
+  name: text("name").notNull(),
+  systemCode: text("system_code"),
+  checkUrl: text("check_url").notNull(),
+  pageUrl: text("page_url").notNull().default(""),
+  sort: integer("sort").notNull().default(0),
+  active: integer("active").notNull().default(1),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  updatedBy: text("updated_by"),
+});
+
+export const healthChecks = pgTable("health_checks", {
+  id: id(),
+  targetId: integer("target_id").notNull(),
+  checkedAt: text("checked_at").notNull(),
+  ok: integer("ok").notNull(),
+  status: integer("status"),
+  ms: integer("ms"),
+  version: text("version"),
+  error: text("error"),
+});
+
+// A system's own health report, sent with its hub key (see routes/sysHealth.ts).
+export const healthReports = pgTable("health_reports", {
+  id: id(),
+  systemCode: text("system_code").notNull(),
+  receivedAt: text("received_at").notNull(),
+  ok: integer("ok").notNull(),
+  report: jsonb("report").$type<HealthReport>().notNull(),
+});
+
+export type HealthStatus = "ok" | "warning" | "critical" | "off";
+export type HealthReport = {
+  ok: boolean;
+  time: string | null;
+  db: { ok: boolean; latency_ms: number | null; error?: string } | null;
+  storage: { bound: boolean; ok: boolean; latency_ms: number | null } | null;
+  counts: Record<string, number | string | null>;
+  checks: { key: string; label: string; value: string; status: HealthStatus; summary: string; detail?: string }[];
+  problems: { at: string; what: string; where?: string | null; error?: string | null }[];
+};
 
 export type Ticket = typeof tickets.$inferSelect;
 export type TicketEvent = typeof ticketEvents.$inferSelect;
