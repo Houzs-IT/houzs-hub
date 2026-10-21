@@ -1,14 +1,20 @@
-import { ExternalLink, Pencil, Plus, RefreshCw, RotateCw } from "lucide-react";
+import { Pencil, Plus, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { api, json, type HealthCheck, type HealthTarget } from "../api/client";
+import { api, json, type HealthCheck, type HealthReportRow, type HealthTarget } from "../api/client";
+import { HealthReportView } from "../components/HealthReport";
 import { SystemTag } from "../components/Bits";
 import { EditDialog, Field, Select } from "../components/BillingForm";
 import { useHub } from "../components/Layout";
 import { fmtAgo, fmtDateTime } from "../lib/format";
 import { usePoll } from "../lib/usePoll";
 
-type Data = { targets: HealthTarget[]; checks: HealthCheck[]; systems: { code: string; name: string }[] };
+type Data = {
+  targets: HealthTarget[];
+  checks: HealthCheck[];
+  systems: { code: string; name: string }[];
+  reports: { latest: HealthReportRow[]; history: { systemCode: string; receivedAt: string; ok: number }[] };
+};
 type State = "up" | "slow" | "down" | "none";
 
 // Slower than this counts as Slow: still answering, but staff would notice.
@@ -110,10 +116,19 @@ export default function HealthPage() {
   const slow = states.filter((s) => s === "slow").length;
   const waiting = states.filter((s) => s === "none").length;
   // Systems with their own health page get a tab that shows that page inside the hub.
-  const embeddable = data?.targets.filter((t) => t.pageUrl) ?? [];
-  const embedded = embeddable.find((t) => String(t.id) === tabParam) ?? null;
-  const tab = embedded ? tabParam : "all";
-  const latestOf = (id: number) => data?.checks.find((c) => c.targetId === id);
+  // One tab per hub system that is checked or has sent a health report, showing that report.
+  const reportOf = (code: string) => data?.reports.latest.find((r) => r.systemCode === code) ?? null;
+  const systemTabs = (data?.systems ?? []).filter((s) => data?.targets.some((t) => t.systemCode === s.code) || reportOf(s.code));
+  const current = systemTabs.find((s) => s.code === tabParam) ?? null;
+  const tab = current ? tabParam : "all";
+  const tabState = (code: string): State => {
+    const ids = data?.targets.filter((t) => t.systemCode === code && t.active).map((t) => t.id) ?? [];
+    const states = ids.map((id) => stateOf(data?.checks.find((c) => c.targetId === id)));
+    const report = reportOf(code);
+    if (states.includes("down") || (report && !report.ok)) return "down";
+    if (states.includes("slow")) return "slow";
+    return states.includes("up") || report ? "up" : "none";
+  };
 
   return (
     <div className="h-full overflow-auto px-4 py-6 md:px-8">
@@ -122,8 +137,8 @@ export default function HealthPage() {
           <div className="eyebrow">Houzs Hub · Admin</div>
           <h1 className="mt-1 text-[24px] font-extrabold tracking-tight text-ink">System health</h1>
           <p className="mt-1 max-w-2xl text-[13px] text-ink-subtle">
-            The hub checks each system every 5 minutes: whether it answers, how fast, and which version it runs. Each system's own health
-            page opens in its tab here, after you sign in to that system. Refreshes every minute.
+            The hub checks each system every 5 minutes: whether it answers, how fast, and which version it runs. Each system also sends the
+            hub its own health report with its hub key, shown in its tab. Refreshes every minute.
           </p>
         </div>
         {canEdit && tabParam === "all" && (
@@ -147,7 +162,7 @@ export default function HealthPage() {
 
       {data && (
         <div role="tablist" className="mt-4 flex gap-1 overflow-x-auto overflow-y-hidden whitespace-nowrap border-b border-line">
-          {[{ key: "all", label: "All systems", state: null as State | null }, ...embeddable.map((t) => ({ key: String(t.id), label: t.name, state: stateOf(latestOf(t.id)) }))].map((x) => (
+          {[{ key: "all", label: "All systems", state: null as State | null }, ...systemTabs.map((x) => ({ key: x.code, label: x.name, state: tabState(x.code) }))].map((x) => (
             <button
               key={x.key}
               role="tab"
@@ -164,7 +179,14 @@ export default function HealthPage() {
         </div>
       )}
 
-      {data && embedded && <Embedded target={embedded} state={stateOf(latestOf(embedded.id))} />}
+      {data && current && (
+        <HealthReportView
+          name={current.name}
+          report={reportOf(current.code)}
+          history={data.reports.history.filter((h) => h.systemCode === current.code)}
+          pageUrl={data.targets.find((t) => t.systemCode === current.code && t.pageUrl)?.pageUrl ?? ""}
+        />
+      )}
 
       {data && tab === "all" && active.length > 0 && (
         <div
@@ -239,9 +261,9 @@ export default function HealthPage() {
                 </div>
               </div>
 
-              {t.pageUrl && (
-                <button className="btn-default mt-3 h-8 w-full px-3" onClick={() => showTab(String(t.id))}>
-                  Show its health page
+              {t.systemCode && (
+                <button className="btn-default mt-3 h-8 w-full px-3" onClick={() => showTab(t.systemCode!)}>
+                  Show its full health
                 </button>
               )}
             </section>
@@ -289,36 +311,6 @@ function Stat({ label, value, note }: { label: string; value: string; note: stri
         {value}
       </dd>
       {note && <dd className="text-[11px] text-ink-subtle">{note}</dd>}
-    </div>
-  );
-}
-
-// A system's own health page, shown inside the hub. The person signs in to that
-// system here the first time; the hub never sees or stores that sign-in.
-function Embedded({ target, state }: { target: HealthTarget; state: State }) {
-  const [reload, setReload] = useState(0);
-  return (
-    <div className="mt-3">
-      <div className="flex flex-wrap items-center gap-2 text-[12.5px] text-ink-subtle">
-        <span className={`pill ${STATE[state].pill}`}>{STATE[state].label}</span>
-        <span className="min-w-0 flex-1">
-          {target.name}'s own health page. Sign in to {target.name} in the box below the first time. If it keeps asking you to sign in, use
-          Open in its own tab.
-        </span>
-        <button className="btn-subtle h-8 px-2.5" onClick={() => setReload((n) => n + 1)}>
-          <RotateCw className="h-3.5 w-3.5" /> Reload
-        </button>
-        <a href={target.pageUrl} target="_blank" rel="noopener noreferrer" className="btn-default h-8 px-3">
-          Open in its own tab <ExternalLink className="h-3.5 w-3.5" />
-        </a>
-      </div>
-      <iframe
-        key={`${target.id}-${reload}`}
-        src={target.pageUrl}
-        title={`${target.name} health page`}
-        referrerPolicy="strict-origin-when-cross-origin"
-        className="mt-2 h-[calc(100vh-240px)] min-h-[480px] w-full rounded-[10px] border border-line bg-surface"
-      />
     </div>
   );
 }

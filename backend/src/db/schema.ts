@@ -1,4 +1,4 @@
-import { integer, numeric, pgTable, primaryKey, text } from "drizzle-orm/pg-core";
+import { integer, jsonb, numeric, pgTable, primaryKey, text } from "drizzle-orm/pg-core";
 
 export const TICKET_TYPES = ["bug", "development"] as const;
 export const TICKET_PRIORITIES = ["urgent", "high", "medium", "low"] as const;
@@ -236,6 +236,26 @@ export const healthChecks = pgTable("health_checks", {
   version: text("version"),
   error: text("error"),
 });
+
+// A system's own health report, sent with its hub key (see routes/sysHealth.ts).
+export const healthReports = pgTable("health_reports", {
+  id: id(),
+  systemCode: text("system_code").notNull(),
+  receivedAt: text("received_at").notNull(),
+  ok: integer("ok").notNull(),
+  report: jsonb("report").$type<HealthReport>().notNull(),
+});
+
+export type HealthStatus = "ok" | "warning" | "critical" | "off";
+export type HealthReport = {
+  ok: boolean;
+  time: string | null;
+  db: { ok: boolean; latency_ms: number | null; error?: string } | null;
+  storage: { bound: boolean; ok: boolean; latency_ms: number | null } | null;
+  counts: Record<string, number | string | null>;
+  checks: { key: string; label: string; value: string; status: HealthStatus; summary: string; detail?: string }[];
+  problems: { at: string; what: string; where?: string | null; error?: string | null }[];
+};
 
 export type Ticket = typeof tickets.$inferSelect;
 export type TicketEvent = typeof ticketEvents.$inferSelect;

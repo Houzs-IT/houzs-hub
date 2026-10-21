@@ -46,7 +46,8 @@ function readTarget(b: Record<string, unknown>, isNew: boolean): Record<string, 
 health.get("/", need("health_view", "health_edit"), async (c) => {
   const db = c.get("db");
   const since = new Date(Date.now() - 86400_000).toISOString();
-  const [targets, checks, systems] = await Promise.all([
+  const r = schema.healthReports;
+  const [targets, checks, systems, latest, history] = await Promise.all([
     db.select().from(t).orderBy(asc(t.sort), asc(t.id)),
     db
       .select({ targetId: h.targetId, checkedAt: h.checkedAt, ok: h.ok, status: h.status, ms: h.ms, version: h.version, error: h.error })
@@ -54,8 +55,14 @@ health.get("/", need("health_view", "health_edit"), async (c) => {
       .where(gte(h.checkedAt, since))
       .orderBy(desc(h.checkedAt)),
     db.select({ code: schema.systems.code, name: schema.systems.name }).from(schema.systems).orderBy(asc(schema.systems.name)),
+    // The newest report of each system that has ever sent one.
+    db
+      .selectDistinctOn([r.systemCode], { systemCode: r.systemCode, receivedAt: r.receivedAt, ok: r.ok, report: r.report })
+      .from(r)
+      .orderBy(r.systemCode, desc(r.receivedAt)),
+    db.select({ systemCode: r.systemCode, receivedAt: r.receivedAt, ok: r.ok }).from(r).where(gte(r.receivedAt, since)).orderBy(desc(r.receivedAt)),
   ]);
-  return c.json({ targets, checks, systems });
+  return c.json({ targets, checks, systems, reports: { latest, history } });
 });
 
 health.post("/check-now", need("health_edit"), async (c) => {

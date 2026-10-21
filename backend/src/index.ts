@@ -4,6 +4,7 @@ import { getDb, schema } from "./db/client";
 import auth from "./routes/auth";
 import dev from "./routes/dev";
 import sys from "./routes/sys";
+import sysHealth from "./routes/sysHealth";
 import { notifyTicketsChanged } from "./live";
 import { runHealthChecks } from "./services/health";
 import { nowIso } from "./services/tickets";
@@ -15,6 +16,8 @@ const app = new Hono<{ Bindings: Env }>();
 
 app.get("/api/health", (c) => c.json({ ok: true, service: "houzs-it-hub" }));
 app.route("/api/v1/auth", auth);
+// Before the ticket routes: a health report is sent by a system, not on behalf of a person.
+app.route("/api/v1/sys/health", sysHealth);
 app.route("/api/v1/sys", sys);
 app.route("/api/v1/dev", dev);
 app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
