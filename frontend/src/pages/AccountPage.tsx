@@ -2,17 +2,22 @@ import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { api, json, type User } from "../api/client";
 import { useHub } from "../components/Layout";
 import PasswordForm from "../components/PasswordForm";
+import SoundTrimDialog, { type SoundTrimSource } from "../components/SoundTrimDialog";
 import {
   DEFAULT_SOUND,
   SOUND_LABELS,
+  loadCustomSoundFile,
   loadCustomSoundName,
+  loadCustomTrim,
   loadSound,
   loadVolume,
   playSound,
+  readCustomSoundFile,
   saveCustomSound,
   saveSound,
   saveVolume,
   type SoundChoice,
+  type SoundTrim,
 } from "../lib/sound";
 
 const SOUND_CHOICES = Object.keys(SOUND_LABELS).filter((key): key is SoundChoice => key in SOUND_LABELS);
@@ -29,6 +34,8 @@ export default function AccountPage() {
   const [customSoundName, setCustomSoundName] = useState(loadCustomSoundName);
   const [soundError, setSoundError] = useState<string | null>(null);
   const [volume, setVolume] = useState(loadVolume);
+  const [customTrim, setCustomTrim] = useState(loadCustomTrim);
+  const [trimSource, setTrimSource] = useState<SoundTrimSource | null>(null);
   const soundFileInput = useRef<HTMLInputElement>(null);
 
   function chooseSound(choice: SoundChoice) {
@@ -49,15 +56,31 @@ export default function AccountPage() {
     e.target.value = "";
     if (!file) return;
     try {
-      await saveCustomSound(file);
-      setCustomSoundName(file.name);
       setSoundError(null);
-      setSound("custom");
-      saveSound("custom");
-      playSound("custom", volume);
+      setTrimSource({ dataUrl: await readCustomSoundFile(file), name: file.name, trim: null });
     } catch (err) {
       setSoundError((err as Error).message);
     }
+  }
+
+  function trimSavedSound() {
+    const dataUrl = loadCustomSoundFile();
+    if (dataUrl && customSoundName) setTrimSource({ dataUrl, name: customSoundName, trim: customTrim });
+  }
+
+  function saveTrimmedSound(trim: SoundTrim) {
+    if (!trimSource) return;
+    try {
+      saveCustomSound(trimSource.dataUrl, trimSource.name, trim);
+      setCustomSoundName(trimSource.name);
+      setCustomTrim(trim);
+      setSound("custom");
+      saveSound("custom");
+      setSoundError(null);
+    } catch (err) {
+      setSoundError((err as Error).message);
+    }
+    setTrimSource(null);
   }
 
   async function saveName(e: FormEvent) {
@@ -175,14 +198,21 @@ export default function AccountPage() {
               <button type="button" className="btn-default min-h-10" onClick={() => soundFileInput.current?.click()}>
                 Upload
               </button>
+              {customSoundName && (
+                <button type="button" className="btn-default min-h-10" onClick={trimSavedSound}>
+                  Trim
+                </button>
+              )}
               <span className="min-w-0 truncate text-ink-subtle">
-                {customSoundName ?? `No file yet, plays ${SOUND_LABELS[DEFAULT_SOUND]}.`}
+                {customSoundName
+                  ? `${customSoundName}${customTrim ? ` · ${(customTrim.end - customTrim.start).toFixed(2)}s` : ""}`
+                  : `No file yet, plays ${SOUND_LABELS[DEFAULT_SOUND]}.`}
               </span>
             </div>
           )}
           {sound !== "off" && (
-            <label className="mt-4 flex items-center gap-3 text-[12px] font-semibold text-ink-subtle">
-              Volume
+            <label className="mt-3 flex items-center gap-3 text-[12px] font-semibold text-ink-subtle">
+              <span className="w-14">Volume</span>
               <input
                 type="range"
                 min={0}
@@ -194,7 +224,7 @@ export default function AccountPage() {
                 onKeyUp={(e) => e.key !== "Tab" && playSound(sound, volume)}
                 className="h-10 min-w-0 flex-1 accent-primary"
               />
-              <span className="w-9 text-right tabular-nums">{volume}%</span>
+              <span className="w-12 text-right tabular-nums">{volume}%</span>
             </label>
           )}
           {soundError && (
@@ -204,6 +234,7 @@ export default function AccountPage() {
           )}
         </div>
       </div>
+      <SoundTrimDialog source={trimSource} volume={volume} onSave={saveTrimmedSound} onClose={() => setTrimSource(null)} />
     </div>
   );
 }
