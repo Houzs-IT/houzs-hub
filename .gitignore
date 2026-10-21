@@ -6,3 +6,8 @@ dist/
 .env
 .env.local
 CLAUDE.md
+DESIGN.MD
+PRODUCT.MD
+.impeccable
+.claude/
+graphify-out/

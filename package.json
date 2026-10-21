@@ -4,8 +4,7 @@
   "private": true,
   "description": "Houzs IT Hub — central ticketing for Hookka, Houzs Century, Houzs ERP and 2990s. One Worker serves the API and the developer portal SPA.",
   "scripts": {
-    "dev:backend": "npm --prefix backend run dev",
-    "dev:frontend": "npm --prefix frontend run dev",
+    "dev": "node scripts/dev.mjs",
     "build": "npm --prefix frontend run build",
     "typecheck": "npm --prefix backend run typecheck && npm --prefix frontend run typecheck",
     "deploy": "npm run build && npm --prefix backend run deploy",

@@ -7,9 +7,11 @@ import {
   SOUND_LABELS,
   loadCustomSoundName,
   loadSound,
+  loadVolume,
   playSound,
   saveCustomSound,
   saveSound,
+  saveVolume,
   type SoundChoice,
 } from "../lib/sound";
 
@@ -26,17 +28,20 @@ export default function AccountPage() {
   const [sound, setSound] = useState<SoundChoice>(loadSound);
   const [customSoundName, setCustomSoundName] = useState(loadCustomSoundName);
   const [soundError, setSoundError] = useState<string | null>(null);
+  const [volume, setVolume] = useState(loadVolume);
   const soundFileInput = useRef<HTMLInputElement>(null);
 
   function chooseSound(choice: SoundChoice) {
     setSoundError(null);
-    if (choice === "custom" && !customSoundName) {
-      soundFileInput.current?.click();
-      return;
-    }
     setSound(choice);
     saveSound(choice);
-    playSound(choice);
+    if (choice !== "custom" || customSoundName) playSound(choice, volume);
+  }
+
+  function changeVolume(e: ChangeEvent<HTMLInputElement>) {
+    const next = Number(e.target.value);
+    setVolume(next);
+    saveVolume(next);
   }
 
   async function uploadSound(e: ChangeEvent<HTMLInputElement>) {
@@ -49,7 +54,7 @@ export default function AccountPage() {
       setSoundError(null);
       setSound("custom");
       saveSound("custom");
-      playSound("custom");
+      playSound("custom", volume);
     } catch (err) {
       setSoundError((err as Error).message);
     }
@@ -165,13 +170,32 @@ export default function AccountPage() {
             ))}
           </div>
           <input ref={soundFileInput} type="file" accept="audio/*" className="hidden" onChange={uploadSound} />
-          {(sound === "custom" || customSoundName) && (
+          {sound === "custom" && (
             <div className="mt-3 flex flex-wrap items-center gap-2 text-[12.5px]">
-              <span className="min-w-0 truncate text-ink-subtle">{customSoundName ?? "No file yet"}</span>
               <button type="button" className="btn-default min-h-10" onClick={() => soundFileInput.current?.click()}>
-                {customSoundName ? "Upload another" : "Upload sound"}
+                Upload
               </button>
+              <span className="min-w-0 truncate text-ink-subtle">
+                {customSoundName ?? `No file yet, plays ${SOUND_LABELS[DEFAULT_SOUND]}.`}
+              </span>
             </div>
+          )}
+          {sound !== "off" && (
+            <label className="mt-4 flex items-center gap-3 text-[12px] font-semibold text-ink-subtle">
+              Volume
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={5}
+                value={volume}
+                onChange={changeVolume}
+                onPointerUp={() => playSound(sound, volume)}
+                onKeyUp={(e) => e.key !== "Tab" && playSound(sound, volume)}
+                className="h-10 min-w-0 flex-1 accent-primary"
+              />
+              <span className="w-9 text-right tabular-nums">{volume}%</span>
+            </label>
           )}
           {soundError && (
             <p role="alert" className="mt-2 rounded-md bg-loz-red px-3 py-2 text-[12.5px] font-medium text-loz-red-ink">

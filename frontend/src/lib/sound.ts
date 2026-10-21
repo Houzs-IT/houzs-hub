@@ -7,6 +7,8 @@ export const MAX_CUSTOM_BYTES = 500_000;
 const KEY = "it-hub-sound";
 const CUSTOM_FILE_KEY = "it-hub-sound-file";
 const CUSTOM_NAME_KEY = "it-hub-sound-name";
+const VOLUME_KEY = "it-hub-sound-volume";
+export const DEFAULT_VOLUME = 80;
 
 function isSoundChoice(value: string | null): value is SoundChoice {
   return value !== null && Object.hasOwn(SOUND_LABELS, value);
@@ -34,6 +36,17 @@ export function saveSound(choice: SoundChoice): void {
   }
 }
 
+export function loadVolume(): number {
+  const saved = Number(readStorage(VOLUME_KEY) ?? DEFAULT_VOLUME);
+  return Number.isFinite(saved) ? Math.min(100, Math.max(0, saved)) : DEFAULT_VOLUME;
+}
+
+export function saveVolume(volume: number): void {
+  try {
+    localStorage.setItem(VOLUME_KEY, String(volume));
+  } catch {}
+}
+
 export function loadCustomSoundName(): string | null {
   return readStorage(CUSTOM_NAME_KEY);
 }
@@ -59,7 +72,8 @@ export async function saveCustomSound(file: File): Promise<void> {
   }
 }
 
-function playChime(): void {
+function playChime(volumeScale: number): void {
+  if (volumeScale <= 0) return;
   try {
     const audio = new AudioContext();
     [880, 1320].forEach((frequency, index) => {
@@ -68,7 +82,7 @@ function playChime(): void {
       const startAt = audio.currentTime + index * 0.12;
       oscillator.frequency.value = frequency;
       volume.gain.setValueAtTime(0.0001, startAt);
-      volume.gain.exponentialRampToValueAtTime(0.08, startAt + 0.02);
+      volume.gain.exponentialRampToValueAtTime(0.08 * volumeScale, startAt + 0.02);
       volume.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.3);
       oscillator.connect(volume).connect(audio.destination);
       oscillator.start(startAt);
@@ -78,10 +92,13 @@ function playChime(): void {
   } catch {}
 }
 
-export function playSound(choice: SoundChoice = loadSound()): void {
-  if (choice === "chime") playChime();
-  if (choice === "custom") {
-    const file = readStorage(CUSTOM_FILE_KEY);
-    if (file) new Audio(file).play().catch(() => {});
-  }
+export function playSound(choice: SoundChoice = loadSound(), volume: number = loadVolume()): void {
+  if (choice === "off") return;
+  const volumeScale = volume / 100;
+  const file = choice === "custom" ? readStorage(CUSTOM_FILE_KEY) : null;
+  // Custom picked but nothing uploaded yet: Chime, so a new ticket is never silent by accident.
+  if (!file) return playChime(volumeScale);
+  const audio = new Audio(file);
+  audio.volume = volumeScale;
+  audio.play().catch(() => {});
 }
