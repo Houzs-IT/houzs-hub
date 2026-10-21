@@ -29,6 +29,7 @@ import { broadcastTicketChanges, getLiveRoom } from "../live";
 import accounts from "./accounts";
 import admin, { isUniqueViolation } from "./admin";
 import billing from "./billing";
+import health from "./health";
 import notifications, { countUnread } from "./notifications";
 
 const dev = new Hono<DevApp>();
@@ -51,6 +52,7 @@ const PAGE_SIZE = 50;
 dev.route("/admin", admin);
 dev.route("/accounts", accounts);
 dev.route("/billing", billing);
+dev.route("/health", health);
 dev.route("/notifications", notifications);
 
 dev.get("/live", need("it"), (c) => {

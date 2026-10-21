@@ -212,6 +212,31 @@ export const statementLines = pgTable("statement_lines", {
   updatedBy: text("updated_by"),
 });
 
+// System health: what the hub checks, and the results (7 days kept).
+export const healthTargets = pgTable("health_targets", {
+  id: id(),
+  name: text("name").notNull(),
+  systemCode: text("system_code"),
+  checkUrl: text("check_url").notNull(),
+  pageUrl: text("page_url").notNull().default(""),
+  sort: integer("sort").notNull().default(0),
+  active: integer("active").notNull().default(1),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  updatedBy: text("updated_by"),
+});
+
+export const healthChecks = pgTable("health_checks", {
+  id: id(),
+  targetId: integer("target_id").notNull(),
+  checkedAt: text("checked_at").notNull(),
+  ok: integer("ok").notNull(),
+  status: integer("status"),
+  ms: integer("ms"),
+  version: text("version"),
+  error: text("error"),
+});
+
 export type Ticket = typeof tickets.$inferSelect;
 export type TicketEvent = typeof ticketEvents.$inferSelect;
 export type TicketAttachment = typeof ticketAttachments.$inferSelect;

@@ -6,6 +6,8 @@ export const PERMISSIONS = [
   { key: "users", label: "Manage users", hint: "Add users, reset passwords, switch accounts off" },
   { key: "roles", label: "Manage roles", hint: "Create and rename roles, set permissions, assign roles and overrides" },
   { key: "integrations", label: "See Integrations", hint: "Whether each system is connected to the hub" },
+  { key: "health_view", label: "See system health", hint: "The System health page: whether each system is up, how fast and which version" },
+  { key: "health_edit", label: "Edit system health", hint: "Add, change and remove the systems the hub checks, and run a check now" },
   { key: "accounts_view", label: "See account ownership", hint: "The Account ownership page under Finance: every outside account and who controls it" },
   { key: "accounts_edit", label: "Edit account ownership", hint: "Add, change and remove accounts on the Account ownership page" },
   { key: "billing_view", label: "See system billing", hint: "The System billing pages under Finance: what each service costs and which card pays" },

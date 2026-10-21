@@ -1,4 +1,4 @@
-import { Bell, ChevronDown, CreditCard, KanbanSquare, KeySquare, List, LogOut, Menu, Moon, Plug, ShieldCheck, Sun, UserCheck, UserCog, Users } from "lucide-react";
+import { Activity, Bell, ChevronDown, CreditCard, KanbanSquare, KeySquare, List, LogOut, Menu, Moon, Plug, ShieldCheck, Sun, UserCheck, UserCog, Users } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { Link, Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
 import { api, json, type Perm, type User, type SystemRow } from "../api/client";
@@ -29,6 +29,7 @@ const PAGE_NAMES: Record<string, string> = {
   "/roles": "Roles",
   "/accounts": "Account ownership",
   "/billing": "System billing",
+  "/health": "System health",
 };
 
 // A sidebar category's open or closed state, remembered in this browser.
@@ -335,7 +336,9 @@ export default function Layout() {
     ? "/users"
     : can("integrations")
       ? "/integrations"
-      : can("accounts_view", "accounts_edit")
+      : can("health_view", "health_edit")
+        ? "/health"
+        : can("accounts_view", "accounts_edit")
         ? "/accounts"
         : can("billing_view", "billing_edit")
           ? "/billing"
@@ -438,12 +441,13 @@ export default function Layout() {
             )}
 
             {/* Only hides the links; each admin API route checks its own permission. */}
-            {can("users", "roles", "integrations") && (
+            {can("users", "roles", "integrations", "health_view", "health_edit") && (
               <>
                 <div className="px-2.5 pb-1 pt-5 text-[9.5px] font-bold uppercase tracking-brand text-sidebar-ink-muted">Admin</div>
                 {can("users", "roles") && <NavItem to="/users" icon={<Users className="h-4 w-4" />} label="Users" />}
                 {can("roles") && <NavItem to="/roles" icon={<ShieldCheck className="h-4 w-4" />} label="Roles" />}
                 {can("integrations") && <NavItem to="/integrations" icon={<Plug className="h-4 w-4" />} label="Integrations" />}
+                {can("health_view", "health_edit") && <NavItem to="/health" icon={<Activity className="h-4 w-4" />} label="System health" />}
               </>
             )}
           </nav>

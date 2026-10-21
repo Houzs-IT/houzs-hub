@@ -61,6 +61,8 @@ comes from their role, set on the **Roles** page:
 | See Integrations | The Integrations page: whether each system is connected |
 | See account ownership | The Account ownership page: every outside account and who controls it |
 | Edit account ownership | Adding, changing and removing accounts on the Account ownership page |
+| See system health | The System health page: each system up or down, its speed and version, checked every 5 minutes |
+| Edit system health | Adding, changing and pausing the systems the hub checks, and Check now |
 | See system billing | The System billing pages under Finance: what each service costs and which card pays |
 | Edit system billing | Adding, changing and removing charges, cards and statement lines |
 

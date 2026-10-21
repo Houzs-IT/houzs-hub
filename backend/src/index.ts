@@ -5,6 +5,7 @@ import auth from "./routes/auth";
 import dev from "./routes/dev";
 import sys from "./routes/sys";
 import { notifyTicketsChanged } from "./live";
+import { runHealthChecks } from "./services/health";
 import { nowIso } from "./services/tickets";
 import type { Env } from "./types";
 
@@ -50,7 +51,11 @@ async function autoCloseResolved(env: Env) {
 
 export default {
   fetch: app.fetch,
-  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
-    ctx.waitUntil(autoCloseResolved(env));
+  // One cron, every 5 minutes, so the hub adds no trigger to its account's quota:
+  // health checks run each time, the ticket auto-close once a day at 02:00 UTC (10:00 GMT+8).
+  async scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(runHealthChecks(getDb(env)));
+    const at = new Date(event.scheduledTime);
+    if (at.getUTCHours() === 2 && at.getUTCMinutes() < 5) ctx.waitUntil(autoCloseResolved(env));
   },
 } satisfies ExportedHandler<Env>;

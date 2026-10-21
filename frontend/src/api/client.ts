@@ -13,7 +13,31 @@ export type Perm =
   | "accounts_view"
   | "accounts_edit"
   | "billing_view"
-  | "billing_edit";
+  | "billing_edit"
+  | "health_view"
+  | "health_edit";
+
+export type HealthTarget = {
+  id: number;
+  name: string;
+  systemCode: string | null;
+  checkUrl: string;
+  pageUrl: string;
+  sort: number;
+  active: number;
+  updatedAt: string;
+  updatedBy: string | null;
+};
+export type HealthCheck = {
+  targetId: number;
+  checkedAt: string;
+  ok: number;
+  status: number | null;
+  ms: number | null;
+  version: string | null;
+  error: string | null;
+};
+
 export type User = {
   id: number;
   name: string;
