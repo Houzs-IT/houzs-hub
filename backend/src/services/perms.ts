@@ -6,10 +6,10 @@ export const PERMISSIONS = [
   { key: "users", label: "Manage users", hint: "Add users, reset passwords, switch accounts off" },
   { key: "roles", label: "Manage roles", hint: "Create and rename roles, set permissions, assign roles and overrides" },
   { key: "integrations", label: "See Integrations", hint: "Whether each system is connected to the hub" },
-  { key: "accounts_view", label: "See accounts", hint: "The Accounts page: every outside account and who controls it" },
+  { key: "accounts_view", label: "See accounts", hint: "The Accounts page under Finance: every outside account and who controls it" },
   { key: "accounts_edit", label: "Edit accounts", hint: "Add, change and remove accounts on the Accounts page" },
-  { key: "billing_view", label: "See billing", hint: "The Billing page: what each service costs and which card pays" },
-  { key: "billing_edit", label: "Edit billing", hint: "Add, change and remove charges and cards on the Billing page" },
+  { key: "billing_view", label: "See system billing", hint: "The System billing pages under Finance: what each service costs and which card pays" },
+  { key: "billing_edit", label: "Edit system billing", hint: "Add, change and remove charges, cards and statement lines under System billing" },
 ] as const;
 
 export type Perm = (typeof PERMISSIONS)[number]["key"];

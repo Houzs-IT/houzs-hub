@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useSearchParams } from "react-router-dom";
 import { api, json, type BillingData as Data, type CardRow, type ChargeRow, type ChargeStatus } from "../api/client";
 import { EditDialog, Field, Select, money } from "../components/BillingForm";
-import { useHub } from "../components/Layout";
+import { BILLING_TABS, useHub, type BillingTab as Tab } from "../components/Layout";
 import { Monthly, Statements, Trend } from "./BillingStatements";
 
 const STATUS: Record<ChargeStatus, { label: string; pill: string }> = {
@@ -14,15 +14,6 @@ const STATUS: Record<ChargeStatus, { label: string; pill: string }> = {
   cancelled: { label: "Cancelled", pill: "bg-loz-grey text-loz-grey-ink" },
 };
 const STATUS_ORDER = Object.keys(STATUS) as ChargeStatus[];
-const TABS = [
-  { key: "overview", label: "Overview" },
-  { key: "register", label: "Register" },
-  { key: "cards", label: "Cards" },
-  { key: "statements", label: "Statements" },
-  { key: "monthly", label: "Monthly" },
-  { key: "trend", label: "Trend" },
-] as const;
-type Tab = (typeof TABS)[number]["key"];
 const NO_CARD = "No card";
 // A blank card is "we don't know yet", which is not the same as "paid without a card".
 const UNKNOWN_CARD = "Card not known";
@@ -63,7 +54,7 @@ export default function BillingPage() {
   const { me } = useHub();
   const canEdit = !!me.perms?.includes("billing_edit");
   const [params, setParams] = useSearchParams();
-  const tab = (TABS.some((t) => t.key === params.get("tab")) ? params.get("tab") : "overview") as Tab;
+  const tab = (BILLING_TABS.some(([k]) => k === params.get("tab")) ? params.get("tab") : "overview") as Tab;
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -79,25 +70,25 @@ export default function BillingPage() {
 
   return (
     <div className="h-full overflow-auto px-4 py-6 md:px-8">
-      <div className="eyebrow">Houzs Hub · Admin</div>
-      <h1 className="mt-1 text-[24px] font-extrabold tracking-tight text-ink">Billing</h1>
+      <div className="eyebrow">Houzs Hub · Finance</div>
+      <h1 className="mt-1 text-[24px] font-extrabold tracking-tight text-ink">System billing</h1>
       <p className="mt-1 max-w-2xl text-[13px] text-ink-subtle">
         What each outside service costs and which company card pays for it. Amounts are each vendor's latest bill. Cards are kept
         by their last 4 digits only.
       </p>
 
-      <div role="tablist" className="mt-4 flex gap-1 border-b border-line">
-        {TABS.map((t) => (
+      <div role="tablist" className="mt-4 flex gap-1 overflow-x-auto overflow-y-hidden whitespace-nowrap border-b border-line">
+        {BILLING_TABS.map(([key, label]) => (
           <button
-            key={t.key}
+            key={key}
             role="tab"
-            aria-selected={tab === t.key}
-            onClick={() => setParams(t.key === "overview" ? {} : { tab: t.key }, { replace: true })}
+            aria-selected={tab === key}
+            onClick={() => setParams({ tab: key }, { replace: true })}
             className={`tap -mb-px border-b-2 px-3 py-2 text-[13px] font-semibold ${
-              tab === t.key ? "border-primary text-ink" : "border-transparent text-ink-subtle hover:text-ink"
+              tab === key ? "border-primary text-ink" : "border-transparent text-ink-subtle hover:text-ink"
             }`}
           >
-            {t.label}
+            {label}
           </button>
         ))}
       </div>

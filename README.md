@@ -61,10 +61,10 @@ comes from their role, set on the **Roles** page:
 | See Integrations | The Integrations page: whether each system is connected |
 | See accounts | The Accounts page: every outside account and who controls it |
 | Edit accounts | Adding, changing and removing accounts on the Accounts page |
-| See billing | The Billing page: what each service costs and which card pays |
-| Edit billing | Adding, changing and removing charges and cards on the Billing page |
+| See system billing | The System billing pages under Finance: what each service costs and which card pays |
+| Edit system billing | Adding, changing and removing charges, cards and statement lines |
 
-The Accounts and Billing pages replace the API card register sheet (all its tabs:
+The Finance pages (Accounts and System billing) replace the API card register sheet (all its tabs:
 Ownership, Register, Overview, Cards, Statement lines, Monthly tally and Trend). Card
 statement lines are added on the page, one by one or pasted from a statement. They hold names, emails, roles, amounts and the last
 4 digits of a card only, never passwords, API keys or full card numbers. To load the
