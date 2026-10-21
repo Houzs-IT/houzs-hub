@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, type TicketRow } from "../api/client";
 import { PRIORITY_LABEL } from "../lib/labels";
+import { playSound } from "../lib/sound";
 import { usePoll } from "../lib/usePoll";
 import { PriorityIcon, SystemTag } from "./Bits";
 import { useHub } from "./Layout";
@@ -12,25 +13,6 @@ const BACKUP_CHECK_MS = 60_000;
 const RECONNECT_FIRST_MS = 2_000;
 const RECONNECT_MAX_MS = 60_000;
 const MAX_TOASTS = 3;
-
-function playChime() {
-  try {
-    const audio = new AudioContext();
-    [880, 1320].forEach((frequency, index) => {
-      const oscillator = audio.createOscillator();
-      const volume = audio.createGain();
-      const startAt = audio.currentTime + index * 0.12;
-      oscillator.frequency.value = frequency;
-      volume.gain.setValueAtTime(0.0001, startAt);
-      volume.gain.exponentialRampToValueAtTime(0.08, startAt + 0.02);
-      volume.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.3);
-      oscillator.connect(volume).connect(audio.destination);
-      oscillator.start(startAt);
-      oscillator.stop(startAt + 0.3);
-    });
-    setTimeout(() => audio.close(), 800);
-  } catch {}
-}
 
 // Ticket news arrives over the live socket; the backup check catches anything sent while it was down.
 export default function NewTicketToasts() {
@@ -47,7 +29,7 @@ export default function NewTicketToasts() {
       if (!newTickets.length) return;
       newestSeenAt.current = newTickets.reduce((newest, ticket) => (ticket.created_at > newest ? ticket.created_at : newest), seenUpTo);
       setToasts((current) => [...newTickets, ...current].slice(0, MAX_TOASTS));
-      playChime();
+      playSound();
       refresh();
     },
     [refresh],
