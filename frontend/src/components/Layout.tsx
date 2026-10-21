@@ -27,7 +27,7 @@ const PAGE_NAMES: Record<string, string> = {
   "/account": "My account",
   "/integrations": "Integrations",
   "/roles": "Roles",
-  "/accounts": "Accounts",
+  "/accounts": "Account ownership",
   "/billing": "System billing",
 };
 
@@ -432,7 +432,7 @@ export default function Layout() {
             )}
             {financeOpen && (
               <>
-                {can("accounts_view", "accounts_edit") && <NavItem to="/accounts" icon={<KeySquare className="h-4 w-4" />} label="Accounts" />}
+                {can("accounts_view", "accounts_edit") && <NavItem to="/accounts" icon={<KeySquare className="h-4 w-4" />} label="Account ownership" />}
                 {can("billing_view", "billing_edit") && <NavItem to="/billing" icon={<CreditCard className="h-4 w-4" />} label="System billing" />}
               </>
             )}
