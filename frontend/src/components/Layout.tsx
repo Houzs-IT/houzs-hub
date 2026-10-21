@@ -31,17 +31,6 @@ const PAGE_NAMES: Record<string, string> = {
   "/billing": "System billing",
 };
 
-// The System billing page's tabs, also listed under Finance in the sidebar.
-export const BILLING_TABS = [
-  ["overview", "Overview"],
-  ["register", "Register"],
-  ["cards", "Cards"],
-  ["statements", "Statements"],
-  ["monthly", "Monthly"],
-  ["trend", "Trend"],
-] as const;
-export type BillingTab = (typeof BILLING_TABS)[number][0];
-
 // A sidebar category's open or closed state, remembered in this browser.
 function useSectionOpen(key: string): [boolean, () => void] {
   const [open, setOpen] = useState(() => {
@@ -444,16 +433,7 @@ export default function Layout() {
             {financeOpen && (
               <>
                 {can("accounts_view", "accounts_edit") && <NavItem to="/accounts" icon={<KeySquare className="h-4 w-4" />} label="Accounts" />}
-                {can("billing_view", "billing_edit") && (
-                  <>
-                    <div className="flex items-center gap-1.5 px-2.5 pb-1 pt-3 text-[9px] font-semibold uppercase tracking-brand text-sidebar-ink-muted">
-                      <CreditCard className="h-3 w-3" /> System billing
-                    </div>
-                    {BILLING_TABS.map(([tab, label]) => (
-                      <NavItem key={tab} to={`/billing?tab=${tab}`} label={label} />
-                    ))}
-                  </>
-                )}
+                {can("billing_view", "billing_edit") && <NavItem to="/billing" icon={<CreditCard className="h-4 w-4" />} label="System billing" />}
               </>
             )}
 

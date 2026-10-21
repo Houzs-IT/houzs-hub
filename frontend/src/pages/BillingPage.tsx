@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useSearchParams } from "react-router-dom";
 import { api, json, type BillingData as Data, type CardRow, type ChargeRow, type ChargeStatus } from "../api/client";
 import { EditDialog, Field, Select, money } from "../components/BillingForm";
-import { BILLING_TABS, useHub, type BillingTab as Tab } from "../components/Layout";
+import { useHub } from "../components/Layout";
 import { Monthly, Statements, Trend } from "./BillingStatements";
 
 const STATUS: Record<ChargeStatus, { label: string; pill: string }> = {
@@ -14,6 +14,15 @@ const STATUS: Record<ChargeStatus, { label: string; pill: string }> = {
   cancelled: { label: "Cancelled", pill: "bg-loz-grey text-loz-grey-ink" },
 };
 const STATUS_ORDER = Object.keys(STATUS) as ChargeStatus[];
+const BILLING_TABS = [
+  ["overview", "Overview"],
+  ["register", "Register"],
+  ["cards", "Cards"],
+  ["statements", "Statements"],
+  ["monthly", "Monthly"],
+  ["trend", "Trend"],
+] as const;
+type Tab = (typeof BILLING_TABS)[number][0];
 const NO_CARD = "No card";
 // A blank card is "we don't know yet", which is not the same as "paid without a card".
 const UNKNOWN_CARD = "Card not known";
