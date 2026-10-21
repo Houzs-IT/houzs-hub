@@ -7,6 +7,7 @@ export const MAX_CUSTOM_BYTES = 500_000;
 const KEY = "it-hub-sound";
 const CUSTOM_FILE_KEY = "it-hub-sound-file";
 const CUSTOM_NAME_KEY = "it-hub-sound-name";
+const CUSTOM_TRIM_KEY = "it-hub-sound-trim";
 const VOLUME_KEY = "it-hub-sound-volume";
 export const DEFAULT_VOLUME = 80;
 
@@ -51,6 +52,39 @@ export function loadCustomSoundName(): string | null {
   return readStorage(CUSTOM_NAME_KEY);
 }
 
+// Seconds. Only the part from start to end plays.
+export interface SoundTrim {
+  start: number;
+  end: number;
+  duration: number;
+}
+
+function isSoundTrim(value: unknown): value is SoundTrim {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "start" in value &&
+    typeof value.start === "number" &&
+    "end" in value &&
+    typeof value.end === "number" &&
+    "duration" in value &&
+    typeof value.duration === "number"
+  );
+}
+
+export function loadCustomTrim(): SoundTrim | null {
+  try {
+    const saved: unknown = JSON.parse(readStorage(CUSTOM_TRIM_KEY) ?? "null");
+    return isSoundTrim(saved) ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+export function loadCustomSoundFile(): string | null {
+  return readStorage(CUSTOM_FILE_KEY);
+}
+
 function readAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -60,13 +94,17 @@ function readAsDataUrl(file: File): Promise<string> {
   });
 }
 
-export async function saveCustomSound(file: File): Promise<void> {
+export async function readCustomSoundFile(file: File): Promise<string> {
   if (!file.type.startsWith("audio/")) throw new Error("Pick an audio file, like .mp3 or .wav.");
   if (file.size > MAX_CUSTOM_BYTES) throw new Error(`File is too big. Keep it under ${MAX_CUSTOM_BYTES / 1000} KB.`);
-  const dataUrl = await readAsDataUrl(file);
+  return readAsDataUrl(file);
+}
+
+export function saveCustomSound(dataUrl: string, name: string, trim: SoundTrim): void {
   try {
     localStorage.setItem(CUSTOM_FILE_KEY, dataUrl);
-    localStorage.setItem(CUSTOM_NAME_KEY, file.name);
+    localStorage.setItem(CUSTOM_NAME_KEY, name);
+    localStorage.setItem(CUSTOM_TRIM_KEY, JSON.stringify(trim));
   } catch {
     throw new Error("This browser would not save the file. Try a smaller one.");
   }
@@ -98,7 +136,17 @@ export function playSound(choice: SoundChoice = loadSound(), volume: number = lo
   const file = choice === "custom" ? readStorage(CUSTOM_FILE_KEY) : null;
   // Custom picked but nothing uploaded yet: Chime, so a new ticket is never silent by accident.
   if (!file) return playChime(volumeScale);
+  void playCustom(file, volumeScale, loadCustomTrim());
+}
+
+async function playCustom(file: string, volumeScale: number, trim: SoundTrim | null): Promise<void> {
   const audio = new Audio(file);
   audio.volume = volumeScale;
-  audio.play().catch(() => {});
+  if (trim) audio.currentTime = trim.start;
+  try {
+    await audio.play();
+  } catch {
+    return;
+  }
+  if (trim && trim.end < trim.duration) setTimeout(() => audio.pause(), (trim.end - trim.start) * 1000);
 }
