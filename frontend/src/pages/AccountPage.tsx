@@ -2,6 +2,9 @@ import { useState, type FormEvent } from "react";
 import { api, json, type User } from "../api/client";
 import { useHub } from "../components/Layout";
 import PasswordForm from "../components/PasswordForm";
+import { DEFAULT_SOUND, SOUNDS, loadSound, playSound, saveSound, type SoundChoice } from "../lib/sound";
+
+const SOUND_CHOICES = Object.keys(SOUNDS).filter((key): key is SoundChoice => key in SOUNDS);
 
 export default function AccountPage() {
   const { me, setMe } = useHub();
@@ -11,6 +14,13 @@ export default function AccountPage() {
   const [savingName, setSavingName] = useState(false);
   const dirty = name.trim() !== me.name || email.trim().toLowerCase() !== (me.email ?? "");
   const [changed, setChanged] = useState(false);
+  const [sound, setSound] = useState<SoundChoice>(loadSound);
+
+  function chooseSound(choice: SoundChoice) {
+    setSound(choice);
+    saveSound(choice);
+    playSound(choice);
+  }
 
   async function saveName(e: FormEvent) {
     e.preventDefault();
@@ -98,6 +108,29 @@ export default function AccountPage() {
             </p>
           )}
           <PasswordForm currentLabel="Current password" submitLabel="Change password" onDone={() => setChanged(true)} />
+        </div>
+
+        <div className="card p-5">
+          <div className="section-title">Notification sound</div>
+          <p className="mt-1 text-[11.5px] text-ink-subtle">
+            Plays when a new ticket comes in. Saved on this browser only. Default is {SOUNDS[DEFAULT_SOUND].label}.
+          </p>
+          <div role="radiogroup" aria-label="Notification sound" className="mt-3 flex flex-wrap gap-2">
+            {SOUND_CHOICES.map((choice) => (
+              <button
+                key={choice}
+                type="button"
+                role="radio"
+                aria-checked={sound === choice}
+                onClick={() => chooseSound(choice)}
+                className={`min-h-10 rounded-md border px-4 text-[13px] font-semibold ${
+                  sound === choice ? "border-primary bg-primary-soft text-primary" : "border-line text-ink-subtle hover:bg-hover"
+                }`}
+              >
+                {SOUNDS[choice].label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     </div>
