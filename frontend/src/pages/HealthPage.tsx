@@ -1,5 +1,6 @@
-import { ExternalLink, Pencil, Plus, RefreshCw } from "lucide-react";
+import { ExternalLink, Pencil, Plus, RefreshCw, RotateCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api, json, type HealthCheck, type HealthTarget } from "../api/client";
 import { SystemTag } from "../components/Bits";
 import { EditDialog, Field, Select } from "../components/BillingForm";
@@ -58,6 +59,9 @@ export default function HealthPage() {
   const [editing, setEditing] = useState<HealthTarget | "new" | null>(null);
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const dialog = useRef<HTMLDialogElement>(null);
+  const [params, setParams] = useSearchParams();
+  const tabParam = params.get("tab") ?? "all";
+  const showTab = (tab: string) => setParams(tab === "all" ? {} : { tab }, { replace: true });
 
   const load = useCallback(() => {
     api<Data>("/health")
@@ -105,6 +109,11 @@ export default function HealthPage() {
   const down = states.filter((s) => s === "down").length;
   const slow = states.filter((s) => s === "slow").length;
   const waiting = states.filter((s) => s === "none").length;
+  // Systems with their own health page get a tab that shows that page inside the hub.
+  const embeddable = data?.targets.filter((t) => t.pageUrl) ?? [];
+  const embedded = embeddable.find((t) => String(t.id) === tabParam) ?? null;
+  const tab = embedded ? tabParam : "all";
+  const latestOf = (id: number) => data?.checks.find((c) => c.targetId === id);
 
   return (
     <div className="h-full overflow-auto px-4 py-6 md:px-8">
@@ -113,11 +122,11 @@ export default function HealthPage() {
           <div className="eyebrow">Houzs Hub · Admin</div>
           <h1 className="mt-1 text-[24px] font-extrabold tracking-tight text-ink">System health</h1>
           <p className="mt-1 max-w-2xl text-[13px] text-ink-subtle">
-            The hub checks each system every 5 minutes: whether it answers, how fast, and which version it runs. The full health page of
-            each system is one click away (you sign in there). Refreshes every minute.
+            The hub checks each system every 5 minutes: whether it answers, how fast, and which version it runs. Each system's own health
+            page opens in its tab here, after you sign in to that system. Refreshes every minute.
           </p>
         </div>
-        {canEdit && (
+        {canEdit && tabParam === "all" && (
           <div className="flex gap-2">
             <button className="btn-default" onClick={checkNow} disabled={checking}>
               <RefreshCw className={`h-4 w-4 ${checking ? "animate-spin" : ""}`} /> {checking ? "Checking..." : "Check now"}
@@ -136,7 +145,28 @@ export default function HealthPage() {
       )}
       {!data && !error && <div className="py-16 text-center text-sm text-ink-subtle">Loading...</div>}
 
-      {data && active.length > 0 && (
+      {data && (
+        <div role="tablist" className="mt-4 flex gap-1 overflow-x-auto overflow-y-hidden whitespace-nowrap border-b border-line">
+          {[{ key: "all", label: "All systems", state: null as State | null }, ...embeddable.map((t) => ({ key: String(t.id), label: t.name, state: stateOf(latestOf(t.id)) }))].map((x) => (
+            <button
+              key={x.key}
+              role="tab"
+              aria-selected={tab === x.key}
+              onClick={() => showTab(x.key)}
+              className={`tap -mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-[13px] font-semibold ${
+                tab === x.key ? "border-primary text-ink" : "border-transparent text-ink-subtle hover:text-ink"
+              }`}
+            >
+              {x.state && <span className={`h-2 w-2 rounded-full ${STATE[x.state].bar}`} aria-hidden />}
+              {x.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {data && embedded && <Embedded target={embedded} state={stateOf(latestOf(embedded.id))} />}
+
+      {data && tab === "all" && active.length > 0 && (
         <div
           role="status"
           className={`mt-4 rounded-[10px] px-4 py-3 text-[14px] font-semibold ${
@@ -153,6 +183,7 @@ export default function HealthPage() {
         </div>
       )}
 
+      {tab === "all" && (
       <div className="mt-4 grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
         {data?.targets.map((t) => {
           const checks = data.checks.filter((c) => c.targetId === t.id);
@@ -209,14 +240,15 @@ export default function HealthPage() {
               </div>
 
               {t.pageUrl && (
-                <a href={t.pageUrl} target="_blank" rel="noopener noreferrer" className="btn-default mt-3 h-8 w-full px-3">
-                  Open its health page <ExternalLink className="h-3.5 w-3.5" />
-                </a>
+                <button className="btn-default mt-3 h-8 w-full px-3" onClick={() => showTab(String(t.id))}>
+                  Show its health page
+                </button>
               )}
             </section>
           );
         })}
       </div>
+      )}
 
       <EditDialog
         dialogRef={dialog}
@@ -257,6 +289,36 @@ function Stat({ label, value, note }: { label: string; value: string; note: stri
         {value}
       </dd>
       {note && <dd className="text-[11px] text-ink-subtle">{note}</dd>}
+    </div>
+  );
+}
+
+// A system's own health page, shown inside the hub. The person signs in to that
+// system here the first time; the hub never sees or stores that sign-in.
+function Embedded({ target, state }: { target: HealthTarget; state: State }) {
+  const [reload, setReload] = useState(0);
+  return (
+    <div className="mt-3">
+      <div className="flex flex-wrap items-center gap-2 text-[12.5px] text-ink-subtle">
+        <span className={`pill ${STATE[state].pill}`}>{STATE[state].label}</span>
+        <span className="min-w-0 flex-1">
+          {target.name}'s own health page. Sign in to {target.name} in the box below the first time. If it keeps asking you to sign in, use
+          Open in its own tab.
+        </span>
+        <button className="btn-subtle h-8 px-2.5" onClick={() => setReload((n) => n + 1)}>
+          <RotateCw className="h-3.5 w-3.5" /> Reload
+        </button>
+        <a href={target.pageUrl} target="_blank" rel="noopener noreferrer" className="btn-default h-8 px-3">
+          Open in its own tab <ExternalLink className="h-3.5 w-3.5" />
+        </a>
+      </div>
+      <iframe
+        key={`${target.id}-${reload}`}
+        src={target.pageUrl}
+        title={`${target.name} health page`}
+        referrerPolicy="strict-origin-when-cross-origin"
+        className="mt-2 h-[calc(100vh-240px)] min-h-[480px] w-full rounded-[10px] border border-line bg-surface"
+      />
     </div>
   );
 }
