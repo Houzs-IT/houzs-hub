@@ -63,6 +63,24 @@ export type CardRow = {
   updatedBy: string | null;
 };
 
+export type StatementLine = {
+  id: number;
+  txnDate: string;
+  card: string;
+  description: string;
+  registerId: string;
+  amountMyr: number;
+  notes: string;
+  updatedAt: string;
+  updatedBy: string | null;
+};
+export type BillingData = {
+  charges: ChargeRow[];
+  cards: CardRow[];
+  accounts: { id: number; name: string }[];
+  lines: StatementLine[];
+};
+
 export type AccountStatus = "yes" | "partly" | "not_yet" | "cant_move";
 export type AccountRow = {
   id: number;

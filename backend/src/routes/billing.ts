@@ -1,4 +1,4 @@
-import { asc, count, eq } from "drizzle-orm";
+import { asc, count, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { schema } from "../db/client";
 import { CHARGE_BILLED, CHARGE_STATUSES, CURRENCIES } from "../db/schema";
@@ -12,6 +12,7 @@ import { isUniqueViolation } from "./admin";
 const billing = new Hono<DevApp>();
 const ch = schema.charges;
 const cd = schema.cards;
+const sl = schema.statementLines;
 
 const MAX_TEXT = 1000;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -100,13 +101,80 @@ const stamp = (c: { get(k: "user"): { name: string } }) => ({ updatedAt: nowIso(
 // ponytail: whole tables on purpose; bounded by the few dozen services and cards the companies pay for. Paginate if that stops being true.
 billing.get("/", need("billing_view", "billing_edit"), async (c) => {
   const db = c.get("db");
-  const [charges, cards, accounts] = await Promise.all([
+  // ponytail: statement lines grow by a few dozen a month; whole table is fine for years. Page by month if that stops being true.
+  const [charges, cards, accounts, lines] = await Promise.all([
     db.select().from(ch).orderBy(asc(ch.registerId), asc(ch.id)),
     db.select().from(cd).orderBy(asc(cd.nickname)),
     db.select({ id: schema.accounts.id, name: schema.accounts.name }).from(schema.accounts).orderBy(asc(schema.accounts.name)),
+    db.select().from(sl).orderBy(desc(sl.txnDate), desc(sl.id)),
   ]);
-  return c.json({ charges: charges.map(chargeOut), cards, accounts });
+  return c.json({ charges: charges.map(chargeOut), cards, accounts, lines: lines.map(lineOut) });
 });
+
+// --- Statement lines -------------------------------------------------------
+
+function readLine(b: Body, isNew: boolean): Read<Record<string, unknown>> {
+  const out: Record<string, unknown> = {};
+  if (isNew || "txnDate" in b) {
+    if (typeof b.txnDate !== "string" || !DATE_RE.test(b.txnDate)) return "Date must be a date";
+    out.txnDate = b.txnDate;
+  }
+  if (isNew || "amountMyr" in b) {
+    const n = Number(b.amountMyr);
+    // Negative is allowed: refunds show on statements as credits.
+    if (b.amountMyr === "" || b.amountMyr === null || !Number.isFinite(n) || Math.abs(n) > 1e9) return "Amount must be a number";
+    out.amountMyr = n.toFixed(2);
+  }
+  const errors = ["card", "description", "registerId", "notes"].map((k) => text(b, k, out)).filter(Boolean);
+  return errors.length ? (errors[0] as string) : out;
+}
+
+const lineOut = <T extends { amountMyr: string }>(r: T) => ({ ...r, amountMyr: Number(r.amountMyr) });
+
+billing.post("/lines", need("billing_edit"), async (c) => {
+  const f = readLine((await c.req.json().catch(() => ({}))) as Body, true);
+  if (typeof f === "string") return c.json({ error: f }, 400);
+  const [row] = await c.get("db")
+    .insert(sl)
+    .values({ ...(f as object), txnDate: f.txnDate as string, amountMyr: f.amountMyr as string, createdAt: nowIso(), ...stamp(c) })
+    .returning();
+  return c.json({ line: lineOut(row!) }, 201);
+});
+
+// Many lines at once, from a statement pasted on the page. All or nothing.
+billing.post("/lines/bulk", need("billing_edit"), async (c) => {
+  const b = (await c.req.json().catch(() => ({}))) as { lines?: unknown };
+  if (!Array.isArray(b.lines) || b.lines.length === 0) return c.json({ error: "No lines to add" }, 400);
+  if (b.lines.length > 500) return c.json({ error: "500 lines at most at a time" }, 400);
+  const rows = [];
+  for (const [i, raw] of b.lines.entries()) {
+    const f = readLine((raw ?? {}) as Body, true);
+    if (typeof f === "string") return c.json({ error: `Line ${i + 1}: ${f}` }, 400);
+    rows.push({ ...(f as object), txnDate: f.txnDate as string, amountMyr: f.amountMyr as string, createdAt: nowIso(), ...stamp(c) });
+  }
+  const inserted = await c.get("db").insert(sl).values(rows).returning();
+  return c.json({ lines: inserted.map(lineOut) }, 201);
+});
+
+billing.patch("/lines/:id", need("billing_edit"), async (c) => {
+  const id = Number(c.req.param("id"));
+  if (!Number.isInteger(id)) return c.json({ error: "Line not found" }, 404);
+  const f = readLine((await c.req.json().catch(() => ({}))) as Body, false);
+  if (typeof f === "string") return c.json({ error: f }, 400);
+  const [row] = await c.get("db").update(sl).set({ ...f, ...stamp(c) }).where(eq(sl.id, id)).returning();
+  if (!row) return c.json({ error: "Line not found" }, 404);
+  return c.json({ line: lineOut(row) });
+});
+
+billing.delete("/lines/:id", need("billing_edit"), async (c) => {
+  const id = Number(c.req.param("id"));
+  if (!Number.isInteger(id)) return c.json({ error: "Line not found" }, 404);
+  const deleted = await c.get("db").delete(sl).where(eq(sl.id, id)).returning({ id: sl.id });
+  if (deleted.length === 0) return c.json({ error: "Line not found" }, 404);
+  return c.json({ ok: true });
+});
+
+// --- Charges ---------------------------------------------------------------
 
 billing.post("/charges", need("billing_edit"), async (c) => {
   const f = readCharge((await c.req.json().catch(() => ({}))) as Body, true);

@@ -64,8 +64,9 @@ comes from their role, set on the **Roles** page:
 | See billing | The Billing page: what each service costs and which card pays |
 | Edit billing | Adding, changing and removing charges and cards on the Billing page |
 
-The Accounts and Billing pages replace the API card register sheet (its Ownership,
-Register, Overview and Cards tabs). They hold names, emails, roles, amounts and the last
+The Accounts and Billing pages replace the API card register sheet (all its tabs:
+Ownership, Register, Overview, Cards, Statement lines, Monthly tally and Trend). Card
+statement lines are added on the page, one by one or pasted from a statement. They hold names, emails, roles, amounts and the last
 4 digits of a card only, never passwords, API keys or full card numbers. To load the
 sheet once, copy each tab (with its header row) into a `.tsv` file and run, from
 `backend/`, each command first as a dry run and then again with `--apply`:

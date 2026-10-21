@@ -198,6 +198,20 @@ export const charges = pgTable("charges", {
   updatedBy: text("updated_by"),
 });
 
+// Card statement lines in ringgit, tied to a charge by its sheet ID.
+export const statementLines = pgTable("statement_lines", {
+  id: id(),
+  txnDate: text("txn_date").notNull(),
+  card: text("card").notNull().default(""),
+  description: text("description").notNull().default(""),
+  registerId: text("register_id").notNull().default(""),
+  amountMyr: numeric("amount_myr", { precision: 12, scale: 2 }).notNull(),
+  notes: text("notes").notNull().default(""),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  updatedBy: text("updated_by"),
+});
+
 export type Ticket = typeof tickets.$inferSelect;
 export type TicketEvent = typeof ticketEvents.$inferSelect;
 export type TicketAttachment = typeof ticketAttachments.$inferSelect;
