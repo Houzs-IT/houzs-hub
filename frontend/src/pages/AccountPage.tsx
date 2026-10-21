@@ -1,19 +1,10 @@
-import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { api, json, type User } from "../api/client";
 import { useHub } from "../components/Layout";
 import PasswordForm from "../components/PasswordForm";
-import {
-  DEFAULT_SOUND,
-  SOUND_LABELS,
-  loadCustomSoundName,
-  loadSound,
-  playSound,
-  saveCustomSound,
-  saveSound,
-  type SoundChoice,
-} from "../lib/sound";
+import { DEFAULT_SOUND, SOUNDS, loadSound, playSound, saveSound, type SoundChoice } from "../lib/sound";
 
-const SOUND_CHOICES = Object.keys(SOUND_LABELS).filter((key): key is SoundChoice => key in SOUND_LABELS);
+const SOUND_CHOICES = Object.keys(SOUNDS).filter((key): key is SoundChoice => key in SOUNDS);
 
 export default function AccountPage() {
   const { me, setMe } = useHub();
@@ -24,35 +15,11 @@ export default function AccountPage() {
   const dirty = name.trim() !== me.name || email.trim().toLowerCase() !== (me.email ?? "");
   const [changed, setChanged] = useState(false);
   const [sound, setSound] = useState<SoundChoice>(loadSound);
-  const [customSoundName, setCustomSoundName] = useState(loadCustomSoundName);
-  const [soundError, setSoundError] = useState<string | null>(null);
-  const soundFileInput = useRef<HTMLInputElement>(null);
 
   function chooseSound(choice: SoundChoice) {
-    setSoundError(null);
-    if (choice === "custom" && !customSoundName) {
-      soundFileInput.current?.click();
-      return;
-    }
     setSound(choice);
     saveSound(choice);
     playSound(choice);
-  }
-
-  async function uploadSound(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    try {
-      await saveCustomSound(file);
-      setCustomSoundName(file.name);
-      setSoundError(null);
-      setSound("custom");
-      saveSound("custom");
-      playSound("custom");
-    } catch (err) {
-      setSoundError((err as Error).message);
-    }
   }
 
   async function saveName(e: FormEvent) {
@@ -146,7 +113,7 @@ export default function AccountPage() {
         <div className="card p-5">
           <div className="section-title">Notification sound</div>
           <p className="mt-1 text-[11.5px] text-ink-subtle">
-            Plays when a new ticket comes in. Saved on this browser only. Default is {SOUND_LABELS[DEFAULT_SOUND]}.
+            Plays when a new ticket comes in. Saved on this browser only. Default is {SOUNDS[DEFAULT_SOUND].label}.
           </p>
           <div role="radiogroup" aria-label="Notification sound" className="mt-3 flex flex-wrap gap-2">
             {SOUND_CHOICES.map((choice) => (
@@ -160,24 +127,10 @@ export default function AccountPage() {
                   sound === choice ? "border-primary bg-primary-soft text-primary" : "border-line text-ink-subtle hover:bg-hover"
                 }`}
               >
-                {SOUND_LABELS[choice]}
+                {SOUNDS[choice].label}
               </button>
             ))}
           </div>
-          <input ref={soundFileInput} type="file" accept="audio/*" className="hidden" onChange={uploadSound} />
-          {(sound === "custom" || customSoundName) && (
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-[12.5px]">
-              <span className="min-w-0 truncate text-ink-subtle">{customSoundName ?? "No file yet"}</span>
-              <button type="button" className="btn-default min-h-10" onClick={() => soundFileInput.current?.click()}>
-                {customSoundName ? "Upload another" : "Upload sound"}
-              </button>
-            </div>
-          )}
-          {soundError && (
-            <p role="alert" className="mt-2 rounded-md bg-loz-red px-3 py-2 text-[12.5px] font-medium text-loz-red-ink">
-              {soundError}
-            </p>
-          )}
         </div>
       </div>
     </div>
