@@ -42,6 +42,7 @@ function clean(raw: Record<string, unknown>): HealthReport {
   return {
     ok: raw.ok === true,
     time: typeof raw.time === "string" ? raw.time.slice(0, 40) : null,
+    published_at: typeof raw.published_at === "string" && !Number.isNaN(Date.parse(raw.published_at)) ? raw.published_at.slice(0, 40) : null,
     db: db ? { ok: db.ok === true, latency_ms: num(db.latency_ms), ...(db.error ? { error: str(db.error, 200) } : {}) } : null,
     storage: st ? { bound: st.bound !== false, ok: st.ok === true, latency_ms: num(st.latency_ms) } : null,
     counts,

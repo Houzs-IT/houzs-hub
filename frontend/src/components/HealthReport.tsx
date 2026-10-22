@@ -58,16 +58,40 @@ export function HealthReportView(props: {
 
   const r: HealthReport = row.report;
   const stale = Date.now() - Date.parse(row.receivedAt) > STALE_MS;
-  const counts = Object.entries(r.counts);
+  const n = (k: string) => (typeof r.counts[k] === "number" ? (r.counts[k] as number) : null);
+  // Users and the change history get their own cards, as on the systems' own pages
+  // (Hookka's /admin/health and The Conts' System health); other counts stay in the list.
+  const users = n("users_active");
+  const history24 = n("audit_24h");
+  const shown = new Set(users != null ? ["users_active", "users_invited", "users_disabled"] : []);
+  if (history24 != null) ["audit_24h", "audit_7d", "sensitive_24h"].forEach((k) => shown.add(k));
+  const counts = Object.entries(r.counts).filter(([k]) => !shown.has(k));
+  const headline = [
+    r.db?.ok && r.db.latency_ms != null ? `DB ${r.db.latency_ms} ms` : null,
+    r.storage?.bound && r.storage.ok && r.storage.latency_ms != null ? `Storage ${r.storage.latency_ms} ms` : null,
+    users != null ? `${users} active users` : null,
+  ].filter(Boolean);
   const blocks = toBlocks(history, (h) => h.receivedAt, (h) => (h.ok ? 0 : 1));
   return (
     <div className="mt-4 space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <span className={`pill ${r.ok ? STATUS.ok.pill : STATUS.critical.pill}`}>{r.ok ? "All OK" : "Needs attention"}</span>
         <span className="text-[13px] text-ink-subtle" title={fmtDateTime(row.receivedAt)}>
           Report received {fmtAgo(row.receivedAt)}
+          {r.published_at && ` · this version published ${fmtDateTime(r.published_at)}`}
         </span>
         <span className="ml-auto">{openOwn}</span>
+      </div>
+      <div
+        role="status"
+        className={`flex items-start gap-2.5 rounded-[10px] border px-4 py-3 ${
+          r.ok ? "border-loz-green-ink/40 bg-loz-green text-loz-green-ink" : "border-loz-red-ink/40 bg-loz-red text-loz-red-ink"
+        }`}
+      >
+        <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${r.ok ? "bg-loz-green-ink" : "bg-loz-red-ink"}`} aria-hidden />
+        <div>
+          <div className="text-[14px] font-semibold">{r.ok ? "All systems normal" : "Something needs attention"}</div>
+          {headline.length > 0 && <div className="text-[12.5px] opacity-90">{headline.join(" · ")}</div>}
+        </div>
       </div>
       {stale && (
         <div role="alert" className="rounded bg-loz-orange px-3 py-2 text-[13px] text-loz-orange-ink">
@@ -75,10 +99,10 @@ export function HealthReportView(props: {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
         {r.db && (
           <Tile
-            label="Database"
+            label="DB latency"
             value={r.db.ok ? `${r.db.latency_ms ?? "-"} ms` : "Down"}
             status={r.db.ok ? ((r.db.latency_ms ?? 0) > 1500 ? "warning" : "ok") : "critical"}
             summary={r.db.ok ? "answered a live query" : r.db.error ?? "did not answer"}
@@ -92,6 +116,22 @@ export function HealthReportView(props: {
             summary={!r.storage.bound ? "not connected" : r.storage.ok ? "reachable" : "did not answer"}
           />
         )}
+        {users != null && (
+          <Tile
+            label="Active users"
+            value={String(users)}
+            status="ok"
+            summary={[n("users_invited") != null ? `${n("users_invited")} invited` : null, n("users_disabled") != null ? `${n("users_disabled")} disabled` : null].filter(Boolean).join(" · ") || "signed in at least once"}
+          />
+        )}
+        {history24 != null && (
+          <Tile
+            label="History 24h"
+            value={String(history24)}
+            status="ok"
+            summary={[n("audit_7d") != null ? `${n("audit_7d")} in 7d` : null, n("sensitive_24h") != null ? `${n("sensitive_24h")} sensitive today` : null].filter(Boolean).join(" · ") || "changes recorded"}
+          />
+        )}
         {r.checks.map((c) => (
           <Tile key={c.key || c.label} label={c.label} value={c.value} status={c.status} summary={c.summary} detail={c.detail} />
         ))}
@@ -99,7 +139,7 @@ export function HealthReportView(props: {
 
       {counts.length > 0 && (
         <section className="card p-4" aria-label="Counts">
-          <h2 className="section-title">Users and activity</h2>
+          <h2 className="section-title">Other figures</h2>
           <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
             {counts.map(([k, v]) => (
               <div key={k}>
@@ -115,7 +155,7 @@ export function HealthReportView(props: {
 
       <section className="card overflow-hidden" aria-label="Recent problems">
         <div className="flex items-center justify-between px-4 pt-4">
-          <h2 className="section-title">Recent problems</h2>
+          <h2 className="section-title">Problems in the last 7 days</h2>
           <span className="text-xs text-ink-subtle">{r.problems.length} in the report</span>
         </div>
         {r.problems.length === 0 ? (
