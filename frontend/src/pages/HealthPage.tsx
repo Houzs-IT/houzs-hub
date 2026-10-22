@@ -6,6 +6,7 @@ import { HealthReportView } from "../components/HealthReport";
 import { SystemTag } from "../components/Bits";
 import { EditDialog, Field, Select } from "../components/EditForm";
 import { useHub } from "../components/Layout";
+import { toBlocks } from "../lib/blocks";
 import { fmtAgo, fmtDateTime } from "../lib/format";
 import { usePoll } from "../lib/usePoll";
 
@@ -211,7 +212,7 @@ export default function HealthPage() {
           const checks = data.checks.filter((c) => c.targetId === t.id);
           const s = summarise(checks);
           const state = stateOf(s.latest);
-          const strip = [...checks].reverse();
+          const blocks = toBlocks(checks, (c) => c.checkedAt, (c) => ({ up: 0, slow: 1, down: 2, none: 0 })[stateOf(c)]);
           return (
             <section key={t.id} className={`card p-4 ${t.active ? "" : "opacity-60"}`} aria-label={t.name}>
               <div className="flex items-start gap-2.5">
@@ -244,16 +245,19 @@ export default function HealthPage() {
               </dl>
 
               <div className="mt-3" aria-label="Last 24 hours">
-                <div className="flex h-6 items-end gap-px" title="Each bar is one check, oldest on the left">
-                  {strip.length === 0 && <div className="h-full w-full rounded bg-surface-dim" />}
-                  {strip.map((c) => (
-                    <div
-                      key={c.checkedAt}
-                      className={`min-w-px flex-1 rounded-[1px] ${STATE[stateOf(c)].bar}`}
-                      style={{ height: c.ok ? "100%" : "45%" }}
-                      title={`${fmtDateTime(c.checkedAt)}: ${c.ok ? `${c.ms} ms` : c.error ?? "down"}`}
-                    />
-                  ))}
+                <div className="flex h-6 items-end gap-px overflow-hidden" title="Each bar is 15 minutes, oldest on the left; it shows the worst check in it">
+                  {blocks.map((b) => {
+                    const c = b.worst;
+                    const st = stateOf(c ?? undefined);
+                    return (
+                      <div
+                        key={b.from}
+                        className={`min-w-0 flex-1 rounded-[1px] ${STATE[st].bar}`}
+                        style={{ height: !c ? "30%" : c.ok ? "100%" : "45%" }}
+                        title={`${fmtDateTime(new Date(b.from).toISOString())}: ${!c ? "no check" : !c.ok ? c.error ?? "down" : st === "slow" ? `slow, ${c.ms} ms` : `up (${b.count} checks)`}`}
+                      />
+                    );
+                  })}
                 </div>
                 <div className="mt-1 flex justify-between text-[10.5px] text-ink-subtlest">
                   <span>24h ago</span>
