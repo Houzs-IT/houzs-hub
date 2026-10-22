@@ -1,5 +1,6 @@
 import { ExternalLink } from "lucide-react";
 import type { HealthReport, HealthReportRow, HealthStatus } from "../api/client";
+import { toBlocks } from "../lib/blocks";
 import { fmtAgo, fmtDateTime } from "../lib/format";
 
 // A system's own health report, as it sent it to the hub with its hub key: the same
@@ -58,7 +59,7 @@ export function HealthReportView(props: {
   const r: HealthReport = row.report;
   const stale = Date.now() - Date.parse(row.receivedAt) > STALE_MS;
   const counts = Object.entries(r.counts);
-  const sent = [...history].reverse();
+  const blocks = toBlocks(history, (h) => h.receivedAt, (h) => (h.ok ? 0 : 1));
   return (
     <div className="mt-4 space-y-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -137,15 +138,16 @@ export function HealthReportView(props: {
         )}
       </section>
 
-      {sent.length > 1 && (
+      {history.length > 1 && (
         <section className="card p-4" aria-label="Reports in the last 24 hours">
           <h2 className="section-title">Reports, last 24 hours</h2>
-          <div className="mt-2 flex h-5 items-end gap-px">
-            {sent.map((h) => (
+          <div className="mt-2 flex h-5 items-end gap-px overflow-hidden" title="Each bar is 15 minutes, oldest on the left">
+            {blocks.map((b) => (
               <div
-                key={h.receivedAt}
-                className={`min-w-px flex-1 rounded-[1px] ${h.ok ? "bg-loz-green-ink" : "bg-loz-red-ink"}`}
-                title={`${fmtDateTime(h.receivedAt)}: ${h.ok ? "all OK" : "needs attention"}`}
+                key={b.from}
+                className={`min-w-0 flex-1 rounded-[1px] ${!b.worst ? "bg-line" : b.worst.ok ? "bg-loz-green-ink" : "bg-loz-red-ink"}`}
+                style={{ height: b.worst ? "100%" : "30%" }}
+                title={`${fmtDateTime(new Date(b.from).toISOString())}: ${!b.worst ? "no report" : b.worst.ok ? "all OK" : "needs attention"}`}
               />
             ))}
           </div>
