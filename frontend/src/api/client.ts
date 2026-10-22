@@ -103,6 +103,7 @@ export type HealthStatus = "ok" | "warning" | "critical" | "off";
 export type HealthReport = {
   ok: boolean;
   time: string | null;
+  published_at?: string | null;
   db: { ok: boolean; latency_ms: number | null; error?: string } | null;
   storage: { bound: boolean; ok: boolean; latency_ms: number | null } | null;
   counts: Record<string, number | string | null>;

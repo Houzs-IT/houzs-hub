@@ -185,6 +185,7 @@ worker's `hubHealthReport`). Every field is optional except `ok`; anything else 
 }
 ```
 
+`published_at` (optional) is when the running version was published; the tab shows it.
 `ok` false means something needs attention. `status` is `ok`, `warning`, `critical` or
 `off`. `storage` may be sent instead of `r2`. Never put a password, key or personal data
 beyond what the system's own health page shows. The answer is `201 { ok: true }`, or 401
