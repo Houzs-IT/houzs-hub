@@ -59,8 +59,24 @@ comes from their role, set on the **Roles** page:
 | Manage users | The Users page: add people, reset passwords, switch accounts off or on |
 | Manage roles | The Roles page, plus assigning roles and per-person overrides on Users |
 | See Integrations | The Integrations page: whether each system is connected |
+| See account ownership | The Account ownership page: every outside account and who controls it |
+| Edit account ownership | Adding, changing and removing accounts on the Account ownership page |
+| See system billing | The System billing pages under Finance: what each service costs and which card pays |
+| Edit system billing | Adding, changing and removing charges, cards and statement lines |
 | See system health | The System health page: each system up or down, its speed and version, checked every 5 minutes, and the health report it sends |
 | Edit system health | Adding, changing and pausing the systems the hub checks, and Check now |
+
+The Finance pages (Account ownership and System billing) replace the API card register sheet (all its tabs:
+Ownership, Register, Overview, Cards, Statement lines, Monthly tally and Trend). Card
+statement lines are added on the page, one by one or pasted from a statement. They hold names, emails, roles, amounts and the last
+4 digits of a card only, never passwords, API keys or full card numbers. To load the
+sheet once, copy each tab (with its header row) into a `.tsv` file and run, from
+`backend/`, each command first as a dry run and then again with `--apply`:
+
+```bash
+node scripts/import-accounts.mjs ownership.tsv
+node scripts/import-billing.mjs --register register.tsv --cards cards.tsv
+```
 
 Two roles are built in and can be renamed but not deleted: **Admin** has every
 permission and **Developer** has IT tickets. New permissions are added in

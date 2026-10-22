@@ -2,7 +2,7 @@ import { Trash2 } from "lucide-react";
 import { useState, type FormEvent, type ReactNode, type RefObject } from "react";
 import { fmtAgo, fmtDateTime } from "../lib/format";
 
-// Form pieces shared by pages that edit a list in a pop-up (System health).
+// Form pieces shared by pages that edit a list in a pop-up (System health, System billing).
 
 
 export function Field(props: { label: string; value: string; onChange: (v: string) => void; required?: boolean; hint?: string; area?: boolean; type?: string }) {

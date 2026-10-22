@@ -4,7 +4,89 @@ export type TicketType = "bug" | "development";
 
 // Permission keys come from the server (services/perms.ts); these are the ones
 // the portal checks to show or hide things.
-export type Perm = "it" | "delete_tickets" | "users" | "roles" | "integrations" | "health_view" | "health_edit";
+export type Perm =
+  | "it"
+  | "delete_tickets"
+  | "users"
+  | "roles"
+  | "integrations"
+  | "accounts_view"
+  | "accounts_edit"
+  | "billing_view"
+  | "billing_edit"
+  | "health_view"
+  | "health_edit";
+
+export type ChargeStatus = "confirmed" | "to_confirm" | "to_fill_in" | "not_active" | "cancelled";
+export type ChargeRow = {
+  id: number;
+  registerId: string;
+  accountId: number | null;
+  company: string;
+  system: string;
+  vendor: string;
+  serviceType: string;
+  usedFor: string;
+  plan: string;
+  amount: number | null;
+  currency: "USD" | "MYR";
+  billed: "" | "monthly" | "yearly";
+  card: string;
+  status: ChargeStatus;
+  checkedOn: string | null;
+  keyName: string;
+  notes: string;
+  updatedAt: string;
+  updatedBy: string | null;
+};
+export type CardRow = {
+  id: number;
+  nickname: string;
+  last4: string;
+  bank: string;
+  holder: string;
+  company: string;
+  statementDay: number | null;
+  notes: string;
+  updatedAt: string;
+  updatedBy: string | null;
+};
+
+export type StatementLine = {
+  id: number;
+  txnDate: string;
+  card: string;
+  description: string;
+  registerId: string;
+  amountMyr: number;
+  notes: string;
+  updatedAt: string;
+  updatedBy: string | null;
+};
+export type BillingData = {
+  charges: ChargeRow[];
+  cards: CardRow[];
+  accounts: { id: number; name: string }[];
+  lines: StatementLine[];
+};
+
+export type AccountStatus = "yes" | "partly" | "not_yet" | "cant_move";
+export type AccountRow = {
+  id: number;
+  name: string;
+  companies: string;
+  vendor: string;
+  mainOwner: string;
+  control: string;
+  itAccess: string;
+  status: AccountStatus;
+  billsTo: string;
+  registerIds: string;
+  nextStep: string;
+  createdAt: string;
+  updatedAt: string;
+  updatedBy: string | null;
+};
 
 export type HealthTarget = {
   id: number;

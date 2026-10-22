@@ -23,3 +23,7 @@ export function fmtAgo(iso: string): string {
 
 export const fmtSize = (b: number) =>
   b < 1024 ? `${b} B` : b < 1048576 ? `${(b / 1024).toFixed(0)} KB` : `${(b / 1048576).toFixed(1)} MB`;
+
+// "RM1,245.25" or "US$485.94"; a refund shows as "-RM30.00".
+export const money = (n: number, cur = "USD") =>
+  `${n < 0 ? "-" : ""}${cur === "MYR" ? "RM" : "US$"}${Math.abs(n).toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

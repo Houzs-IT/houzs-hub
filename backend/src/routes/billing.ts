@@ -1,0 +1,261 @@
+import { asc, count, desc, eq } from "drizzle-orm";
+import { Hono } from "hono";
+import { schema } from "../db/client";
+import { CHARGE_BILLED, CHARGE_STATUSES, CURRENCIES } from "../db/schema";
+import { need } from "../middleware/devAuth";
+import { nowIso } from "../services/tickets";
+import type { DevApp } from "../types";
+import { isUniqueViolation } from "./admin";
+
+// The Billing page: charges (the sheet's Register) and company cards (its Cards tab).
+// Totals are worked out on the page. Mounted inside routes/dev.ts, after devAuth.
+const billing = new Hono<DevApp>();
+const ch = schema.charges;
+const cd = schema.cards;
+const sl = schema.statementLines;
+
+const MAX_TEXT = 1000;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+type Body = Record<string, unknown>;
+type Read<T> = T | string;
+
+function text(b: Body, key: string, out: Record<string, unknown>, opts: { required?: string; max?: number } = {}): string | null {
+  if (!(key in b)) return null;
+  if (typeof b[key] !== "string") return `${key} must be text`;
+  const v = (b[key] as string).trim();
+  if (opts.required && !v) return opts.required;
+  if (v.length > (opts.max ?? MAX_TEXT)) return `${key}: ${opts.max ?? MAX_TEXT} characters at most`;
+  out[key] = v;
+  return null;
+}
+
+function readCharge(b: Body, isNew: boolean): Read<Record<string, unknown>> {
+  const out: Record<string, unknown> = {};
+  if (isNew && !("vendor" in b)) return "Give the vendor";
+  const errors = [
+    text(b, "vendor", out, { required: "Give the vendor", max: 200 }),
+    ...["registerId", "company", "system", "serviceType", "usedFor", "plan", "card", "keyName", "notes"].map((k) => text(b, k, out)),
+  ].filter(Boolean);
+  if (errors.length) return errors[0] as string;
+  if ("amount" in b) {
+    if (b.amount === null || b.amount === "") out.amount = null;
+    else {
+      const n = Number(b.amount);
+      if (!Number.isFinite(n) || n < 0 || n > 1e9) return "Amount must be a number of 0 or more";
+      out.amount = n.toFixed(2);
+    }
+  }
+  if ("currency" in b) {
+    if (!CURRENCIES.includes(b.currency as (typeof CURRENCIES)[number])) return "Currency: USD or MYR";
+    out.currency = b.currency;
+  }
+  if ("billed" in b) {
+    if (!CHARGE_BILLED.includes(b.billed as (typeof CHARGE_BILLED)[number])) return "Billed: monthly, yearly or blank";
+    out.billed = b.billed;
+  }
+  if ("status" in b) {
+    if (!CHARGE_STATUSES.includes(b.status as (typeof CHARGE_STATUSES)[number])) return "Unknown status";
+    out.status = b.status;
+  }
+  if ("checkedOn" in b) {
+    if (b.checkedOn === null || b.checkedOn === "") out.checkedOn = null;
+    else if (typeof b.checkedOn === "string" && DATE_RE.test(b.checkedOn)) out.checkedOn = b.checkedOn;
+    else return "Last checked must be a date";
+  }
+  if ("accountId" in b) {
+    if (b.accountId === null || b.accountId === "") out.accountId = null;
+    else if (Number.isInteger(Number(b.accountId))) out.accountId = Number(b.accountId);
+    else return "Unknown account";
+  }
+  return out;
+}
+
+function readCard(b: Body, isNew: boolean): Read<Record<string, unknown>> {
+  const out: Record<string, unknown> = {};
+  if (isNew && !("nickname" in b)) return "Give the card a nickname";
+  const errors = [
+    text(b, "nickname", out, { required: "Give the card a nickname", max: 60 }),
+    ...["bank", "holder", "company", "notes"].map((k) => text(b, k, out)),
+  ].filter(Boolean);
+  if (errors.length) return errors[0] as string;
+  if ("last4" in b) {
+    const v = typeof b.last4 === "string" ? b.last4.trim() : "";
+    if (!/^(\d{4})?$/.test(v)) return "Last 4 digits: exactly 4 digits, never the full card number";
+    out.last4 = v;
+  }
+  if ("statementDay" in b) {
+    if (b.statementDay === null || b.statementDay === "") out.statementDay = null;
+    else {
+      const n = Number(b.statementDay);
+      if (!Number.isInteger(n) || n < 1 || n > 31) return "Statement day: 1 to 31";
+      out.statementDay = n;
+    }
+  }
+  return out;
+}
+
+const chargeOut = <T extends { amount: string | null }>(r: T) => ({ ...r, amount: r.amount === null ? null : Number(r.amount) });
+const stamp = (c: { get(k: "user"): { name: string } }) => ({ updatedAt: nowIso(), updatedBy: c.get("user").name });
+
+// ponytail: whole tables on purpose; bounded by the few dozen services and cards the companies pay for. Paginate if that stops being true.
+billing.get("/", need("billing_view", "billing_edit"), async (c) => {
+  const db = c.get("db");
+  // ponytail: statement lines grow by a few dozen a month; whole table is fine for years. Page by month if that stops being true.
+  const [charges, cards, accounts, lines] = await Promise.all([
+    db.select().from(ch).orderBy(asc(ch.registerId), asc(ch.id)),
+    db.select().from(cd).orderBy(asc(cd.nickname)),
+    db.select({ id: schema.accounts.id, name: schema.accounts.name }).from(schema.accounts).orderBy(asc(schema.accounts.name)),
+    db.select().from(sl).orderBy(desc(sl.txnDate), desc(sl.id)),
+  ]);
+  return c.json({ charges: charges.map(chargeOut), cards, accounts, lines: lines.map(lineOut) });
+});
+
+// --- Statement lines -------------------------------------------------------
+
+function readLine(b: Body, isNew: boolean): Read<Record<string, unknown>> {
+  const out: Record<string, unknown> = {};
+  if (isNew || "txnDate" in b) {
+    if (typeof b.txnDate !== "string" || !DATE_RE.test(b.txnDate)) return "Date must be a date";
+    out.txnDate = b.txnDate;
+  }
+  if (isNew || "amountMyr" in b) {
+    const n = Number(b.amountMyr);
+    // Negative is allowed: refunds show on statements as credits.
+    if (b.amountMyr === "" || b.amountMyr === null || !Number.isFinite(n) || Math.abs(n) > 1e9) return "Amount must be a number";
+    out.amountMyr = n.toFixed(2);
+  }
+  const errors = ["card", "description", "registerId", "notes"].map((k) => text(b, k, out)).filter(Boolean);
+  return errors.length ? (errors[0] as string) : out;
+}
+
+const lineOut = <T extends { amountMyr: string }>(r: T) => ({ ...r, amountMyr: Number(r.amountMyr) });
+
+billing.post("/lines", need("billing_edit"), async (c) => {
+  const f = readLine((await c.req.json().catch(() => ({}))) as Body, true);
+  if (typeof f === "string") return c.json({ error: f }, 400);
+  const [row] = await c.get("db")
+    .insert(sl)
+    .values({ ...(f as object), txnDate: f.txnDate as string, amountMyr: f.amountMyr as string, createdAt: nowIso(), ...stamp(c) })
+    .returning();
+  return c.json({ line: lineOut(row!) }, 201);
+});
+
+// Many lines at once, from a statement pasted on the page. All or nothing.
+billing.post("/lines/bulk", need("billing_edit"), async (c) => {
+  const b = (await c.req.json().catch(() => ({}))) as { lines?: unknown };
+  if (!Array.isArray(b.lines) || b.lines.length === 0) return c.json({ error: "No lines to add" }, 400);
+  if (b.lines.length > 500) return c.json({ error: "500 lines at most at a time" }, 400);
+  const rows = [];
+  for (const [i, raw] of b.lines.entries()) {
+    const f = readLine((raw ?? {}) as Body, true);
+    if (typeof f === "string") return c.json({ error: `Line ${i + 1}: ${f}` }, 400);
+    rows.push({ ...(f as object), txnDate: f.txnDate as string, amountMyr: f.amountMyr as string, createdAt: nowIso(), ...stamp(c) });
+  }
+  const inserted = await c.get("db").insert(sl).values(rows).returning();
+  return c.json({ lines: inserted.map(lineOut) }, 201);
+});
+
+billing.patch("/lines/:id", need("billing_edit"), async (c) => {
+  const id = Number(c.req.param("id"));
+  if (!Number.isInteger(id)) return c.json({ error: "Line not found" }, 404);
+  const f = readLine((await c.req.json().catch(() => ({}))) as Body, false);
+  if (typeof f === "string") return c.json({ error: f }, 400);
+  const [row] = await c.get("db").update(sl).set({ ...f, ...stamp(c) }).where(eq(sl.id, id)).returning();
+  if (!row) return c.json({ error: "Line not found" }, 404);
+  return c.json({ line: lineOut(row) });
+});
+
+billing.delete("/lines/:id", need("billing_edit"), async (c) => {
+  const id = Number(c.req.param("id"));
+  if (!Number.isInteger(id)) return c.json({ error: "Line not found" }, 404);
+  const deleted = await c.get("db").delete(sl).where(eq(sl.id, id)).returning({ id: sl.id });
+  if (deleted.length === 0) return c.json({ error: "Line not found" }, 404);
+  return c.json({ ok: true });
+});
+
+// --- Charges ---------------------------------------------------------------
+
+billing.post("/charges", need("billing_edit"), async (c) => {
+  const f = readCharge((await c.req.json().catch(() => ({}))) as Body, true);
+  if (typeof f === "string") return c.json({ error: f }, 400);
+  const now = nowIso();
+  const [row] = await c.get("db")
+    .insert(ch)
+    .values({ ...(f as object), vendor: f.vendor as string, createdAt: now, ...stamp(c) })
+    .returning();
+  return c.json({ charge: chargeOut(row!) }, 201);
+});
+
+billing.patch("/charges/:id", need("billing_edit"), async (c) => {
+  const id = Number(c.req.param("id"));
+  if (!Number.isInteger(id)) return c.json({ error: "Charge not found" }, 404);
+  const f = readCharge((await c.req.json().catch(() => ({}))) as Body, false);
+  if (typeof f === "string") return c.json({ error: f }, 400);
+  const [row] = await c.get("db").update(ch).set({ ...f, ...stamp(c) }).where(eq(ch.id, id)).returning();
+  if (!row) return c.json({ error: "Charge not found" }, 404);
+  return c.json({ charge: chargeOut(row) });
+});
+
+billing.delete("/charges/:id", need("billing_edit"), async (c) => {
+  const id = Number(c.req.param("id"));
+  if (!Number.isInteger(id)) return c.json({ error: "Charge not found" }, 404);
+  const deleted = await c.get("db").delete(ch).where(eq(ch.id, id)).returning({ id: ch.id });
+  if (deleted.length === 0) return c.json({ error: "Charge not found" }, 404);
+  return c.json({ ok: true });
+});
+
+billing.post("/cards", need("billing_edit"), async (c) => {
+  const f = readCard((await c.req.json().catch(() => ({}))) as Body, true);
+  if (typeof f === "string") return c.json({ error: f }, 400);
+  const now = nowIso();
+  try {
+    const [row] = await c.get("db")
+      .insert(cd)
+      .values({ ...(f as object), nickname: f.nickname as string, createdAt: now, ...stamp(c) })
+      .returning();
+    return c.json({ card: row }, 201);
+  } catch (e) {
+    if (isUniqueViolation(e)) return c.json({ error: "A card with that nickname already exists" }, 409);
+    throw e;
+  }
+});
+
+// Renaming a card renames it on its charges too, so they stay attached.
+billing.patch("/cards/:id", need("billing_edit"), async (c) => {
+  const id = Number(c.req.param("id"));
+  if (!Number.isInteger(id)) return c.json({ error: "Card not found" }, 404);
+  const f = readCard((await c.req.json().catch(() => ({}))) as Body, false);
+  if (typeof f === "string") return c.json({ error: f }, 400);
+  try {
+    const row = await c.get("db").transaction(async (tx) => {
+      const [old] = await tx.select({ nickname: cd.nickname }).from(cd).where(eq(cd.id, id));
+      if (!old) return null;
+      const [updated] = await tx.update(cd).set({ ...f, ...stamp(c) }).where(eq(cd.id, id)).returning();
+      if (typeof f.nickname === "string" && f.nickname !== old.nickname) {
+        await tx.update(ch).set({ card: f.nickname }).where(eq(ch.card, old.nickname));
+      }
+      return updated;
+    });
+    if (!row) return c.json({ error: "Card not found" }, 404);
+    return c.json({ card: row });
+  } catch (e) {
+    if (isUniqueViolation(e)) return c.json({ error: "A card with that nickname already exists" }, 409);
+    throw e;
+  }
+});
+
+// Refused while any charge still names the card, so no bill is left pointing at nothing.
+billing.delete("/cards/:id", need("billing_edit"), async (c) => {
+  const db = c.get("db");
+  const id = Number(c.req.param("id"));
+  if (!Number.isInteger(id)) return c.json({ error: "Card not found" }, 404);
+  const [card] = await db.select({ nickname: cd.nickname }).from(cd).where(eq(cd.id, id));
+  if (!card) return c.json({ error: "Card not found" }, 404);
+  const [{ n }] = await db.select({ n: count() }).from(ch).where(eq(ch.card, card.nickname));
+  if (n > 0) return c.json({ error: `${n} charge(s) still use this card. Move them to another card first.` }, 400);
+  await db.delete(cd).where(eq(cd.id, id));
+  return c.json({ ok: true });
+});
+
+export default billing;

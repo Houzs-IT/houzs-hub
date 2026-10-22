@@ -1,4 +1,4 @@
-import { integer, jsonb, pgTable, primaryKey, text } from "drizzle-orm/pg-core";
+import { integer, jsonb, numeric, pgTable, primaryKey, text } from "drizzle-orm/pg-core";
 
 export const TICKET_TYPES = ["bug", "development"] as const;
 export const TICKET_PRIORITIES = ["urgent", "high", "medium", "low"] as const;
@@ -130,6 +130,86 @@ export const ticketAttachments = pgTable("ticket_attachments", {
   mime: text("mime").notNull(),
   size: integer("size").notNull(),
   createdAt: text("created_at").notNull(),
+});
+
+export const ACCOUNT_STATUSES = ["yes", "partly", "not_yet", "cant_move"] as const;
+export type AccountStatus = (typeof ACCOUNT_STATUSES)[number];
+
+// Outside accounts and who controls them. Never passwords, keys or card numbers.
+export const accounts = pgTable("accounts", {
+  id: id(),
+  name: text("name").notNull(),
+  companies: text("companies").notNull().default(""),
+  vendor: text("vendor").notNull().default(""),
+  mainOwner: text("main_owner").notNull().default(""),
+  control: text("control").notNull().default(""),
+  itAccess: text("it_access").notNull().default(""),
+  status: text("status").$type<AccountStatus>().notNull().default("not_yet"),
+  billsTo: text("bills_to").notNull().default(""),
+  registerIds: text("register_ids").notNull().default(""),
+  nextStep: text("next_step").notNull().default(""),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  updatedBy: text("updated_by"),
+});
+
+// Company cards, last 4 digits only.
+export const cards = pgTable("cards", {
+  id: id(),
+  nickname: text("nickname").notNull(),
+  last4: text("last4").notNull().default(""),
+  bank: text("bank").notNull().default(""),
+  holder: text("holder").notNull().default(""),
+  company: text("company").notNull().default(""),
+  statementDay: integer("statement_day"),
+  notes: text("notes").notNull().default(""),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  updatedBy: text("updated_by"),
+});
+
+export const CHARGE_STATUSES = ["confirmed", "to_confirm", "to_fill_in", "not_active", "cancelled"] as const;
+export type ChargeStatus = (typeof CHARGE_STATUSES)[number];
+export const CHARGE_BILLED = ["", "monthly", "yearly"] as const;
+export const CURRENCIES = ["USD", "MYR"] as const;
+
+// One bill line per row, like a row of the sheet's Register tab.
+export const charges = pgTable("charges", {
+  id: id(),
+  registerId: text("register_id").notNull().default(""),
+  accountId: integer("account_id"),
+  company: text("company").notNull().default(""),
+  system: text("system").notNull().default(""),
+  vendor: text("vendor").notNull(),
+  serviceType: text("service_type").notNull().default(""),
+  usedFor: text("used_for").notNull().default(""),
+  plan: text("plan").notNull().default(""),
+  // numeric comes back from Postgres as a string; the API turns it into a number.
+  amount: numeric("amount", { precision: 12, scale: 2 }),
+  currency: text("currency").notNull().default("USD"),
+  billed: text("billed").notNull().default(""),
+  card: text("card").notNull().default(""),
+  status: text("status").$type<ChargeStatus>().notNull().default("to_confirm"),
+  checkedOn: text("checked_on"),
+  keyName: text("key_name").notNull().default(""),
+  notes: text("notes").notNull().default(""),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  updatedBy: text("updated_by"),
+});
+
+// Card statement lines in ringgit, tied to a charge by its sheet ID.
+export const statementLines = pgTable("statement_lines", {
+  id: id(),
+  txnDate: text("txn_date").notNull(),
+  card: text("card").notNull().default(""),
+  description: text("description").notNull().default(""),
+  registerId: text("register_id").notNull().default(""),
+  amountMyr: numeric("amount_myr", { precision: 12, scale: 2 }).notNull(),
+  notes: text("notes").notNull().default(""),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  updatedBy: text("updated_by"),
 });
 
 // System health: what the hub checks, and the results (7 days kept).
