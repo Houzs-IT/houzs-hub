@@ -1,4 +1,4 @@
-import { Activity, BarChart3, Bell, ChevronDown, KanbanSquare, List, LogOut, Menu, Moon, Plug, ShieldCheck, Sun, UserCheck, UserCog, Users } from "lucide-react";
+import { Activity, BarChart3, Bell, ChevronDown, CreditCard, KanbanSquare, KeySquare, List, LogOut, Menu, Moon, Plug, ShieldCheck, Sun, UserCheck, UserCog, Users } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { Link, Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
 import { api, json, type Perm, type User, type SystemRow } from "../api/client";
@@ -28,9 +28,42 @@ const PAGE_NAMES: Record<string, string> = {
   "/account": "My account",
   "/integrations": "Integrations",
   "/health": "System health",
+  "/accounts": "Account ownership",
+  "/billing": "System billing",
   "/roles": "Roles",
 };
 
+// A sidebar category's open or closed state, remembered in this browser.
+function useSectionOpen(key: string): [boolean, () => void] {
+  const [open, setOpen] = useState(() => {
+    try {
+      return localStorage.getItem(key) !== "closed";
+    } catch {
+      return true;
+    }
+  });
+  const toggle = () =>
+    setOpen((o) => {
+      try {
+        localStorage.setItem(key, o ? "closed" : "open");
+      } catch {}
+      return !o;
+    });
+  return [open, toggle];
+}
+
+function SectionToggle({ label, open, onToggle }: { label: string; open: boolean; onToggle: () => void }) {
+  return (
+    <button
+      onClick={onToggle}
+      aria-expanded={open}
+      className="tap flex w-full items-center gap-1.5 px-2.5 pb-1 pt-5 text-[9.5px] font-bold uppercase tracking-brand text-sidebar-ink-muted hover:text-sidebar-ink"
+    >
+      <span className="flex-1 text-left">{label}</span>
+      <ChevronDown className={`h-3.5 w-3.5 transition-transform motion-reduce:transition-none ${open ? "" : "-rotate-90"}`} />
+    </button>
+  );
+}
 // "/tickets?system=HK&selected=HK-12" -> "HK-12", "/board?system=HK" -> "Board · HK"
 export function pageLabel(page: string | null) {
   if (!page) return "";
@@ -251,20 +284,8 @@ export default function Layout() {
     document.addEventListener("keydown", closeOnEscape);
     return () => document.removeEventListener("keydown", closeOnEscape);
   }, [isMenuOpen]);
-  const [itOpen, setItOpen] = useState(() => {
-    try {
-      return localStorage.getItem("sidebar.it") !== "closed";
-    } catch {
-      return true;
-    }
-  });
-  const toggleIt = () =>
-    setItOpen((o) => {
-      try {
-        localStorage.setItem("sidebar.it", o ? "closed" : "open");
-      } catch {}
-      return !o;
-    });
+  const [itOpen, toggleIt] = useSectionOpen("sidebar.it");
+  const [financeOpen, toggleFinance] = useSectionOpen("sidebar.finance");
 
   useEffect(() => {
     api<{ user: User }>("/me")
@@ -318,7 +339,11 @@ export default function Layout() {
       ? "/integrations"
       : can("health_view", "health_edit")
         ? "/health"
-        : "/account";
+        : can("accounts_view", "accounts_edit")
+          ? "/accounts"
+          : can("billing_view", "billing_edit")
+            ? "/billing"
+            : "/account";
   const itActive = Object.values(stats.active_by_system).reduce((a, n) => a + n, 0);
 
   const signOut = () => fetch("/api/v1/auth/logout", { method: "POST" }).finally(() => location.assign("/login"));
@@ -402,6 +427,18 @@ export default function Layout() {
                     count={stats.active_by_system[s.code] ?? 0}
                   />
                 ))}
+              </>
+            )}
+
+            {/* The Finance category: outside accounts and what the systems cost. Only
+                hides the links; the server checks accounts_* and billing_* itself. */}
+            {can("accounts_view", "accounts_edit", "billing_view", "billing_edit") && (
+              <SectionToggle label="Finance" open={financeOpen} onToggle={toggleFinance} />
+            )}
+            {financeOpen && (
+              <>
+                {can("accounts_view", "accounts_edit") && <NavItem to="/accounts" icon={<KeySquare className="h-4 w-4" />} label="Account ownership" />}
+                {can("billing_view", "billing_edit") && <NavItem to="/billing" icon={<CreditCard className="h-4 w-4" />} label="System billing" />}
               </>
             )}
 

@@ -8,6 +8,8 @@ import AccountPage from "./pages/AccountPage";
 import ListPage from "./pages/ListPage";
 import LoginPage from "./pages/LoginPage";
 import NotificationsPage from "./pages/NotificationsPage";
+import AccountsPage from "./pages/AccountsPage";
+import BillingPage from "./pages/BillingPage";
 import HealthPage from "./pages/HealthPage";
 import IntegrationsPage from "./pages/IntegrationsPage";
 import ReportsPage from "./pages/ReportsPage";
@@ -31,6 +33,8 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
           <Route path="/users" element={<UsersPage />} />
           <Route path="/integrations" element={<IntegrationsPage />} />
           <Route path="/health" element={<HealthPage />} />
+          <Route path="/accounts" element={<AccountsPage />} />
+          <Route path="/billing" element={<BillingPage />} />
           <Route path="/roles" element={<RolesPage />} />
           <Route path="/account" element={<AccountPage />} />
           <Route path="*" element={<Navigate to="/tickets" replace />} />
