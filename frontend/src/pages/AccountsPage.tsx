@@ -52,6 +52,7 @@ function emailCounts(rows: AccountRow[]) {
   return [...map.entries()].sort((x, y) => (x[0] === GOAL ? -1 : y[0] === GOAL ? 1 : y[1].control - x[1].control || x[0].localeCompare(y[0])));
 }
 
+// The Account ownership tab of the System billing page.
 export default function AccountsPage() {
   const { me } = useHub();
   const canEdit = !!me.perms?.includes("accounts_edit");
@@ -158,12 +159,10 @@ export default function AccountsPage() {
   );
 
   return (
-    <div className="h-full overflow-auto px-4 py-6 md:px-8">
+    <div className="mt-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="eyebrow">Houzs Hub · Finance</div>
-          <h1 className="mt-1 text-[24px] font-extrabold tracking-tight text-ink">Account ownership</h1>
-          <p className="mt-1 max-w-2xl text-[13px] text-ink-subtle">
+          <p className="max-w-2xl text-[13px] text-ink-subtle">
             Every outside account the companies rely on and who controls it. The goal is for all of them to be under {GOAL}. Never
             put passwords, API keys or card numbers here.
           </p>

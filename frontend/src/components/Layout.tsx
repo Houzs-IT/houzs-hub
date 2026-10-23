@@ -1,4 +1,4 @@
-import { Activity, BarChart3, Bell, ChevronDown, CreditCard, KanbanSquare, KeySquare, List, LogOut, Menu, Moon, Plug, ShieldCheck, Sun, UserCheck, UserCog, Users } from "lucide-react";
+import { Activity, BarChart3, Bell, ChevronDown, CreditCard, KanbanSquare, List, LogOut, Menu, Moon, Plug, ShieldCheck, Sun, UserCheck, UserCog, Users } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { Link, Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
 import { api, json, type Perm, type User, type SystemRow } from "../api/client";
@@ -28,7 +28,6 @@ const PAGE_NAMES: Record<string, string> = {
   "/account": "My account",
   "/integrations": "Integrations",
   "/health": "System health",
-  "/accounts": "Account ownership",
   "/billing": "System billing",
   "/roles": "Roles",
 };
@@ -339,11 +338,9 @@ export default function Layout() {
       ? "/integrations"
       : can("health_view", "health_edit")
         ? "/health"
-        : can("accounts_view", "accounts_edit")
-          ? "/accounts"
-          : can("billing_view", "billing_edit")
-            ? "/billing"
-            : "/account";
+        : can("accounts_view", "accounts_edit", "billing_view", "billing_edit")
+          ? "/billing"
+          : "/account";
   const itActive = Object.values(stats.active_by_system).reduce((a, n) => a + n, 0);
 
   const signOut = () => fetch("/api/v1/auth/logout", { method: "POST" }).finally(() => location.assign("/login"));
@@ -437,8 +434,8 @@ export default function Layout() {
             )}
             {financeOpen && (
               <>
-                {can("accounts_view", "accounts_edit") && <NavItem to="/accounts" icon={<KeySquare className="h-4 w-4" />} label="Account ownership" />}
-                {can("billing_view", "billing_edit") && <NavItem to="/billing" icon={<CreditCard className="h-4 w-4" />} label="System billing" />}
+                {/* Account ownership is a tab of System billing. */}
+                <NavItem to="/billing" icon={<CreditCard className="h-4 w-4" />} label="System billing" />
               </>
             )}
 

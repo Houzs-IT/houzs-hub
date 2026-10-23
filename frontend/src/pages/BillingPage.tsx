@@ -1,10 +1,11 @@
 import { Pencil, Plus, Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
-import { api, json, type BillingData as Data, type CardRow, type ChargeRow, type ChargeStatus } from "../api/client";
+import { api, json, type BillingData as Data, type CardRow, type ChargeRow, type ChargeStatus, type Perm } from "../api/client";
 import { EditDialog, Field, Select } from "../components/EditForm";
 import { money } from "../lib/format";
 import { useHub } from "../components/Layout";
+import AccountsPage from "./AccountsPage";
 import { Monthly, Statements, Trend } from "./BillingStatements";
 
 const STATUS: Record<ChargeStatus, { label: string; pill: string }> = {
@@ -22,6 +23,7 @@ const BILLING_TABS = [
   ["statements", "Statements"],
   ["monthly", "Monthly"],
   ["trend", "Trend"],
+  ["accounts", "Account ownership"],
 ] as const;
 type Tab = (typeof BILLING_TABS)[number][0];
 const NO_CARD = "No card";
@@ -62,20 +64,25 @@ function Amount({ usd, myr }: { usd: number; myr: number }) {
 
 export default function BillingPage() {
   const { me } = useHub();
-  const canEdit = !!me.perms?.includes("billing_edit");
+  const has = (...p: Perm[]) => p.some((x) => me.perms?.includes(x));
+  const canEdit = has("billing_edit");
+  const canBilling = has("billing_view", "billing_edit");
+  // Account ownership keeps its own permissions: someone may see one tab and not the others.
+  const tabs = BILLING_TABS.filter(([k]) => (k === "accounts" ? has("accounts_view", "accounts_edit") : canBilling));
   const [params, setParams] = useSearchParams();
-  const tab = (BILLING_TABS.some(([k]) => k === params.get("tab")) ? params.get("tab") : "overview") as Tab;
+  const tab = (tabs.find(([k]) => k === params.get("tab")) ?? tabs[0])?.[0] as Tab | undefined;
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
+    if (!canBilling) return;
     api<Data>("/billing")
       .then((d) => {
         setData(d);
         setError(null);
       })
       .catch((e: Error) => setError(e.message));
-  }, []);
+  }, [canBilling]);
   useEffect(load, [load]);
 
   return (
@@ -88,7 +95,7 @@ export default function BillingPage() {
       </p>
 
       <div role="tablist" className="mt-4 flex gap-1 overflow-x-auto overflow-y-hidden whitespace-nowrap border-b border-line">
-        {BILLING_TABS.map(([key, label]) => (
+        {tabs.map(([key, label]) => (
           <button
             key={key}
             role="tab"
@@ -108,7 +115,8 @@ export default function BillingPage() {
           {error}
         </div>
       )}
-      {!data && !error && <div className="py-16 text-center text-sm text-ink-subtle">Loading...</div>}
+      {tab === "accounts" && <AccountsPage />}
+      {canBilling && tab !== "accounts" && !data && !error && <div className="py-16 text-center text-sm text-ink-subtle">Loading...</div>}
 
       {data && tab === "overview" && <Overview data={data} />}
       {data && tab === "register" && <Register data={data} setData={setData} canEdit={canEdit} />}
