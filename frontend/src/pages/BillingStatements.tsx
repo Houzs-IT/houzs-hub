@@ -71,20 +71,47 @@ function splitRow(line: string): string[] {
   return out;
 }
 
-// A card statement copied from its PDF: "24 SEP SUPABASE SINGAPORE SG 692.36", with no year
-// and spaces between the columns. The year is the latest one that does not put the date in the future.
-const PDF_ROW = /^(\d{1,2})\s+([A-Za-z]{3})(?:\s+(\d{4}))?\s+(.+?)\s+(\(?-?[\d,]+\.\d{2}\)?(?:\s*CR)?)$/i;
-// The foreign amount the bank prints under a charge: "USD 37.86". Kept as that line's note.
-const FOREIGN = /^([A-Z]{3})\s+([\d,]+\.\d{2})$/;
-function pdfRow(line: string): Parsed | null {
-  const m = line.match(PDF_ROW);
+// A card statement copied from its PDF, with spaces between the columns. Banks lay it out differently:
+//   24 SEP SUPABASE SINGAPORE SG 692.36            (no year: the latest one not in the future)
+//   12/09/26 14/09/26 SUPABASE SINGAPORE SGP USD152.26 627.05   (transaction and posting date)
+// A foreign amount ("USD 37.86", "USD152.26") before the ringgit amount or on a line of its own is kept as
+// the line's note, and a row the PDF wrapped (description, then USD216.00, then 889.55) is joined up again.
+const DATE = String.raw`\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}|\d{1,2}\s+[A-Za-z]{3}(?:\s+\d{4})?`;
+const PDF_ROW = new RegExp(String.raw`^(${DATE})(?:\s+(?:${DATE}))?\s+(.+)$`);
+const AMOUNT = /^(\(?-?[\d,]+\.\d{2}\)?(?:\s*CR)?)$/i;
+const ENDS_AMOUNT = /\s(\(?-?[\d,]+\.\d{2}\)?(?:\s*CR)?)$/i;
+const FOREIGN = /^([A-Z]{3})\s?([\d,]+\.\d{2})$/;
+const ENDS_FOREIGN = /\s([A-Z]{3})\s?([\d,]+\.\d{2})$/;
+
+function pdfDate(s: string): string | null {
+  const m = s.match(/^(\d{1,2})\s+([A-Za-z]{3})$/);
   const mon = m && MONTHS[m[2]!.toLowerCase()];
-  const amount = m && parseAmount(m[5]!);
-  if (!m || !mon || amount == null) return null;
+  if (!m || !mon) return parseDate(s);
   const day = m[1]!.padStart(2, "0");
-  let year = m[3] ? Number(m[3]) : new Date().getFullYear();
-  if (!m[3] && `${year}-${mon}-${day}` > today()) year -= 1;
-  return { txnDate: `${year}-${mon}-${day}`, description: m[4]!.trim(), amountMyr: amount, notes: "" };
+  const year = new Date().getFullYear();
+  return `${`${year}-${mon}-${day}` > today() ? year - 1 : year}-${mon}-${day}`;
+}
+
+type Pending = { txnDate: string; description: string; amountMyr: number | null; notes: string };
+// The start of a row: its date and description, with the amounts when they are on the same line.
+function pdfRow(line: string): Pending | null {
+  const m = line.match(PDF_ROW);
+  const date = m && pdfDate(m[1]!.replace(/\s+/g, " "));
+  if (!m || !date) return null;
+  let rest = m[2]!;
+  let amountMyr: number | null = null;
+  let notes = "";
+  const amount = rest.match(ENDS_AMOUNT);
+  if (amount) {
+    amountMyr = parseAmount(amount[1]!);
+    rest = rest.slice(0, amount.index).trim();
+    const foreign = rest.match(ENDS_FOREIGN);
+    if (foreign) {
+      notes = `${foreign[1]} ${foreign[2]}`;
+      rest = rest.slice(0, foreign.index).trim();
+    }
+  }
+  return rest ? { txnDate: date, description: rest, amountMyr, notes } : null;
 }
 
 type Parsed = { txnDate: string; description: string; amountMyr: number; notes: string };
@@ -93,23 +120,41 @@ type Parsed = { txnDate: string; description: string; amountMyr: number; notes: 
 function parseStatement(text: string): { rows: Parsed[]; skipped: number } {
   const rows: Parsed[] = [];
   let skipped = 0;
+  let open: Pending | null = null; // a wrapped row still waiting for its ringgit amount
+  const close = () => {
+    if (open) skipped += 1;
+    open = null;
+  };
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
     if (!line) continue;
     const foreign = line.match(FOREIGN);
     const last = rows[rows.length - 1];
-    if (foreign && last && !last.notes) {
-      last.notes = `${foreign[1]} ${foreign[2]}`;
+    if (foreign && (open || (last && !last.notes))) {
+      (open ?? last!).notes = `${foreign[1]} ${foreign[2]}`;
       continue;
     }
+    const amount = open && AMOUNT.test(line) ? parseAmount(line) : null;
+    if (open && amount !== null) {
+      rows.push({ ...open, amountMyr: amount });
+      open = null;
+      continue;
+    }
+    close();
     const cells = splitRow(line).map((c) => c.trim());
     const date = parseDate(cells[0] ?? "");
-    const amount = parseAmount(cells[cells.length - 1] ?? "");
+    const csvAmount = parseAmount(cells[cells.length - 1] ?? "");
     const description = cells.slice(1, -1).join(" ").trim();
-    const row = date && amount !== null && description ? { txnDate: date, description, amountMyr: amount, notes: "" } : pdfRow(line);
-    if (row) rows.push(row);
-    else skipped += 1;
+    if (date && csvAmount !== null && description) {
+      rows.push({ txnDate: date, description, amountMyr: csvAmount, notes: "" });
+      continue;
+    }
+    const row = pdfRow(line);
+    if (!row) skipped += 1;
+    else if (row.amountMyr === null) open = row;
+    else rows.push({ ...row, amountMyr: row.amountMyr });
   }
+  close();
   return { rows, skipped };
 }
 
