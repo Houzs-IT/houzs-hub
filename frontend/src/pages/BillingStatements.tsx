@@ -71,23 +71,51 @@ function splitRow(line: string): string[] {
   return out;
 }
 
-type Parsed = { txnDate: string; description: string; amountMyr: number };
-// Rows of Date, Description, Amount, as copied from a bank statement or its CSV.
+// A card statement copied from its PDF: "24 SEP SUPABASE SINGAPORE SG 692.36", with no year
+// and spaces between the columns. The year is the latest one that does not put the date in the future.
+const PDF_ROW = /^(\d{1,2})\s+([A-Za-z]{3})(?:\s+(\d{4}))?\s+(.+?)\s+(\(?-?[\d,]+\.\d{2}\)?(?:\s*CR)?)$/i;
+// The foreign amount the bank prints under a charge: "USD 37.86". Kept as that line's note.
+const FOREIGN = /^([A-Z]{3})\s+([\d,]+\.\d{2})$/;
+function pdfRow(line: string): Parsed | null {
+  const m = line.match(PDF_ROW);
+  const mon = m && MONTHS[m[2]!.toLowerCase()];
+  const amount = m && parseAmount(m[5]!);
+  if (!m || !mon || amount == null) return null;
+  const day = m[1]!.padStart(2, "0");
+  let year = m[3] ? Number(m[3]) : new Date().getFullYear();
+  if (!m[3] && `${year}-${mon}-${day}` > today()) year -= 1;
+  return { txnDate: `${year}-${mon}-${day}`, description: m[4]!.trim(), amountMyr: amount, notes: "" };
+}
+
+type Parsed = { txnDate: string; description: string; amountMyr: number; notes: string };
+// Rows of Date, Description, Amount, as copied from a bank statement, its PDF or its CSV.
 // Anything else (headers, totals, blank lines) is skipped and counted.
 function parseStatement(text: string): { rows: Parsed[]; skipped: number } {
   const rows: Parsed[] = [];
   let skipped = 0;
-  for (const line of text.split(/\r?\n/)) {
-    if (!line.trim()) continue;
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const foreign = line.match(FOREIGN);
+    const last = rows[rows.length - 1];
+    if (foreign && last && !last.notes) {
+      last.notes = `${foreign[1]} ${foreign[2]}`;
+      continue;
+    }
     const cells = splitRow(line).map((c) => c.trim());
     const date = parseDate(cells[0] ?? "");
     const amount = parseAmount(cells[cells.length - 1] ?? "");
     const description = cells.slice(1, -1).join(" ").trim();
-    if (!date || amount === null || !description) skipped += 1;
-    else rows.push({ txnDate: date, description, amountMyr: amount });
+    const row = date && amount !== null && description ? { txnDate: date, description, amountMyr: amount, notes: "" } : pdfRow(line);
+    if (row) rows.push(row);
+    else skipped += 1;
   }
   return { rows, skipped };
 }
+
+// A pasted line already saved on the same card: same date, amount and description.
+const sameLine = (a: { txnDate: string; amountMyr: number; description: string }, b: StatementLine, card: string) =>
+  a.txnDate === b.txnDate && a.amountMyr === b.amountMyr && a.description.toLowerCase() === b.description.toLowerCase() && b.card === card;
 
 // ---------------------------------------------------------------------------
 
@@ -143,9 +171,13 @@ export function Statements({ data, setData, canEdit }: { data: Data; setData: (d
   };
 
   const parsed = parseStatement(pasteText);
+  // Pasting the same statement twice would count its charges twice, so lines already saved are left out.
+  const fresh = parsed.rows.filter((r) => !data.lines.some((l) => sameLine(r, l, pasteCard)));
+  const repeats = parsed.rows.length - fresh.length;
   const addPasted = async () => {
     if (parsed.rows.length === 0) throw new Error("No lines found. Each line needs a date, a description and an amount.");
-    const lines = parsed.rows.map((r) => ({ ...r, card: pasteCard, registerId: guessCharge(data.charges, r.description, pasteCard) }));
+    if (fresh.length === 0) throw new Error("Every line here is already saved on this card.");
+    const lines = fresh.map((r) => ({ ...r, card: pasteCard, registerId: guessCharge(data.charges, r.description, pasteCard) }));
     const res = await api<{ lines: StatementLine[] }>("/billing/lines/bulk", json("POST", { lines }));
     setData({ ...data, lines: [...res.lines, ...data.lines] });
     setPasteText("");
@@ -271,9 +303,10 @@ export function Statements({ data, setData, canEdit }: { data: Data; setData: (d
 
       <EditDialog dialogRef={pasteDialog} title="Paste statement" isNew stamp={null} onSave={addPasted} onRemove={async () => {}} onClose={() => {}} saveLabel="Add lines">
         <div className="sm:col-span-2 text-[13px] text-ink-subtle">
-          Copy the software and AI lines from the bank statement (or its CSV), one per line: <b>date</b>, <b>description</b>, <b>amount</b>. Dates
-          like 03/09/2026 are read day first. Each line is matched to a charge by its vendor name when that is clear; the rest stay Not matched for
-          you to pick.
+          Copy the software and AI lines from the bank statement (its PDF or CSV), one per line: <b>date</b>, <b>description</b>, <b>amount</b>.
+          Dates like 03/09/2026 are read day first; a date without a year (24 SEP) gets the latest year that is not in the future. A foreign amount
+          on the next line (USD 37.86) is kept as the line's note. Each line is matched to a charge by its vendor name when that is clear; the rest
+          stay Not matched for you to pick. Lines already saved on the card are left out.
         </div>
         <label className="block text-[12px] font-semibold text-ink-subtle sm:col-span-2">
           Statement lines
@@ -281,13 +314,26 @@ export function Statements({ data, setData, canEdit }: { data: Data; setData: (d
             className="input mt-1 h-auto min-h-[160px] w-full py-2 font-mono text-[12px]"
             value={pasteText}
             onChange={(e) => setPasteText(e.target.value)}
-            placeholder={"03/09/2026, CLOUDFLARE SAN FRANCISCO, 25.30\n12/09/2026, SUPABASE SINGAPORE, 717.80"}
+            placeholder={"24 SEP SUPABASE SINGAPORE SG 692.36\nUSD 165.89\n03/09/2026, CLOUDFLARE SAN FRANCISCO, 25.30"}
           />
         </label>
         <Select label="Card these lines are on" value={pasteCard} onChange={setPasteCard} options={cardOptions} />
         <div className="self-end text-[13px] text-ink-subtle">
-          {parsed.rows.length} line(s) found{parsed.skipped ? `, ${parsed.skipped} skipped` : ""} · {rm(parsed.rows.reduce((a, r) => a + r.amountMyr, 0))}
+          {fresh.length} line(s) to add{repeats ? `, ${repeats} already saved` : ""}
+          {parsed.skipped ? `, ${parsed.skipped} skipped` : ""} · {rm(fresh.reduce((a, r) => a + r.amountMyr, 0))}
         </div>
+        {fresh.length > 0 && (
+          <ul className="max-h-40 overflow-auto text-[12px] text-ink-subtle sm:col-span-2">
+            {fresh.map((r, i) => (
+              <li key={i} className="flex gap-2 tabular-nums">
+                <span className="w-20 shrink-0">{r.txnDate}</span>
+                <span className="flex-1 truncate">{r.description}</span>
+                {r.notes && <span>{r.notes}</span>}
+                <span className="w-24 shrink-0 text-right">{rm(r.amountMyr)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </EditDialog>
     </>
   );
