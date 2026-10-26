@@ -7,6 +7,9 @@ import type { Env } from "../types";
 export const MAX_FILES = 5;
 export const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const ALLOWED_MIME = /^(image\/|video\/mp4$|video\/quicktime$|application\/pdf$)/;
+// Browsers label a .zip as application/zip, application/x-zip-compressed (Windows) or nothing at all.
+const isZip = (f: File) => f.name.toLowerCase().endsWith(".zip");
+const mimeOf = (f: File) => (isZip(f) ? "application/zip" : f.type);
 
 export const nowIso = () => new Date().toISOString();
 
@@ -44,7 +47,7 @@ export function validateFiles(files: File[]) {
   if (files.length > MAX_FILES) throw new InputError(`At most ${MAX_FILES} files`);
   for (const f of files) {
     if (f.size > MAX_FILE_BYTES) throw new InputError(`${f.name} is larger than 10 MB`);
-    if (!ALLOWED_MIME.test(f.type)) throw new InputError(`${f.name}: only images, mp4/mov or pdf`);
+    if (!isZip(f) && !ALLOWED_MIME.test(f.type)) throw new InputError(`${f.name}: only images, mp4/mov, pdf or zip`);
   }
 }
 
@@ -109,8 +112,8 @@ export async function saveAttachments(env: Env, db: DB, ticket: Ticket, eventId:
     files.map(async (f) => {
       const safe = f.name.replace(/[^\w.\-]+/g, "_").slice(-80) || "file";
       const key = `tickets/${ticket.code}/${crypto.randomUUID()}-${safe}`;
-      await env.FILES.put(key, f.stream(), { httpMetadata: { contentType: f.type } });
-      return { ticketId: ticket.id, eventId, r2Key: key, filename: f.name.slice(0, 200), mime: f.type, size: f.size, createdAt: at };
+      await env.FILES.put(key, f.stream(), { httpMetadata: { contentType: mimeOf(f) } });
+      return { ticketId: ticket.id, eventId, r2Key: key, filename: f.name.slice(0, 200), mime: mimeOf(f), size: f.size, createdAt: at };
     }),
   );
   await db.insert(schema.ticketAttachments).values(rows);
