@@ -320,6 +320,26 @@ dev.get("/tickets/monthly", async (c) => {
   return c.json({ months: keys, rows });
 });
 
+// Same counts per day for the current Malaysia month; every day of the month is
+// listed so the chart keeps its width while the month fills in.
+dev.get("/tickets/daily", async (c) => {
+  const db = c.get("db");
+  const myNow = new Date(Date.now() + 8 * 3600_000);
+  const y = myNow.getUTCFullYear();
+  const m = myNow.getUTCMonth();
+  const days = Array.from({ length: new Date(Date.UTC(y, m + 1, 0)).getUTCDate() }, (_, i) =>
+    new Date(Date.UTC(y, m, i + 1)).toISOString().slice(0, 10),
+  );
+  const from = new Date(Date.parse(`${days[0]}T00:00:00+08:00`)).toISOString();
+  const day = sql<string>`to_char(${t.createdAt}::timestamptz AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD')`;
+  const rows = await db
+    .select({ day, system: t.systemCode, type: t.type, n: count() })
+    .from(t)
+    .where(gte(t.createdAt, from))
+    .groupBy(day, t.systemCode, t.type);
+  return c.json({ days, today: myNow.toISOString().slice(0, 10), rows });
+});
+
 async function findTicket(db: DB, code: string) {
   const [row] = await db.select().from(t).where(eq(t.code, code)).limit(1);
   return row ?? null;
