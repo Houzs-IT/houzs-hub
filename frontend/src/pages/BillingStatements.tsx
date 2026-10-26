@@ -8,10 +8,10 @@ import { money } from "../lib/format";
 // Monthly tally and Trend tabs. Amounts here are ringgit as charged to the card.
 
 const NOT_MATCHED = "Not matched";
-const TH = "border-b-2 border-line bg-surface-dim px-3 py-2.5 text-[10px] font-bold uppercase tracking-brand text-ink-subtle first:pl-4 last:pr-4";
-const rm = (n: number) => money(n, "MYR");
-const monthOf = (d: string) => d.slice(0, 7);
-const monthName = (m: string) => new Date(`${m}-01T00:00:00`).toLocaleDateString("en-MY", { month: "short", year: "numeric" });
+export const TH = "border-b-2 border-line bg-surface-dim px-3 py-2.5 text-[10px] font-bold uppercase tracking-brand text-ink-subtle first:pl-4 last:pr-4";
+export const rm = (n: number) => money(n, "MYR");
+export const monthOf = (d: string) => d.slice(0, 7);
+export const monthName = (m: string) => new Date(`${m}-01T00:00:00`).toLocaleDateString("en-MY", { month: "short", year: "numeric" });
 const thisMonth = () => new Date().toISOString().slice(0, 7);
 
 function lookup(data: Data) {
@@ -23,7 +23,7 @@ function lookup(data: Data) {
 }
 
 const sum = (lines: StatementLine[]) => lines.reduce((a, l) => a + l.amountMyr, 0);
-const pct = (part: number, whole: number) => (whole ? `${Math.round((part / whole) * 1000) / 10}%` : "-");
+export const pct = (part: number, whole: number) => (whole ? `${Math.round((part / whole) * 1000) / 10}%` : "-");
 
 // A charge is picked for a statement line only when the vendor name points at exactly
 // one sheet ID (after narrowing to the card, if one is given); otherwise it is left for a person.

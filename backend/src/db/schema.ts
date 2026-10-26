@@ -170,8 +170,18 @@ export const cards = pgTable("cards", {
 
 export const CHARGE_STATUSES = ["confirmed", "to_confirm", "to_fill_in", "not_active", "cancelled"] as const;
 export type ChargeStatus = (typeof CHARGE_STATUSES)[number];
-export const CHARGE_BILLED = ["", "monthly", "yearly"] as const;
+export const CHARGE_BILLED = ["", "monthly", "yearly", "credit", "usage"] as const;
 export const CURRENCIES = ["USD", "MYR"] as const;
+// The systems a bill can belong to. Same list as the CHECKs in 008_billing_systems.sql.
+export const BILLING_SYSTEMS = [
+  ["CONTS", "Conts ERP"],
+  ["HC", "Houzs ERP"],
+  ["HK", "Hookka"],
+  ["CONNECT", "Houzs Connect"],
+  ["2990", "2990s"],
+  ["HUB", "IT Hub"],
+] as const;
+export const BILLING_SYSTEM_CODES: readonly string[] = BILLING_SYSTEMS.map(([code]) => code);
 
 // One bill line per row, like a row of the sheet's Register tab.
 export const charges = pgTable("charges", {
@@ -179,7 +189,11 @@ export const charges = pgTable("charges", {
   registerId: text("register_id").notNull().default(""),
   accountId: integer("account_id"),
   company: text("company").notNull().default(""),
+  // The sheet's free-text System, kept for reference; systemCode is what counts.
   system: text("system").notNull().default(""),
+  systemCode: text("system_code").notNull().default(""),
+  projectRef: text("project_ref").notNull().default(""),
+  module: text("module").notNull().default(""),
   vendor: text("vendor").notNull(),
   serviceType: text("service_type").notNull().default(""),
   usedFor: text("used_for").notNull().default(""),
@@ -197,6 +211,17 @@ export const charges = pgTable("charges", {
   updatedAt: text("updated_at").notNull(),
   updatedBy: text("updated_by"),
 });
+
+// A shared charge's share per system, in percent; the rows add up to 100.
+export const chargeSplits = pgTable(
+  "charge_splits",
+  {
+    chargeId: integer("charge_id").notNull(),
+    systemCode: text("system_code").notNull(),
+    percent: numeric("percent", { precision: 5, scale: 2 }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.chargeId, table.systemCode] })],
+);
 
 // Card statement lines in ringgit, tied to a charge by its sheet ID.
 export const statementLines = pgTable("statement_lines", {

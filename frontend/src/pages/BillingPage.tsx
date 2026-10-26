@@ -2,20 +2,14 @@ import { Pencil, Plus, Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, json, type BillingData as Data, type CardRow, type ChargeRow, type ChargeStatus, type Perm } from "../api/client";
-import { EditDialog, Field, Select } from "../components/EditForm";
+import { BILLED, NO_CARD, NONE, partIn, Pill, STATUS, STATUS_ORDER, systemLabel, useChargeEditor } from "./BillingCharge";
+import { EditDialog, Field } from "../components/EditForm";
 import { money } from "../lib/format";
 import { useHub } from "../components/Layout";
 import AccountsPage from "./AccountsPage";
 import { Monthly, Statements, Trend } from "./BillingStatements";
+import { SystemsOverview } from "./BillingSystems";
 
-const STATUS: Record<ChargeStatus, { label: string; pill: string }> = {
-  confirmed: { label: "Confirmed", pill: "bg-loz-green text-loz-green-ink" },
-  to_confirm: { label: "To confirm", pill: "bg-loz-orange text-loz-orange-ink" },
-  to_fill_in: { label: "To fill in", pill: "bg-loz-blue text-loz-blue-ink" },
-  not_active: { label: "Not active", pill: "bg-loz-grey text-loz-grey-ink" },
-  cancelled: { label: "Cancelled", pill: "bg-loz-grey text-loz-grey-ink" },
-};
-const STATUS_ORDER = Object.keys(STATUS) as ChargeStatus[];
 const BILLING_TABS = [
   ["overview", "Overview"],
   ["register", "Register"],
@@ -26,7 +20,6 @@ const BILLING_TABS = [
   ["accounts", "Account ownership"],
 ] as const;
 type Tab = (typeof BILLING_TABS)[number][0];
-const NO_CARD = "No card";
 // A blank card is "we don't know yet", which is not the same as "paid without a card".
 const UNKNOWN_CARD = "Card not known";
 const cardOf = (c: ChargeRow) => c.card || UNKNOWN_CARD;
@@ -45,10 +38,6 @@ function totals(rows: ChargeRow[]): Totals {
     if (r.billed === "yearly") myr ? (t.myrYearly += r.amount) : (t.yearly += r.amount);
   }
   return t;
-}
-
-function Pill({ status }: { status: ChargeStatus }) {
-  return <span className={`pill ${STATUS[status].pill}`}>{STATUS[status].label}</span>;
 }
 
 const TH = "border-b-2 border-line bg-surface-dim px-3 py-2.5 text-[10px] font-bold uppercase tracking-brand text-ink-subtle first:pl-4 last:pr-4";
@@ -118,7 +107,12 @@ export default function BillingPage() {
       {tab === "accounts" && <AccountsPage />}
       {canBilling && tab !== "accounts" && !data && !error && <div className="py-16 text-center text-sm text-ink-subtle">Loading...</div>}
 
-      {data && tab === "overview" && <Overview data={data} />}
+      {data && tab === "overview" && (
+        <>
+          <SystemsOverview data={data} setData={setData} canEdit={canEdit} />
+          {!params.get("system") && <Overview data={data} />}
+        </>
+      )}
       {data && tab === "register" && <Register data={data} setData={setData} canEdit={canEdit} />}
       {data && tab === "cards" && <Cards data={data} setData={setData} canEdit={canEdit} />}
       {data && tab === "statements" && <Statements data={data} setData={setData} canEdit={canEdit} />}
@@ -138,13 +132,6 @@ function Overview({ data }: { data: Data }) {
 
   return (
     <>
-      <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Tile label="Monthly bills" value={money(all.monthly)} note={all.myrMonthly ? `+ ${money(all.myrMonthly, "MYR")} a month` : "a month, latest bills"} />
-        <Tile label="Yearly charges" value={money(all.yearly)} note={all.myrYearly ? `+ ${money(all.myrYearly, "MYR")} a year` : "a year"} />
-        <Tile label="Confirmed" value={`${all.confirmed} of ${all.services}`} note="bills opened and read" />
-        <Tile label="Still to confirm" value={String(all.open)} note="need a login or a bill to read" />
-      </div>
-
       <Section title="By company">
         <table className="w-full border-collapse text-[13px]">
           <thead>
@@ -198,16 +185,6 @@ function Overview({ data }: { data: Data }) {
   );
 }
 
-function Tile({ label, value, note }: { label: string; value: string; note: string }) {
-  return (
-    <div className="card p-4">
-      <span className="section-title">{label}</span>
-      <div className="mt-2 text-[24px] font-extrabold tabular-nums text-ink">{value}</div>
-      <div className="text-xs text-ink-subtle">{note}</div>
-    </div>
-  );
-}
-
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="mt-6" aria-label={title}>
@@ -237,45 +214,18 @@ function TotalsRow({ label, t, bold }: { label: string; t: Totals; bold?: boolea
 // ---------------------------------------------------------------------------
 // Register: one row per bill line.
 
-type ChargeDraft = Omit<ChargeRow, "id" | "updatedAt" | "updatedBy" | "amount" | "accountId"> & { amount: string; accountId: string };
-const EMPTY_CHARGE: ChargeDraft = {
-  registerId: "",
-  accountId: "",
-  company: "",
-  system: "",
-  vendor: "",
-  serviceType: "",
-  usedFor: "",
-  plan: "",
-  amount: "",
-  currency: "USD",
-  billed: "monthly",
-  card: "",
-  status: "to_confirm",
-  checkedOn: null,
-  keyName: "",
-  notes: "",
-};
-
 function Register({ data, setData, canEdit }: { data: Data; setData: (d: Data) => void; canEdit: boolean }) {
   const [q, setQ] = useState("");
   const [company, setCompany] = useState("");
   const [status, setStatus] = useState<ChargeStatus | "">("");
   const [card, setCard] = useState("");
-  const [editing, setEditing] = useState<ChargeRow | "new" | null>(null);
-  const [draft, setDraft] = useState<ChargeDraft>(EMPTY_CHARGE);
-  const dialog = useRef<HTMLDialogElement>(null);
+  const [system, setSystem] = useState("");
+  const { open, editor } = useChargeEditor(data, setData);
   const companies = useMemo(() => [...new Set(data.charges.map((c) => c.company).filter(Boolean))].sort(), [data.charges]);
   const cardNames = useMemo(
     () => [...new Set([...data.cards.map((c) => c.nickname), ...data.charges.map((c) => c.card).filter(Boolean)])].sort(),
     [data],
   );
-
-  const open = (c: ChargeRow | "new") => {
-    setEditing(c);
-    setDraft(c === "new" ? EMPTY_CHARGE : { ...c, amount: c.amount === null ? "" : String(c.amount), accountId: c.accountId ? String(c.accountId) : "" });
-    dialog.current?.showModal();
-  };
 
   const needle = q.trim().toLowerCase();
   const shown = data.charges.filter(
@@ -283,28 +233,14 @@ function Register({ data, setData, canEdit }: { data: Data; setData: (d: Data) =
       (!company || c.company === company) &&
       (!status || c.status === status) &&
       (!card || cardOf(c) === card) &&
+      (!system || partIn(c, system) > 0) &&
       (!needle ||
-        [c.registerId, c.company, c.system, c.vendor, c.serviceType, c.usedFor, c.plan, c.card, c.keyName, c.notes].join(" ").toLowerCase().includes(needle)),
+        [c.registerId, c.company, c.system, systemLabel(data, c), c.module, c.projectRef, c.vendor, c.serviceType, c.usedFor, c.plan, c.card, c.keyName, c.notes]
+          .join(" ")
+          .toLowerCase()
+          .includes(needle)),
   );
   const t = totals(shown);
-
-  const save = async () => {
-    const body = { ...draft, amount: draft.amount === "" ? null : Number(draft.amount), accountId: draft.accountId || null };
-    if (editing === "new") {
-      const { charge } = await api<{ charge: ChargeRow }>("/billing/charges", json("POST", body));
-      setData({ ...data, charges: [...data.charges, charge] });
-    } else if (editing) {
-      const { charge } = await api<{ charge: ChargeRow }>(`/billing/charges/${editing.id}`, json("PATCH", body));
-      setData({ ...data, charges: data.charges.map((x) => (x.id === charge.id ? charge : x)) });
-    }
-  };
-  const remove = async () => {
-    if (!editing || editing === "new") return;
-    await api(`/billing/charges/${editing.id}`, { method: "DELETE" });
-    setData({ ...data, charges: data.charges.filter((x) => x.id !== editing.id) });
-  };
-
-  const set = (k: keyof ChargeDraft) => (v: string) => setDraft({ ...draft, [k]: v });
 
   return (
     <>
@@ -318,6 +254,15 @@ function Register({ data, setData, canEdit }: { data: Data; setData: (d: Data) =
           {companies.map((c) => (
             <option key={c}>{c}</option>
           ))}
+        </select>
+        <select className="input" value={system} onChange={(e) => setSystem(e.target.value)} aria-label="System">
+          <option value="">All systems</option>
+          {data.systems.map((x) => (
+            <option key={x.code} value={x.code}>
+              {x.name}
+            </option>
+          ))}
+          <option value={NONE}>No system yet</option>
         </select>
         <select className="input" value={status} onChange={(e) => setStatus(e.target.value as ChargeStatus | "")} aria-label="Status">
           <option value="">Any status</option>
@@ -353,14 +298,14 @@ function Register({ data, setData, canEdit }: { data: Data; setData: (d: Data) =
                 <div className="font-semibold text-ink">
                   {c.vendor} <span className="text-xs font-normal text-ink-subtlest">{c.registerId}</span>
                 </div>
-                <div className="text-xs text-ink-subtle">{[c.company, c.system, c.serviceType].filter(Boolean).join(" · ")}</div>
+                <div className="text-xs text-ink-subtle">{[systemLabel(data, c), c.module, c.serviceType].filter(Boolean).join(" · ")}</div>
               </div>
               <Pill status={c.status} />
             </div>
             {c.usedFor && <div className="mt-2 text-[12.5px] text-ink-subtle">{c.usedFor}</div>}
             <div className="mt-2 text-[13px] text-ink">
               {c.amount === null ? "Amount not known" : money(c.amount, c.currency)}
-              {c.billed && <span className="text-ink-subtle"> · {c.billed}</span>}
+              {c.billed && <span className="text-ink-subtle"> · {BILLED[c.billed]}</span>}
               <span className="text-ink-subtle"> · {c.card || "Card not known"}</span>
             </div>
             {canEdit && (
@@ -390,12 +335,12 @@ function Register({ data, setData, canEdit }: { data: Data; setData: (d: Data) =
                   <td className="w-14 px-3 py-2.5 pl-4 font-medium text-ink-subtle">{c.registerId || "-"}</td>
                   <td className="px-3 py-2.5">
                     <div className="font-medium text-ink">{c.vendor}</div>
-                    <div className="text-xs text-ink-subtle">{[c.company, c.system, c.serviceType].filter(Boolean).join(" · ")}</div>
+                    <div className="text-xs text-ink-subtle">{[systemLabel(data, c), c.module, c.serviceType].filter(Boolean).join(" · ")}</div>
                     {c.usedFor && <div className="max-w-md text-xs text-ink-subtlest">{c.usedFor}</div>}
                   </td>
                   <td className="w-44 px-3 py-2.5 text-ink-subtle">{c.plan || "-"}</td>
                   <td className="w-28 px-3 py-2.5 tabular-nums text-ink">{c.amount === null ? "-" : money(c.amount, c.currency)}</td>
-                  <td className="w-20 px-3 py-2.5 capitalize text-ink-subtle">{c.billed || "-"}</td>
+                  <td className="w-24 px-3 py-2.5 text-ink-subtle">{c.billed ? BILLED[c.billed] : "-"}</td>
                   <td className="w-28 px-3 py-2.5 text-ink-subtle">{c.card || "-"}</td>
                   <td className="w-28 px-3 py-2.5">
                     <Pill status={c.status} />
@@ -415,46 +360,7 @@ function Register({ data, setData, canEdit }: { data: Data; setData: (d: Data) =
         </div>
       )}
 
-      <EditDialog
-        dialogRef={dialog}
-        title={editing === "new" ? "Add charge" : "Edit charge"}
-        isNew={editing === "new"}
-        stamp={editing && editing !== "new" ? editing : null}
-        onSave={save}
-        onRemove={remove}
-        onClose={() => setEditing(null)}
-      >
-        {editing && (
-          <>
-            <Field label="Vendor" value={draft.vendor} onChange={set("vendor")} required hint="For example: Supabase" />
-            <Field label="Sheet ID" value={draft.registerId} onChange={set("registerId")} hint="C01, H03... as in the card sheet" />
-            <Field label="Company" value={draft.company} onChange={set("company")} hint="Conts, Houzs, Hookka or Shared" />
-            <Field label="System" value={draft.system} onChange={set("system")} />
-            <Field label="Service type" value={draft.serviceType} onChange={set("serviceType")} hint="Hosting, Database, Email, AI..." />
-            <Field label="Plan" value={draft.plan} onChange={set("plan")} />
-            <Field label="Latest bill" value={draft.amount} onChange={set("amount")} type="number" hint="Leave empty if not known" />
-            <Select label="Currency" value={draft.currency} onChange={set("currency")} options={[["USD", "USD"], ["MYR", "MYR"]]} />
-            <Select label="Billed" value={draft.billed} onChange={set("billed")} options={[["monthly", "Monthly"], ["yearly", "Yearly"], ["", "Not billed / not known"]]} />
-            <Select
-              label="Card"
-              value={draft.card}
-              onChange={set("card")}
-              options={[["", "Not known"], ...data.cards.map((c) => [c.nickname, c.nickname] as [string, string]), [NO_CARD, NO_CARD]]}
-            />
-            <Select label="Status" value={draft.status} onChange={set("status")} options={STATUS_ORDER.map((s) => [s, STATUS[s].label] as [string, string])} />
-            <Field label="Last checked" value={draft.checkedOn ?? ""} onChange={(v) => setDraft({ ...draft, checkedOn: v || null })} type="date" />
-            <Select
-              label="Account"
-              value={draft.accountId}
-              onChange={set("accountId")}
-              options={[["", "Not linked"], ...data.accounts.map((a) => [String(a.id), a.name] as [string, string])]}
-            />
-            <Field label="Key / setting name" value={draft.keyName} onChange={set("keyName")} hint="The name only, never the key itself" />
-            <Field label="What it is used for" value={draft.usedFor} onChange={set("usedFor")} area />
-            <Field label="Notes" value={draft.notes} onChange={set("notes")} area />
-          </>
-        )}
-      </EditDialog>
+      {editor}
     </>
   );
 }

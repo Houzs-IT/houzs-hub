@@ -24,13 +24,17 @@ export type ChargeRow = {
   accountId: number | null;
   company: string;
   system: string;
+  systemCode: string;
+  projectRef: string;
+  module: string;
+  splits: { systemCode: string; percent: number }[];
   vendor: string;
   serviceType: string;
   usedFor: string;
   plan: string;
   amount: number | null;
   currency: "USD" | "MYR";
-  billed: "" | "monthly" | "yearly";
+  billed: "" | "monthly" | "yearly" | "credit" | "usage";
   card: string;
   status: ChargeStatus;
   checkedOn: string | null;
@@ -65,6 +69,7 @@ export type StatementLine = {
 };
 export type BillingData = {
   charges: ChargeRow[];
+  systems: { code: string; name: string }[];
   cards: CardRow[];
   accounts: { id: number; name: string }[];
   lines: StatementLine[];
