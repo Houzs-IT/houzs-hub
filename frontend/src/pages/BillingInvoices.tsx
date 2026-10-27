@@ -97,6 +97,7 @@ export function Invoices({ data, setData, canEdit }: { data: Data; setData: (d: 
   const review = useRef<HTMLDialogElement>(null);
   const [show, setShow] = useState<"all" | "unpaid" | "nocharge">("all");
   const [month, setMonth] = useState("");
+  const [vendor, setVendor] = useState("");
   const [refCharge, setRefCharge] = useState("");
   const [refUse, setRefUse] = useState("");
   const [refQ, setRefQ] = useState("");
@@ -171,8 +172,12 @@ export function Invoices({ data, setData, canEdit }: { data: Data; setData: (d: 
   };
 
   const months = [...new Set(data.invoices.map((i) => monthOf(i.invoiceDate)))].sort().reverse();
+  const vendors = [...new Set(data.invoices.map((i) => i.vendor))].sort();
   const shown = data.invoices.filter(
-    (i) => (!month || monthOf(i.invoiceDate) === month) && (show === "all" || (show === "unpaid" ? i.statementLineId === null : i.chargeId === null)),
+    (i) =>
+      (!month || monthOf(i.invoiceDate) === month) &&
+      (!vendor || i.vendor === vendor) &&
+      (show === "all" || (show === "unpaid" ? i.statementLineId === null : i.chargeId === null)),
   );
   const refCharges = [...new Set(data.projectRefs.map((r) => r.chargeId))];
   const needle = refQ.trim().toLowerCase();
@@ -224,6 +229,12 @@ export function Invoices({ data, setData, canEdit }: { data: Data; setData: (d: 
             <option key={m} value={m}>
               {monthName(m)}
             </option>
+          ))}
+        </select>
+        <select className="input" value={vendor} onChange={(e) => setVendor(e.target.value)} aria-label="Vendor">
+          <option value="">All vendors</option>
+          {vendors.map((v) => (
+            <option key={v}>{v}</option>
           ))}
         </select>
         <select className="input" value={show} onChange={(e) => setShow(e.target.value as typeof show)} aria-label="Show">
