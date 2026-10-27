@@ -7,6 +7,7 @@ import { EditDialog, Field } from "../components/EditForm";
 import { money } from "../lib/format";
 import { useHub } from "../components/Layout";
 import AccountsPage from "./AccountsPage";
+import { Invoices } from "./BillingInvoices";
 import { Monthly, Statements, Trend } from "./BillingStatements";
 import { SystemsOverview } from "./BillingSystems";
 
@@ -15,6 +16,7 @@ const BILLING_TABS = [
   ["register", "Register"],
   ["cards", "Cards"],
   ["statements", "Statements"],
+  ["invoices", "Invoices"],
   ["monthly", "Monthly"],
   ["trend", "Trend"],
   ["accounts", "Account ownership"],
@@ -116,6 +118,7 @@ export default function BillingPage() {
       {data && tab === "register" && <Register data={data} setData={setData} canEdit={canEdit} />}
       {data && tab === "cards" && <Cards data={data} setData={setData} canEdit={canEdit} />}
       {data && tab === "statements" && <Statements data={data} setData={setData} canEdit={canEdit} />}
+      {data && tab === "invoices" && <Invoices data={data} setData={setData} canEdit={canEdit} />}
       {data && tab === "monthly" && <Monthly data={data} />}
       {data && tab === "trend" && <Trend data={data} />}
     </div>

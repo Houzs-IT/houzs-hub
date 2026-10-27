@@ -182,6 +182,9 @@ function AllSystems(props: {
   // A shared charge shows in several rows, so count services once here.
   const services = data.charges.filter(live).length;
   const noSystem = data.charges.filter((c) => partIn(c, NONE) > 0).length;
+  // Checked = the line has its invoice, or a person checked it by hand.
+  const withInvoice = new Set(data.invoices.map((i) => i.statementLineId));
+  const notChecked = data.lines.filter((l) => monthOf(l.txnDate) === month && !withInvoice.has(l.id) && !l.checkedByHand).length;
 
   return (
     <>
@@ -189,7 +192,11 @@ function AllSystems(props: {
         <Tile label={`Paid in ${monthName(month)}`} value={rm(all.paid)} note="on the company cards" />
         <Tile label="Fixed plans" value={<Fixed usd={all.usd} myr={all.myr} />} note="a month, from latest bills" />
         <Tile label="Per credit / per use" value={rm(all.use)} note={`paid in ${monthName(month)}, ${pct(all.use, all.paid)} of the month`} />
-        <Tile label="Needs a system" value={`${noSystem} · ${unmatched.lines}`} note="charges with no system · statement lines not matched" />
+        <Tile
+          label="Not checked"
+          value={String(notChecked)}
+          note={`statement lines in ${monthName(month)} with no invoice${noSystem ? ` · ${noSystem} charge(s) with no system` : ""}`}
+        />
       </div>
 
       <section className="mt-6" aria-label="By system">
@@ -349,6 +356,63 @@ function OneSystem(props: {
           </table>
         </div>
       )}
+      {code !== NONE && <Projects data={data} code={code} />}
     </>
+  );
+}
+
+// Cost per project ID on each of this system's latest invoices (Supabase prints them),
+// with projects marked not in use added up, so their cost stays in sight until deleted.
+function Projects({ data, code }: { data: Data; code: string }) {
+  const rows: { ref: string; name: string; inUse: boolean; amount: number; currency: string; date: string; vendor: string }[] = [];
+  for (const c of data.charges.filter((x) => partIn(x, code) > 0)) {
+    const latest = data.invoices.find((i) => i.chargeId === c.id); // invoices come newest first
+    if (!latest) continue;
+    const byRef = new Map<string, number>();
+    for (const l of data.invoiceLines) if (l.invoiceId === latest.id && l.projectRef && l.kind === "charge") byRef.set(l.projectRef, (byRef.get(l.projectRef) ?? 0) + l.amount);
+    for (const [ref, amount] of byRef) {
+      const r = data.projectRefs.find((x) => x.ref === ref);
+      rows.push({ ref, name: r?.name ?? "", inUse: r ? !!r.inUse : true, amount: amount * partIn(c, code), currency: latest.currency, date: latest.invoiceDate, vendor: latest.vendor });
+    }
+  }
+  if (!rows.length) return null;
+  rows.sort((a, b) => b.amount - a.amount);
+  const unused = rows.filter((r) => !r.inUse);
+  return (
+    <section className="mt-6" aria-label="Projects">
+      <h2 className="section-title">Projects on the latest invoices</h2>
+      {unused.length > 0 && (
+        <p className="mt-1 text-[12.5px] text-loz-orange-ink">
+          {unused.length} project(s) not in use cost {unused.map((r) => money(r.amount, r.currency)).join(" + ")} on their latest invoice. Delete them at the vendor to stop paying.
+        </p>
+      )}
+      <div className="card mt-2 overflow-x-auto">
+        <table className="w-full border-collapse text-[13px]">
+          <thead>
+            <tr>
+              {["Project ID", "Name", "Vendor", "Invoice date", "Cost"].map((h, i) => (
+                <th key={h} className={`${TH} whitespace-nowrap ${i === 4 ? "text-right" : "text-left"}`}>
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.ref} className={`border-b border-line-subtle last:border-0 ${r.inUse ? "" : "text-ink-subtlest"}`}>
+                <td className="px-3 py-2 pl-4 font-mono text-[12px]">{r.ref}</td>
+                <td className="px-3 py-2">
+                  {r.name || <span className="text-loz-orange-ink">Not named</span>}
+                  {!r.inUse && <span className="pill ml-2 bg-loz-grey text-loz-grey-ink">Not used</span>}
+                </td>
+                <td className="px-3 py-2">{r.vendor}</td>
+                <td className="px-3 py-2">{r.date}</td>
+                <td className="whitespace-nowrap px-3 py-2 pr-4 text-right tabular-nums">{money(r.amount, r.currency)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }

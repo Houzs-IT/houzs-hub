@@ -4,6 +4,7 @@ import { api, json, type BillingData as Data, type ChargeRow, type StatementLine
 import { EditDialog, Field, Select } from "../components/EditForm";
 import { money } from "../lib/format";
 import { PdfPasswordError, pdfText } from "../lib/pdfText";
+import { systemLabel } from "./BillingCharge";
 
 // The card-statement side of the Billing page: the sheet's Statement lines,
 // Monthly tally and Trend tabs. Amounts here are ringgit as charged to the card.
@@ -174,7 +175,7 @@ const sameLine = (a: { txnDate: string; amountMyr: number; description: string }
 
 // ---------------------------------------------------------------------------
 
-type LineDraft = { txnDate: string; card: string; description: string; registerId: string; amountMyr: string; notes: string };
+type LineDraft = { txnDate: string; card: string; description: string; registerId: string; amountMyr: string; notes: string; checkedByHand: boolean };
 const today = () => new Date().toISOString().slice(0, 10);
 
 export function Statements({ data, setData, canEdit }: { data: Data; setData: (d: Data) => void; canEdit: boolean }) {
@@ -183,8 +184,11 @@ export function Statements({ data, setData, canEdit }: { data: Data; setData: (d
   const [month, setMonth] = useState(months[0] ?? "");
   const [card, setCard] = useState("");
   const [unmatched, setUnmatched] = useState(false);
+  const [noInvoice, setNoInvoice] = useState(false);
+  // The invoice each line paid, if one has been added.
+  const invoiceOf = useMemo(() => new Map(data.invoices.filter((i) => i.statementLineId !== null).map((i) => [i.statementLineId!, i])), [data.invoices]);
   const [editing, setEditing] = useState<StatementLine | "new" | null>(null);
-  const [draft, setDraft] = useState<LineDraft>({ txnDate: today(), card: "", description: "", registerId: "", amountMyr: "", notes: "" });
+  const [draft, setDraft] = useState<LineDraft>({ txnDate: today(), card: "", description: "", registerId: "", amountMyr: "", notes: "", checkedByHand: false });
   const dialog = useRef<HTMLDialogElement>(null);
   const pasteDialog = useRef<HTMLDialogElement>(null);
   const [pasteText, setText] = useState("");
@@ -204,15 +208,15 @@ export function Statements({ data, setData, canEdit }: { data: Data; setData: (d
   const cardOptions: [string, string][] = [["", "Not known"], ...data.cards.map((c) => [c.nickname, c.nickname] as [string, string])];
 
   const shown = data.lines.filter(
-    (l) => (!month || monthOf(l.txnDate) === month) && (!card || l.card === card) && (!unmatched || !byId.has(l.registerId)),
+    (l) => (!month || monthOf(l.txnDate) === month) && (!card || l.card === card) && (!unmatched || !byId.has(l.registerId)) && (!noInvoice || (!invoiceOf.has(l.id) && !l.checkedByHand)),
   );
 
   const open = (l: StatementLine | "new") => {
     setEditing(l);
     setDraft(
       l === "new"
-        ? { txnDate: today(), card: "", description: "", registerId: "", amountMyr: "", notes: "" }
-        : { ...l, amountMyr: String(l.amountMyr) },
+        ? { txnDate: today(), card: "", description: "", registerId: "", amountMyr: "", notes: "", checkedByHand: false }
+        : { ...l, amountMyr: String(l.amountMyr), checkedByHand: !!l.checkedByHand },
     );
     dialog.current?.showModal();
   };
@@ -283,6 +287,9 @@ export function Statements({ data, setData, canEdit }: { data: Data; setData: (d
         <label className="flex items-center gap-1.5 text-[13px] text-ink-subtle">
           <input type="checkbox" checked={unmatched} onChange={(e) => setUnmatched(e.target.checked)} /> Not matched only
         </label>
+        <label className="flex items-center gap-1.5 text-[13px] text-ink-subtle">
+          <input type="checkbox" checked={noInvoice} onChange={(e) => setNoInvoice(e.target.checked)} /> No invoice only
+        </label>
         <span className="text-xs text-ink-subtle">
           {shown.length} line(s) · {rm(sum(shown))}
         </span>
@@ -331,11 +338,20 @@ export function Statements({ data, setData, canEdit }: { data: Data; setData: (d
                           <div className="text-ink">
                             {c.registerId} {c.vendor}
                           </div>
-                          <div className="text-xs text-ink-subtle">{[c.company, c.system].filter(Boolean).join(" · ")}</div>
+                          <div className="text-xs text-ink-subtle">{systemLabel(data, c)}</div>
                         </>
                       ) : (
                         <span className="pill bg-loz-orange text-loz-orange-ink">{NOT_MATCHED}</span>
                       )}
+                      <div className="mt-1 text-xs">
+                        {invoiceOf.has(l.id) ? (
+                          <span className="text-loz-green-ink">✓ Invoice {invoiceOf.get(l.id)!.invoiceNo}</span>
+                        ) : l.checkedByHand ? (
+                          <span className="text-loz-green-ink">✓ Checked by hand</span>
+                        ) : (
+                          <span className="pill bg-loz-blue text-loz-blue-ink">No invoice</span>
+                        )}
+                      </div>
                     </td>
                     <td className="w-32 whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-ink">{rm(l.amountMyr)}</td>
                     <td className="w-12 px-3 py-2.5 pr-4 text-right">
@@ -375,6 +391,12 @@ export function Statements({ data, setData, canEdit }: { data: Data; setData: (d
             <Field label="Amount charged (RM)" value={draft.amountMyr} onChange={set("amountMyr")} type="number" required hint="A refund is a minus amount" />
             <Select label="Matched to" value={draft.registerId} onChange={set("registerId")} options={chargeOptions} />
             <Field label="Notes" value={draft.notes} onChange={set("notes")} />
+            <Select
+              label="Checked by hand"
+              value={draft.checkedByHand ? "1" : "0"}
+              onChange={(v) => setDraft({ ...draft, checkedByHand: v === "1" })}
+              options={[["0", "No, waiting for its invoice"], ["1", "Yes, no invoice to be had (say why in Notes)"]]}
+            />
           </>
         )}
       </EditDialog>

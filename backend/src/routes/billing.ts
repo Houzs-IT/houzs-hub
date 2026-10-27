@@ -6,6 +6,7 @@ import { need } from "../middleware/devAuth";
 import { nowIso } from "../services/tickets";
 import type { DevApp } from "../types";
 import { isUniqueViolation } from "./admin";
+import invoicesRoute, { refsRoute } from "./billingInvoices";
 
 // The Billing page: charges (the sheet's Register) and company cards (its Cards tab).
 // Totals are worked out on the page. Mounted inside routes/dev.ts, after devAuth.
@@ -141,12 +142,16 @@ const stamp = (c: { get(k: "user"): { name: string } }) => ({ updatedAt: nowIso(
 billing.get("/", need("billing_view", "billing_edit"), async (c) => {
   const db = c.get("db");
   // ponytail: statement lines grow by a few dozen a month; whole table is fine for years. Page by month if that stops being true.
-  const [charges, splits, cards, accounts, lines] = await Promise.all([
+  const [charges, splits, cards, accounts, lines, invoices, invoiceLines, projectRefs] = await Promise.all([
     db.select().from(ch).orderBy(asc(ch.registerId), asc(ch.id)),
     db.select().from(sp),
     db.select().from(cd).orderBy(asc(cd.nickname)),
     db.select({ id: schema.accounts.id, name: schema.accounts.name }).from(schema.accounts).orderBy(asc(schema.accounts.name)),
     db.select().from(sl).orderBy(desc(sl.txnDate), desc(sl.id)),
+    // ponytail: invoices grow by a dozen or so a month, like statement lines; whole tables for now.
+    db.select().from(schema.invoices).orderBy(desc(schema.invoices.invoiceDate), desc(schema.invoices.id)),
+    db.select().from(schema.invoiceLines).orderBy(asc(schema.invoiceLines.id)),
+    db.select().from(schema.projectRefs).orderBy(asc(schema.projectRefs.ref)),
   ]);
   return c.json({
     charges: charges.map((r) => chargeOut(r, splits)),
@@ -154,6 +159,9 @@ billing.get("/", need("billing_view", "billing_edit"), async (c) => {
     cards,
     accounts,
     lines: lines.map(lineOut),
+    invoices: invoices.map((r) => ({ ...r, total: Number(r.total) })),
+    invoiceLines: invoiceLines.map((r) => ({ ...r, amount: Number(r.amount) })),
+    projectRefs,
   });
 });
 
@@ -171,6 +179,7 @@ function readLine(b: Body, isNew: boolean): Read<Record<string, unknown>> {
     if (b.amountMyr === "" || b.amountMyr === null || !Number.isFinite(n) || Math.abs(n) > 1e9) return "Amount must be a number";
     out.amountMyr = n.toFixed(2);
   }
+  if ("checkedByHand" in b) out.checkedByHand = b.checkedByHand ? 1 : 0;
   const errors = ["card", "description", "registerId", "notes"].map((k) => text(b, k, out)).filter(Boolean);
   return errors.length ? (errors[0] as string) : out;
 }
@@ -321,5 +330,8 @@ billing.delete("/cards/:id", need("billing_edit"), async (c) => {
   await db.delete(cd).where(eq(cd.id, id));
   return c.json({ ok: true });
 });
+
+billing.route("/invoices", invoicesRoute);
+billing.route("/refs", refsRoute);
 
 export default billing;

@@ -232,7 +232,51 @@ export const statementLines = pgTable("statement_lines", {
   registerId: text("register_id").notNull().default(""),
   amountMyr: numeric("amount_myr", { precision: 12, scale: 2 }).notNull(),
   notes: text("notes").notNull().default(""),
+  checkedByHand: integer("checked_by_hand").notNull().default(0),
   createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  updatedBy: text("updated_by"),
+});
+
+export const INVOICE_LINE_KINDS = ["charge", "tax", "discount", "rounding"] as const;
+
+// Vendor invoices: one charge (the account billed), paid by at most one statement line.
+export const invoices = pgTable("invoices", {
+  id: id(),
+  vendor: text("vendor").notNull(),
+  invoiceNo: text("invoice_no").notNull(),
+  invoiceDate: text("invoice_date").notNull(),
+  periodFrom: text("period_from"),
+  periodTo: text("period_to"),
+  billTo: text("bill_to").notNull().default(""),
+  total: numeric("total", { precision: 12, scale: 2 }).notNull(),
+  currency: text("currency").notNull().default("USD"),
+  chargeId: integer("charge_id"),
+  statementLineId: integer("statement_line_id"),
+  fileKey: text("file_key"),
+  fileName: text("file_name").notNull().default(""),
+  notes: text("notes").notNull().default(""),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  updatedBy: text("updated_by"),
+});
+
+export const invoiceLines = pgTable("invoice_lines", {
+  id: id(),
+  invoiceId: integer("invoice_id").notNull(),
+  description: text("description").notNull().default(""),
+  projectRef: text("project_ref").notNull().default(""),
+  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+  kind: text("kind").$type<(typeof INVOICE_LINE_KINDS)[number]>().notNull().default("charge"),
+});
+
+// Project IDs printed on invoices, and what each one is.
+export const projectRefs = pgTable("project_refs", {
+  ref: text("ref").primaryKey(),
+  vendor: text("vendor").notNull(),
+  name: text("name").notNull().default(""),
+  chargeId: integer("charge_id"),
+  inUse: integer("in_use").notNull().default(1),
   updatedAt: text("updated_at").notNull(),
   updatedBy: text("updated_by"),
 });
