@@ -286,7 +286,13 @@ export function Invoices({ data, setData, canEdit }: { data: Data; setData: (d: 
                 const c = chargeOf(i.chargeId);
                 const l = lineOf(i.statementLineId);
                 return (
-                  <tr key={i.id} className="border-b border-line-subtle align-top last:border-0">
+                  <tr
+                    key={i.id}
+                    // Anywhere on the row opens the invoice PDF; the pencil edits.
+                    onClick={(e) => i.fileKey && !(e.target as HTMLElement).closest("a,button") && window.open(invoiceFileUrl(i.id), "_blank", "noopener")}
+                    title={i.fileKey ? "Open the invoice PDF" : undefined}
+                    className={`border-b border-line-subtle align-top last:border-0 ${i.fileKey ? "cursor-pointer hover:bg-surface-dim" : ""}`}
+                  >
                     <td className="w-28 whitespace-nowrap px-3 py-2.5 pl-4 text-ink-subtle">{i.invoiceDate}</td>
                     <td className="px-3 py-2.5">
                       <div className="font-medium text-ink">{i.vendor}</div>
