@@ -26,7 +26,7 @@ Phase 1 = ticketing only. System Health / Dashboard / AI usage billing come late
 - [x] Change own display name; handed-out passwords must be replaced on first sign-in (2026-10-12)
 - [x] Email optional on new accounts; change or remove your own email on My account (2026-10-13)
 - [ ] 2990s stack — no local repo yet.
-- [ ] SLA hours per priority (Urgent / High / Medium / Low).
+- [ ] SLA hours per priority (High / Medium / Low).
 
 ## 1. Hub backend — done 2026-10-08 (local), not deployed
 

@@ -23,7 +23,6 @@ export const STATUS_STYLE: Record<Status, string> = {
 };
 
 export const PRIORITY_LABEL: Record<Priority, string> = {
-  urgent: "Urgent",
   high: "High",
   medium: "Medium",
   low: "Low",

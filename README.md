@@ -149,7 +149,7 @@ replies.
 
 | Method | Path | Sends or returns |
 |---|---|---|
-| POST | `/tickets` | Multipart or JSON. Required: `title`, `reporter_name`. Optional: `description`, `type` (`bug`, `development`), `priority` (`urgent`, `high`, `medium`, `low`), `occurred_at` (defaults to the submission time), `reporter_email`, `reporter_phone`, `reporter_department`, `page_url`, `user_agent`, `app_version`, `files` (up to 5, 10 MB each; images, mp4, mov or pdf) |
+| POST | `/tickets` | Multipart or JSON. Required: `title`, `reporter_name`. Optional: `description`, `type` (`bug`, `development`), `priority` (`high`, `medium`, `low`; `urgent` is taken as `high`), `occurred_at` (defaults to the submission time), `reporter_email`, `reporter_phone`, `reporter_department`, `page_url`, `user_agent`, `app_version`, `files` (up to 5, 10 MB each; images, mp4, mov or pdf) |
 | GET | `/tickets` | Own tickets with an `unread` flag, most recently updated first. Optional `status` (comma list), `page`, `page_size` (up to 200). Without paging it returns the newest 200. Also returns `total`. |
 | GET | `/tickets/unread-count` | `{ unread }` for the badge |
 | GET | `/tickets/:code` | The ticket and its public events; marks it seen |
