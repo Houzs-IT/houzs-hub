@@ -211,7 +211,7 @@ function filterWhere(q: Record<string, string | undefined>, me: User, withStatus
   return and(...parts);
 }
 
-const PRIORITY_RANK = sql`CASE ${t.priority} WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END`;
+const PRIORITY_RANK = sql`CASE ${t.priority} WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END`;
 const STATUS_RANK = sql`CASE ${t.status} WHEN 'open' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'on_hold' THEN 2
   WHEN 'testing' THEN 3 WHEN 'waiting_reporter' THEN 4 WHEN 'resolved' THEN 5 WHEN 'closed' THEN 6 ELSE 7 END`;
 

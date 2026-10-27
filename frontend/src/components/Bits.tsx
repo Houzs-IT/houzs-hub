@@ -1,4 +1,4 @@
-import { Bookmark, Bug, ChevronDown, ChevronUp, ChevronsUp, Equal } from "lucide-react";
+import { Bookmark, Bug, ChevronDown, ChevronUp, Equal } from "lucide-react";
 import type { Priority, Status, TicketType } from "../api/client";
 import { PRIORITY_LABEL, STATUS_LABEL, STATUS_STYLE, TYPE_LABEL } from "../lib/labels";
 
@@ -26,7 +26,6 @@ export function TypeIcon({ type, size = 16 }: { type: TicketType; size?: number 
 }
 
 const PRIORITY_ICON = {
-  urgent: { Icon: ChevronsUp, cls: "text-[#b23a3a]" },
   high: { Icon: ChevronUp, cls: "text-[#d9822b]" },
   medium: { Icon: Equal, cls: "text-[#b76b00]" },
   low: { Icon: ChevronDown, cls: "text-[#1565c0]" },

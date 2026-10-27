@@ -1,7 +1,7 @@
 import { integer, jsonb, numeric, pgTable, primaryKey, text } from "drizzle-orm/pg-core";
 
 export const TICKET_TYPES = ["bug", "development"] as const;
-export const TICKET_PRIORITIES = ["urgent", "high", "medium", "low"] as const;
+export const TICKET_PRIORITIES = ["high", "medium", "low"] as const;
 export const TICKET_STATUSES = [
   "open",
   "in_progress",

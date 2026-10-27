@@ -93,7 +93,8 @@ sys.post("/tickets", async (c) => {
       code,
       systemCode,
       type: oneOf(fields.type, TICKET_TYPES, "bug"),
-      priority: oneOf(fields.priority, TICKET_PRIORITIES, "medium"),
+      // Urgent was dropped; a system still on an older build may send it.
+      priority: oneOf(fields.priority === "urgent" ? "high" : fields.priority, TICKET_PRIORITIES, "medium"),
       status: "open",
       title,
       description: str(fields.description, 10000) ?? "",

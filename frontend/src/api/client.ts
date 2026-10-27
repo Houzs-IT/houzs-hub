@@ -1,5 +1,5 @@
 export type Status = "open" | "in_progress" | "on_hold" | "testing" | "waiting_reporter" | "resolved" | "closed" | "rejected";
-export type Priority = "urgent" | "high" | "medium" | "low";
+export type Priority = "high" | "medium" | "low";
 export type TicketType = "bug" | "development";
 
 // Permission keys come from the server (services/perms.ts); these are the ones
