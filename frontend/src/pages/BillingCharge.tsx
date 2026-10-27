@@ -25,20 +25,44 @@ export const NO_CARD = "No card";
 // No system and no split yet: shown under "No system yet" until a person sets one.
 export const NONE = "none";
 const SHARED = "shared";
+const USAGE = "usage";
 
 export function Pill({ status }: { status: ChargeStatus }) {
   return <span className={`pill ${STATUS[status].pill}`}>{STATUS[status].label}</span>;
 }
 
+// A split-by-usage charge's share per system: the vendor's cost per workspace that month
+// (all months when none is given), each workspace counted for its system. Until usage has
+// been read, or for a workspace with no system, it counts as "No system yet".
+export function usageShares(data: Data, vendor: string, month?: string): { code: string; part: number }[] {
+  const systemOf = new Map(data.workspaces.filter((w) => w.vendor === vendor).map((w) => [w.workspaceId, w.systemCode || NONE]));
+  const usd = new Map<string, number>();
+  for (const u of data.usage) {
+    if (u.vendor !== vendor || (month && u.month !== month)) continue;
+    const code = systemOf.get(u.workspaceId) ?? NONE;
+    usd.set(code, (usd.get(code) ?? 0) + u.usd);
+  }
+  const total = [...usd.values()].reduce((a, v) => a + v, 0);
+  if (total <= 0) return [{ code: NONE, part: 1 }];
+  return [...usd].map(([code, v]) => ({ code, part: v / total }));
+}
+
 // Which systems a charge counts towards, and what part of it each one carries.
-export function sharesOf(c: ChargeRow): { code: string; part: number }[] {
+export function sharesOf(c: ChargeRow, data: Data, month?: string): { code: string; part: number }[] {
+  if (c.splitByUsage) return usageShares(data, c.vendor, month);
   if (c.splits.length) return c.splits.map((s) => ({ code: s.systemCode, part: s.percent / 100 }));
   return [{ code: c.systemCode || NONE, part: 1 }];
 }
-export const partIn = (c: ChargeRow, code: string) => sharesOf(c).find((s) => s.code === code)?.part ?? 0;
+export const partIn = (c: ChargeRow, code: string, data: Data, month?: string) => sharesOf(c, data, month).find((s) => s.code === code)?.part ?? 0;
 
 export function systemLabel(data: Data, c: ChargeRow) {
-  const name = (code: string) => data.systems.find((s) => s.code === code)?.name ?? code;
+  const name = (code: string) => (code === NONE ? "not known" : (data.systems.find((s) => s.code === code)?.name ?? code));
+  if (c.splitByUsage) {
+    const shares = usageShares(data, c.vendor);
+    if (shares.length === 1 && shares[0]!.code === NONE) return "Split by usage (not read yet)";
+    const shown = shares.filter((s) => Math.round(s.part * 100) > 0).sort((a, b) => b.part - a.part);
+    return `Split by usage: ${shown.map((s) => `${name(s.code)} ${Math.round(s.part * 100)}%`).join(", ")}`;
+  }
   if (c.splits.length) return `Shared: ${c.splits.map((s) => `${name(s.systemCode)} ${s.percent}%`).join(", ")}`;
   return c.systemCode ? name(c.systemCode) : "No system yet";
 }
@@ -57,6 +81,7 @@ const EMPTY_CHARGE: ChargeDraft = {
   systemCode: "",
   projectRef: "",
   module: "",
+  splitByUsage: 0,
   splits: [],
   vendor: "",
   serviceType: "",
@@ -117,18 +142,19 @@ export function useChargeEditor(data: Data, setData: (d: Data) => void) {
   const set = (k: keyof ChargeDraft) => (v: string) => setDraft({ ...draft, [k]: v });
   const shared = draft.splits.length > 0;
   const pickSystem = (v: string) => {
-    if (v === SHARED) {
+    if (v === USAGE) setDraft({ ...draft, systemCode: "", splits: [], splitByUsage: 1 });
+    else if (v === SHARED) {
       const first = draft.systemCode || data.systems[0]!.code;
       const second = data.systems.find((s) => s.code !== first)!.code;
-      setDraft({ ...draft, systemCode: "", splits: [{ systemCode: first, percent: "50" }, { systemCode: second, percent: "50" }] });
-    } else setDraft({ ...draft, systemCode: v, splits: [] });
+      setDraft({ ...draft, systemCode: "", splitByUsage: 0, splits: [{ systemCode: first, percent: "50" }, { systemCode: second, percent: "50" }] });
+    } else setDraft({ ...draft, systemCode: v, splits: [], splitByUsage: 0 });
   };
   const setSplit = (i: number, patch: Partial<SplitDraft>) =>
     setDraft({ ...draft, splits: draft.splits.map((s, k) => (k === i ? { ...s, ...patch } : s)) });
   const splitTotal = draft.splits.reduce((a, s) => a + (Number(s.percent) || 0), 0);
   const unused = data.systems.filter((s) => !draft.splits.some((x) => x.systemCode === s.code));
   const codeOf = draft.systemCode || draft.splits[0]?.systemCode || "";
-  const modules = [...new Set(data.charges.filter((c) => codeOf && partIn(c, codeOf) > 0).map((c) => c.module).filter(Boolean))].sort();
+  const modules = [...new Set(data.charges.filter((c) => codeOf && partIn(c, codeOf, data) > 0).map((c) => c.module).filter(Boolean))].sort();
 
   const editor = (
     <EditDialog
@@ -146,10 +172,20 @@ export function useChargeEditor(data: Data, setData: (d: Data) => void) {
           <Field label="Sheet ID" value={draft.registerId} onChange={set("registerId")} hint="C01, H03... Statement lines are matched by it" />
           <Select
             label="System"
-            value={shared ? SHARED : draft.systemCode}
+            value={draft.splitByUsage ? USAGE : shared ? SHARED : draft.systemCode}
             onChange={pickSystem}
-            options={[["", "No system yet"], ...data.systems.map((s) => [s.code, s.name] as [string, string]), [SHARED, "Shared, split by %"]]}
+            options={[
+              ["", "No system yet"],
+              ...data.systems.map((s) => [s.code, s.name] as [string, string]),
+              [SHARED, "Shared, split by %"],
+              [USAGE, "Split by usage (vendor workspaces)"],
+            ]}
           />
+          {!!draft.splitByUsage && (
+            <p className="-mt-2 text-[11px] text-ink-subtlest sm:col-span-2">
+              Each month is shared by what each workspace used, read from the vendor (Anthropic) every day. Set each workspace's system on the Overview.
+            </p>
+          )}
           <Field label="Company" value={draft.company} onChange={set("company")} hint="Conts, Houzs, Hookka or Shared" />
           {draft.system && <p className="-mt-2 text-[11px] text-ink-subtlest sm:col-span-2">The card sheet said: {draft.system}</p>}
           {shared && (

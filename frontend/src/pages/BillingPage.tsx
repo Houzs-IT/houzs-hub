@@ -236,7 +236,7 @@ function Register({ data, setData, canEdit }: { data: Data; setData: (d: Data) =
       (!company || c.company === company) &&
       (!status || c.status === status) &&
       (!card || cardOf(c) === card) &&
-      (!system || partIn(c, system) > 0) &&
+      (!system || partIn(c, system, data) > 0) &&
       (!needle ||
         [c.registerId, c.company, c.system, systemLabel(data, c), c.module, c.projectRef, c.vendor, c.serviceType, c.usedFor, c.plan, c.card, c.keyName, c.notes]
           .join(" ")

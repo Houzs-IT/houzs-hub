@@ -1,8 +1,8 @@
 import { Pencil, Plus } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
-import type { BillingData as Data, ChargeRow } from "../api/client";
-import { money } from "../lib/format";
+import { api, json, type BillingData as Data, type ChargeRow } from "../api/client";
+import { fmtAgo, money } from "../lib/format";
 import { BILLED, NONE, partIn, Pill, sharesOf, useChargeEditor } from "./BillingCharge";
 import { monthName, monthOf, pct, rm, TH } from "./BillingStatements";
 
@@ -88,12 +88,13 @@ export function SystemsOverview({ data, setData, canEdit }: { data: Data; setDat
   const totalsFor = (code: string) => {
     const t = { services: 0, open: 0, paid: 0, before: 0, use: 0, usd: 0, myr: 0 };
     for (const c of data.charges) {
-      const part = partIn(c, code);
-      if (!part) continue;
-      if (live(c)) t.services += 1;
-      if (c.status === "to_confirm" || c.status === "to_fill_in") t.open += 1;
+      const part = partIn(c, code, data, month);
+      const partBefore = partIn(c, code, data, before);
+      if (!part && !partBefore) continue;
+      if (part && live(c)) t.services += 1;
+      if (part && (c.status === "to_confirm" || c.status === "to_fill_in")) t.open += 1;
       t.paid += paid(c, month) * part;
-      t.before += paid(c, before) * part;
+      t.before += paid(c, before) * partBefore;
       if (isUse(c)) t.use += paid(c, month) * part;
       const f = fixedPerMonth(c);
       t.usd += f.usd * part;
@@ -135,7 +136,10 @@ export function SystemsOverview({ data, setData, canEdit }: { data: Data; setDat
       </div>
 
       {view === "" ? (
-        <AllSystems data={data} month={month} totalsFor={totalsFor} unmatched={{ now: unmatched, before: unmatchedBefore, lines: unmatchedLines }} pick={pick} />
+        <>
+          <AllSystems data={data} month={month} totalsFor={totalsFor} unmatched={{ now: unmatched, before: unmatchedBefore, lines: unmatchedLines }} pick={pick} />
+          <AiUsage data={data} setData={setData} month={month} canEdit={canEdit} />
+        </>
       ) : (
         <OneSystem
           data={data}
@@ -181,7 +185,7 @@ function AllSystems(props: {
   );
   // A shared charge shows in several rows, so count services once here.
   const services = data.charges.filter(live).length;
-  const noSystem = data.charges.filter((c) => partIn(c, NONE) > 0).length;
+  const noSystem = data.charges.filter((c) => partIn(c, NONE, data, month) > 0).length;
   // Checked = the line has its invoice, or a person checked it by hand.
   const withInvoice = new Set(data.invoices.map((i) => i.statementLineId));
   const notChecked = data.lines.filter((l) => monthOf(l.txnDate) === month && !withInvoice.has(l.id) && !l.checkedByHand).length;
@@ -276,8 +280,8 @@ function OneSystem(props: {
 }) {
   const { data, code, month, before, t, paid, canEdit, open } = props;
   const rows = data.charges
-    .filter((c) => partIn(c, code) > 0)
-    .sort((a, b) => paid(b, month) * partIn(b, code) - paid(a, month) * partIn(a, code) || a.vendor.localeCompare(b.vendor));
+    .filter((c) => partIn(c, code, data, month) > 0 || partIn(c, code, data, before) > 0)
+    .sort((a, b) => paid(b, month) * partIn(b, code, data, month) - paid(a, month) * partIn(a, code, data, month) || a.vendor.localeCompare(b.vendor));
 
   return (
     <>
@@ -314,8 +318,9 @@ function OneSystem(props: {
             </thead>
             <tbody>
               {rows.map((c) => {
-                const part = partIn(c, code);
-                const shared = sharesOf(c).length > 1;
+                const part = partIn(c, code, data, month);
+                const partBefore = partIn(c, code, data, before);
+                const shared = sharesOf(c, data, month).length > 1;
                 return (
                   <tr key={c.id} className="border-b border-line-subtle align-top last:border-0">
                     <td className="px-3 py-2.5 pl-4">
@@ -334,7 +339,7 @@ function OneSystem(props: {
                       {shared && <div className="text-xs text-ink-subtlest">{Math.round(part * 1000) / 10}% share</div>}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold tabular-nums">{paid(c, month) ? rm(paid(c, month) * part) : "-"}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-ink-subtle">{paid(c, before) ? rm(paid(c, before) * part) : "-"}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-ink-subtle">{paid(c, before) ? rm(paid(c, before) * partBefore) : "-"}</td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums">
                       {c.amount === null ? "-" : money(c.amount, c.currency)}
                       {shared && c.amount !== null && <div className="text-xs text-ink-subtlest">share {money(c.amount * part, c.currency)}</div>}
@@ -365,14 +370,14 @@ function OneSystem(props: {
 // with projects marked not in use added up, so their cost stays in sight until deleted.
 function Projects({ data, code }: { data: Data; code: string }) {
   const rows: { ref: string; name: string; inUse: boolean; amount: number; currency: string; date: string; vendor: string }[] = [];
-  for (const c of data.charges.filter((x) => partIn(x, code) > 0)) {
+  for (const c of data.charges.filter((x) => partIn(x, code, data) > 0)) {
     const latest = data.invoices.find((i) => i.chargeId === c.id); // invoices come newest first
     if (!latest) continue;
     const byRef = new Map<string, number>();
     for (const l of data.invoiceLines) if (l.invoiceId === latest.id && l.projectRef && l.kind === "charge") byRef.set(l.projectRef, (byRef.get(l.projectRef) ?? 0) + l.amount);
     for (const [ref, amount] of byRef) {
       const r = data.projectRefs.find((x) => x.ref === ref);
-      rows.push({ ref, name: r?.name ?? "", inUse: r ? !!r.inUse : true, amount: amount * partIn(c, code), currency: latest.currency, date: latest.invoiceDate, vendor: latest.vendor });
+      rows.push({ ref, name: r?.name ?? "", inUse: r ? !!r.inUse : true, amount: amount * partIn(c, code, data), currency: latest.currency, date: latest.invoiceDate, vendor: latest.vendor });
     }
   }
   if (!rows.length) return null;
@@ -413,6 +418,99 @@ function Projects({ data, code }: { data: Data; code: string }) {
           </tbody>
         </table>
       </div>
+    </section>
+  );
+}
+
+// Anthropic's cost per workspace for the month, as read from its cost report, and the
+// system each workspace is for. Charges set to "Split by usage" are shared by these.
+function AiUsage({ data, setData, month, canEdit }: { data: Data; setData: (d: Data) => void; month: string; canEdit: boolean }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const ws = data.workspaces.filter((w) => w.vendor === "Anthropic");
+  const usdOf = (id: string) => data.usage.filter((u) => u.vendor === "Anthropic" && u.month === month && u.workspaceId === id).reduce((a, u) => a + u.usd, 0);
+  const total = ws.reduce((a, w) => a + usdOf(w.workspaceId), 0);
+  const used = data.charges.some((c) => c.splitByUsage);
+  if (!used && !ws.length) return null;
+
+  const refresh = async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const r = await api<{ workspaces: number; days: number }>("/billing/usage/refresh", { method: "POST" });
+      setData(await api<Data>("/billing"));
+      setMsg({ ok: true, text: `Read ${r.days} day(s) of cost across ${r.workspaces} workspace(s).` });
+    } catch (e) {
+      setMsg({ ok: false, text: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const setSystem = async (workspaceId: string, systemCode: string) => {
+    await api("/billing/workspaces", json("PATCH", { vendor: "Anthropic", workspaceId, systemCode }));
+    setData(await api<Data>("/billing"));
+  };
+
+  return (
+    <section className="mt-6" aria-label="AI usage">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="section-title">AI usage by workspace (Anthropic)</h2>
+        <span className="text-xs text-ink-subtle">{data.usageSyncedAt ? `read ${fmtAgo(data.usageSyncedAt)}` : "not read yet"} · read every day at 10:00</span>
+        {canEdit && (
+          <button className="btn-default ml-auto h-8 px-3" disabled={busy} onClick={() => void refresh()}>
+            {busy ? "Reading..." : "Read now"}
+          </button>
+        )}
+      </div>
+      <p className="mt-1 text-[12.5px] text-ink-subtle">
+        Anthropic credit set to "Split by usage" is shared between the systems by these amounts each month. Each system uses its own workspace.
+      </p>
+      {msg && (
+        <div role="alert" className={`mt-2 rounded px-3 py-2 text-[12.5px] ${msg.ok ? "bg-loz-green text-loz-green-ink" : "bg-loz-red text-loz-red-ink"}`}>
+          {msg.text}
+        </div>
+      )}
+      {ws.length > 0 && (
+        <div className="card mt-2 overflow-x-auto">
+          <table className="w-full border-collapse text-[13px]">
+            <thead>
+              <tr>
+                {["Workspace", "System", `Cost ${monthName(month)}`, "Share"].map((h, i) => (
+                  <th key={h} className={`${TH} whitespace-nowrap ${i >= 2 ? "text-right" : "text-left"}`}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {ws.map((w) => (
+                <tr key={w.workspaceId} className="border-b border-line-subtle last:border-0">
+                  <td className="px-3 py-2 pl-4">
+                    <div className="text-ink">{w.name}</div>
+                    <div className="font-mono text-[11px] text-ink-subtlest">{w.workspaceId || "default workspace"}</div>
+                  </td>
+                  <td className="px-3 py-2">
+                    {canEdit ? (
+                      <select className="input h-8" aria-label={`System for ${w.name}`} value={w.systemCode} onChange={(e) => void setSystem(w.workspaceId, e.target.value)}>
+                        <option value="">Not set</option>
+                        {data.systems.map((s) => (
+                          <option key={s.code} value={s.code}>
+                            {s.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      (data.systems.find((s) => s.code === w.systemCode)?.name ?? "Not set")
+                    )}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{money(usdOf(w.workspaceId))}</td>
+                  <td className="px-3 py-2 pr-4 text-right tabular-nums text-ink-subtle">{pct(usdOf(w.workspaceId), total)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </section>
   );
 }
