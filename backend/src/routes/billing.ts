@@ -1,11 +1,12 @@
 import { asc, count, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
-import { schema } from "../db/client";
-import { CHARGE_BILLED, CHARGE_STATUSES, CURRENCIES } from "../db/schema";
+import { schema, type DB } from "../db/client";
+import { BILLING_SYSTEM_CODES, BILLING_SYSTEMS, CHARGE_BILLED, CHARGE_STATUSES, CURRENCIES } from "../db/schema";
 import { need } from "../middleware/devAuth";
 import { nowIso } from "../services/tickets";
 import type { DevApp } from "../types";
 import { isUniqueViolation } from "./admin";
+import invoicesRoute, { refsRoute } from "./billingInvoices";
 
 // The Billing page: charges (the sheet's Register) and company cards (its Cards tab).
 // Totals are worked out on the page. Mounted inside routes/dev.ts, after devAuth.
@@ -13,12 +14,14 @@ const billing = new Hono<DevApp>();
 const ch = schema.charges;
 const cd = schema.cards;
 const sl = schema.statementLines;
+const sp = schema.chargeSplits;
 
 const MAX_TEXT = 1000;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 type Body = Record<string, unknown>;
 type Read<T> = T | string;
+type Split = { systemCode: string; percent: number };
 
 function text(b: Body, key: string, out: Record<string, unknown>, opts: { required?: string; max?: number } = {}): string | null {
   if (!(key in b)) return null;
@@ -35,7 +38,9 @@ function readCharge(b: Body, isNew: boolean): Read<Record<string, unknown>> {
   if (isNew && !("vendor" in b)) return "Give the vendor";
   const errors = [
     text(b, "vendor", out, { required: "Give the vendor", max: 200 }),
-    ...["registerId", "company", "system", "serviceType", "usedFor", "plan", "card", "keyName", "notes"].map((k) => text(b, k, out)),
+    ...["registerId", "company", "system", "serviceType", "usedFor", "plan", "card", "keyName", "projectRef", "module", "notes"].map((k) =>
+      text(b, k, out),
+    ),
   ].filter(Boolean);
   if (errors.length) return errors[0] as string;
   if ("amount" in b) {
@@ -51,7 +56,7 @@ function readCharge(b: Body, isNew: boolean): Read<Record<string, unknown>> {
     out.currency = b.currency;
   }
   if ("billed" in b) {
-    if (!CHARGE_BILLED.includes(b.billed as (typeof CHARGE_BILLED)[number])) return "Billed: monthly, yearly or blank";
+    if (!CHARGE_BILLED.includes(b.billed as (typeof CHARGE_BILLED)[number])) return "Billed: monthly, yearly, per credit, per use or blank";
     out.billed = b.billed;
   }
   if ("status" in b) {
@@ -63,11 +68,41 @@ function readCharge(b: Body, isNew: boolean): Read<Record<string, unknown>> {
     else if (typeof b.checkedOn === "string" && DATE_RE.test(b.checkedOn)) out.checkedOn = b.checkedOn;
     else return "Last checked must be a date";
   }
+  if ("systemCode" in b) {
+    if (b.systemCode !== "" && !BILLING_SYSTEM_CODES.includes(b.systemCode as string)) return "Unknown system";
+    out.systemCode = b.systemCode;
+  }
+  if ("splits" in b) {
+    const s = readSplits(b.splits);
+    if (typeof s === "string") return s;
+    out.splits = s;
+    // A charge is either one system's or shared; never both.
+    if (s.length) out.systemCode = "";
+  } else if (typeof out.systemCode === "string" && out.systemCode) out.splits = [];
   if ("accountId" in b) {
     if (b.accountId === null || b.accountId === "") out.accountId = null;
     else if (Number.isInteger(Number(b.accountId))) out.accountId = Number(b.accountId);
     else return "Unknown account";
   }
+  return out;
+}
+
+// Empty, or two or more different systems whose shares add up to 100.
+function readSplits(v: unknown): Read<Split[]> {
+  if (!Array.isArray(v)) return "Splits must be a list";
+  if (v.length === 0) return [];
+  if (v.length === 1) return "A shared charge needs two systems or more";
+  const out: Split[] = [];
+  for (const raw of v) {
+    const r = (raw ?? {}) as Body;
+    if (!BILLING_SYSTEM_CODES.includes(r.systemCode as string)) return "Unknown system in the split";
+    if (out.some((x) => x.systemCode === r.systemCode)) return "A system is in the split twice";
+    const n = Number(r.percent);
+    if (!Number.isFinite(n) || n <= 0 || n > 100) return "Each share must be more than 0% and at most 100%";
+    out.push({ systemCode: r.systemCode as string, percent: Math.round(n * 100) / 100 });
+  }
+  const total = out.reduce((a, x) => a + x.percent, 0);
+  if (Math.abs(total - 100) > 0.001) return `The shares add up to ${Math.round(total * 100) / 100}%, not 100%`;
   return out;
 }
 
@@ -95,20 +130,39 @@ function readCard(b: Body, isNew: boolean): Read<Record<string, unknown>> {
   return out;
 }
 
-const chargeOut = <T extends { amount: string | null }>(r: T) => ({ ...r, amount: r.amount === null ? null : Number(r.amount) });
+type SplitRow = { chargeId: number; systemCode: string; percent: string };
+const chargeOut = <T extends { id: number; amount: string | null }>(r: T, splits: SplitRow[]) => ({
+  ...r,
+  amount: r.amount === null ? null : Number(r.amount),
+  splits: splits.filter((s) => s.chargeId === r.id).map((s) => ({ systemCode: s.systemCode, percent: Number(s.percent) })),
+});
 const stamp = (c: { get(k: "user"): { name: string } }) => ({ updatedAt: nowIso(), updatedBy: c.get("user").name });
 
 // ponytail: whole tables on purpose; bounded by the few dozen services and cards the companies pay for. Paginate if that stops being true.
 billing.get("/", need("billing_view", "billing_edit"), async (c) => {
   const db = c.get("db");
   // ponytail: statement lines grow by a few dozen a month; whole table is fine for years. Page by month if that stops being true.
-  const [charges, cards, accounts, lines] = await Promise.all([
+  const [charges, splits, cards, accounts, lines, invoices, invoiceLines, projectRefs] = await Promise.all([
     db.select().from(ch).orderBy(asc(ch.registerId), asc(ch.id)),
+    db.select().from(sp),
     db.select().from(cd).orderBy(asc(cd.nickname)),
     db.select({ id: schema.accounts.id, name: schema.accounts.name }).from(schema.accounts).orderBy(asc(schema.accounts.name)),
     db.select().from(sl).orderBy(desc(sl.txnDate), desc(sl.id)),
+    // ponytail: invoices grow by a dozen or so a month, like statement lines; whole tables for now.
+    db.select().from(schema.invoices).orderBy(desc(schema.invoices.invoiceDate), desc(schema.invoices.id)),
+    db.select().from(schema.invoiceLines).orderBy(asc(schema.invoiceLines.id)),
+    db.select().from(schema.projectRefs).orderBy(asc(schema.projectRefs.ref)),
   ]);
-  return c.json({ charges: charges.map(chargeOut), cards, accounts, lines: lines.map(lineOut) });
+  return c.json({
+    charges: charges.map((r) => chargeOut(r, splits)),
+    systems: BILLING_SYSTEMS.map(([code, name]) => ({ code, name })),
+    cards,
+    accounts,
+    lines: lines.map(lineOut),
+    invoices: invoices.map((r) => ({ ...r, total: Number(r.total) })),
+    invoiceLines: invoiceLines.map((r) => ({ ...r, amount: Number(r.amount) })),
+    projectRefs,
+  });
 });
 
 // --- Statement lines -------------------------------------------------------
@@ -125,6 +179,7 @@ function readLine(b: Body, isNew: boolean): Read<Record<string, unknown>> {
     if (b.amountMyr === "" || b.amountMyr === null || !Number.isFinite(n) || Math.abs(n) > 1e9) return "Amount must be a number";
     out.amountMyr = n.toFixed(2);
   }
+  if ("checkedByHand" in b) out.checkedByHand = b.checkedByHand ? 1 : 0;
   const errors = ["card", "description", "registerId", "notes"].map((k) => text(b, k, out)).filter(Boolean);
   return errors.length ? (errors[0] as string) : out;
 }
@@ -176,15 +231,29 @@ billing.delete("/lines/:id", need("billing_edit"), async (c) => {
 
 // --- Charges ---------------------------------------------------------------
 
+// Replaces a charge's splits when the body gave them, and returns the charge with its splits.
+type Tx = Parameters<Parameters<DB["transaction"]>[0]>[0];
+async function withSplits(tx: Tx, row: typeof ch.$inferSelect, splits: Split[] | undefined) {
+  if (splits) {
+    await tx.delete(sp).where(eq(sp.chargeId, row.id));
+    if (splits.length) await tx.insert(sp).values(splits.map((s) => ({ chargeId: row.id, systemCode: s.systemCode, percent: s.percent.toFixed(2) })));
+  }
+  return chargeOut(row, await tx.select().from(sp).where(eq(sp.chargeId, row.id)));
+}
+
 billing.post("/charges", need("billing_edit"), async (c) => {
   const f = readCharge((await c.req.json().catch(() => ({}))) as Body, true);
   if (typeof f === "string") return c.json({ error: f }, 400);
+  const { splits, ...fields } = f as Record<string, unknown> & { splits?: Split[] };
   const now = nowIso();
-  const [row] = await c.get("db")
-    .insert(ch)
-    .values({ ...(f as object), vendor: f.vendor as string, createdAt: now, ...stamp(c) })
-    .returning();
-  return c.json({ charge: chargeOut(row!) }, 201);
+  const charge = await c.get("db").transaction(async (tx) => {
+    const [row] = await tx
+      .insert(ch)
+      .values({ ...fields, vendor: fields.vendor as string, createdAt: now, ...stamp(c) })
+      .returning();
+    return withSplits(tx, row!, splits);
+  });
+  return c.json({ charge }, 201);
 });
 
 billing.patch("/charges/:id", need("billing_edit"), async (c) => {
@@ -192,9 +261,13 @@ billing.patch("/charges/:id", need("billing_edit"), async (c) => {
   if (!Number.isInteger(id)) return c.json({ error: "Charge not found" }, 404);
   const f = readCharge((await c.req.json().catch(() => ({}))) as Body, false);
   if (typeof f === "string") return c.json({ error: f }, 400);
-  const [row] = await c.get("db").update(ch).set({ ...f, ...stamp(c) }).where(eq(ch.id, id)).returning();
-  if (!row) return c.json({ error: "Charge not found" }, 404);
-  return c.json({ charge: chargeOut(row) });
+  const { splits, ...fields } = f as Record<string, unknown> & { splits?: Split[] };
+  const charge = await c.get("db").transaction(async (tx) => {
+    const [row] = await tx.update(ch).set({ ...fields, ...stamp(c) }).where(eq(ch.id, id)).returning();
+    return row ? withSplits(tx, row, splits) : null;
+  });
+  if (!charge) return c.json({ error: "Charge not found" }, 404);
+  return c.json({ charge });
 });
 
 billing.delete("/charges/:id", need("billing_edit"), async (c) => {
@@ -257,5 +330,8 @@ billing.delete("/cards/:id", need("billing_edit"), async (c) => {
   await db.delete(cd).where(eq(cd.id, id));
   return c.json({ ok: true });
 });
+
+billing.route("/invoices", invoicesRoute);
+billing.route("/refs", refsRoute);
 
 export default billing;

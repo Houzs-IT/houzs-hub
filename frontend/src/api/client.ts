@@ -24,13 +24,17 @@ export type ChargeRow = {
   accountId: number | null;
   company: string;
   system: string;
+  systemCode: string;
+  projectRef: string;
+  module: string;
+  splits: { systemCode: string; percent: number }[];
   vendor: string;
   serviceType: string;
   usedFor: string;
   plan: string;
   amount: number | null;
   currency: "USD" | "MYR";
-  billed: "" | "monthly" | "yearly";
+  billed: "" | "monthly" | "yearly" | "credit" | "usage";
   card: string;
   status: ChargeStatus;
   checkedOn: string | null;
@@ -60,14 +64,46 @@ export type StatementLine = {
   registerId: string;
   amountMyr: number;
   notes: string;
+  checkedByHand: number;
   updatedAt: string;
   updatedBy: string | null;
 };
+export type InvoiceRow = {
+  id: number;
+  vendor: string;
+  invoiceNo: string;
+  invoiceDate: string;
+  periodFrom: string | null;
+  periodTo: string | null;
+  billTo: string;
+  total: number;
+  currency: "USD" | "MYR";
+  chargeId: number | null;
+  statementLineId: number | null;
+  fileKey: string | null;
+  fileName: string;
+  notes: string;
+  updatedAt: string;
+  updatedBy: string | null;
+};
+export type InvoiceLineRow = {
+  id: number;
+  invoiceId: number;
+  description: string;
+  projectRef: string;
+  amount: number;
+  kind: "charge" | "tax" | "discount" | "rounding";
+};
+export type ProjectRef = { ref: string; vendor: string; name: string; chargeId: number | null; inUse: number; updatedAt: string; updatedBy: string | null };
 export type BillingData = {
   charges: ChargeRow[];
+  systems: { code: string; name: string }[];
   cards: CardRow[];
   accounts: { id: number; name: string }[];
   lines: StatementLine[];
+  invoices: InvoiceRow[];
+  invoiceLines: InvoiceLineRow[];
+  projectRefs: ProjectRef[];
 };
 
 export type AccountStatus = "yes" | "partly" | "not_yet" | "cant_move";
@@ -260,3 +296,4 @@ export const json = (method: string, body: unknown): RequestInit => ({
 });
 
 export const attachmentUrl = (id: number) => `${BASE}/attachments/${id}`;
+export const invoiceFileUrl = (id: number) => `${BASE}/billing/invoices/${id}/file`;

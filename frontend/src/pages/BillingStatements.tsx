@@ -1,17 +1,19 @@
-import { ClipboardPaste, Pencil, Plus } from "lucide-react";
+import { ClipboardPaste, FileUp, Pencil, Plus } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { api, json, type BillingData as Data, type ChargeRow, type StatementLine } from "../api/client";
 import { EditDialog, Field, Select } from "../components/EditForm";
 import { money } from "../lib/format";
+import { PdfPasswordError, pdfText } from "../lib/pdfText";
+import { systemLabel } from "./BillingCharge";
 
 // The card-statement side of the Billing page: the sheet's Statement lines,
 // Monthly tally and Trend tabs. Amounts here are ringgit as charged to the card.
 
 const NOT_MATCHED = "Not matched";
-const TH = "border-b-2 border-line bg-surface-dim px-3 py-2.5 text-[10px] font-bold uppercase tracking-brand text-ink-subtle first:pl-4 last:pr-4";
-const rm = (n: number) => money(n, "MYR");
-const monthOf = (d: string) => d.slice(0, 7);
-const monthName = (m: string) => new Date(`${m}-01T00:00:00`).toLocaleDateString("en-MY", { month: "short", year: "numeric" });
+export const TH = "border-b-2 border-line bg-surface-dim px-3 py-2.5 text-[10px] font-bold uppercase tracking-brand text-ink-subtle first:pl-4 last:pr-4";
+export const rm = (n: number) => money(n, "MYR");
+export const monthOf = (d: string) => d.slice(0, 7);
+export const monthName = (m: string) => new Date(`${m}-01T00:00:00`).toLocaleDateString("en-MY", { month: "short", year: "numeric" });
 const thisMonth = () => new Date().toISOString().slice(0, 7);
 
 function lookup(data: Data) {
@@ -23,7 +25,7 @@ function lookup(data: Data) {
 }
 
 const sum = (lines: StatementLine[]) => lines.reduce((a, l) => a + l.amountMyr, 0);
-const pct = (part: number, whole: number) => (whole ? `${Math.round((part / whole) * 1000) / 10}%` : "-");
+export const pct = (part: number, whole: number) => (whole ? `${Math.round((part / whole) * 1000) / 10}%` : "-");
 
 // A charge is picked for a statement line only when the vendor name points at exactly
 // one sheet ID (after narrowing to the card, if one is given); otherwise it is left for a person.
@@ -158,13 +160,22 @@ function parseStatement(text: string): { rows: Parsed[]; skipped: number } {
   return { rows, skipped };
 }
 
+// The description names one of the vendors on the Register, so it is likely a software or AI charge.
+function vendorHit(charges: ChargeRow[], description: string) {
+  const desc = description.toLowerCase();
+  return charges.some((c) => {
+    const word = c.vendor.toLowerCase().match(/[a-z0-9]+/)?.[0] ?? "";
+    return word.length >= 4 && desc.includes(word);
+  });
+}
+
 // A pasted line already saved on the same card: same date, amount and description.
 const sameLine = (a: { txnDate: string; amountMyr: number; description: string }, b: StatementLine, card: string) =>
   a.txnDate === b.txnDate && a.amountMyr === b.amountMyr && a.description.toLowerCase() === b.description.toLowerCase() && b.card === card;
 
 // ---------------------------------------------------------------------------
 
-type LineDraft = { txnDate: string; card: string; description: string; registerId: string; amountMyr: string; notes: string };
+type LineDraft = { txnDate: string; card: string; description: string; registerId: string; amountMyr: string; notes: string; checkedByHand: boolean };
 const today = () => new Date().toISOString().slice(0, 10);
 
 export function Statements({ data, setData, canEdit }: { data: Data; setData: (d: Data) => void; canEdit: boolean }) {
@@ -173,12 +184,22 @@ export function Statements({ data, setData, canEdit }: { data: Data; setData: (d
   const [month, setMonth] = useState(months[0] ?? "");
   const [card, setCard] = useState("");
   const [unmatched, setUnmatched] = useState(false);
+  const [noInvoice, setNoInvoice] = useState(false);
+  // The invoice each line paid, if one has been added.
+  const invoiceOf = useMemo(() => new Map(data.invoices.filter((i) => i.statementLineId !== null).map((i) => [i.statementLineId!, i])), [data.invoices]);
   const [editing, setEditing] = useState<StatementLine | "new" | null>(null);
-  const [draft, setDraft] = useState<LineDraft>({ txnDate: today(), card: "", description: "", registerId: "", amountMyr: "", notes: "" });
+  const [draft, setDraft] = useState<LineDraft>({ txnDate: today(), card: "", description: "", registerId: "", amountMyr: "", notes: "", checkedByHand: false });
   const dialog = useRef<HTMLDialogElement>(null);
   const pasteDialog = useRef<HTMLDialogElement>(null);
-  const [pasteText, setPasteText] = useState("");
+  const [pasteText, setText] = useState("");
   const [pasteCard, setPasteCard] = useState("");
+  // Ticks the person changed in the preview, by row; the rest follow vendorHit.
+  const [ticks, setTicks] = useState<Map<number, boolean>>(new Map());
+  const setPasteText = (t: string) => {
+    setText(t);
+    setTicks(new Map());
+  };
+  const [pdf, setPdf] = useState<{ file: File; password: string; locked: boolean; busy: boolean; error: string } | null>(null);
 
   const chargeOptions: [string, string][] = [
     ["", NOT_MATCHED],
@@ -187,15 +208,15 @@ export function Statements({ data, setData, canEdit }: { data: Data; setData: (d
   const cardOptions: [string, string][] = [["", "Not known"], ...data.cards.map((c) => [c.nickname, c.nickname] as [string, string])];
 
   const shown = data.lines.filter(
-    (l) => (!month || monthOf(l.txnDate) === month) && (!card || l.card === card) && (!unmatched || !byId.has(l.registerId)),
+    (l) => (!month || monthOf(l.txnDate) === month) && (!card || l.card === card) && (!unmatched || !byId.has(l.registerId)) && (!noInvoice || (!invoiceOf.has(l.id) && !l.checkedByHand)),
   );
 
   const open = (l: StatementLine | "new") => {
     setEditing(l);
     setDraft(
       l === "new"
-        ? { txnDate: today(), card: "", description: "", registerId: "", amountMyr: "", notes: "" }
-        : { ...l, amountMyr: String(l.amountMyr) },
+        ? { txnDate: today(), card: "", description: "", registerId: "", amountMyr: "", notes: "", checkedByHand: false }
+        : { ...l, amountMyr: String(l.amountMyr), checkedByHand: !!l.checkedByHand },
     );
     dialog.current?.showModal();
   };
@@ -219,14 +240,30 @@ export function Statements({ data, setData, canEdit }: { data: Data; setData: (d
   // Pasting the same statement twice would count its charges twice, so lines already saved are left out.
   const fresh = parsed.rows.filter((r) => !data.lines.some((l) => sameLine(r, l, pasteCard)));
   const repeats = parsed.rows.length - fresh.length;
+  const ticked = (i: number) => ticks.get(i) ?? vendorHit(data.charges, fresh[i]!.description);
+  const chosen = fresh.filter((_, i) => ticked(i));
+  const tickAll = (on: boolean) => setTicks(new Map(fresh.map((_, i) => [i, on])));
   const addPasted = async () => {
     if (parsed.rows.length === 0) throw new Error("No lines found. Each line needs a date, a description and an amount.");
     if (fresh.length === 0) throw new Error("Every line here is already saved on this card.");
-    const lines = fresh.map((r) => ({ ...r, card: pasteCard, registerId: guessCharge(data.charges, r.description, pasteCard) }));
+    if (chosen.length === 0) throw new Error("Tick the lines to add.");
+    const lines = chosen.map((r) => ({ ...r, card: pasteCard, registerId: guessCharge(data.charges, r.description, pasteCard) }));
     const res = await api<{ lines: StatementLine[] }>("/billing/lines/bulk", json("POST", { lines }));
     setData({ ...data, lines: [...res.lines, ...data.lines] });
     setPasteText("");
+    setPdf(null);
     setMonth(monthOf(res.lines[0]!.txnDate));
+  };
+  // Reads the picked PDF into the box below, asking for its password when it is locked.
+  const readPdf = async (file: File, password = "") => {
+    setPdf({ file, password, locked: !!password, busy: true, error: "" });
+    try {
+      setPasteText(await pdfText(file, password || undefined));
+      setPdf({ file, password: "", locked: false, busy: false, error: "" });
+    } catch (e) {
+      const locked = e instanceof PdfPasswordError;
+      setPdf({ file, password: "", locked, busy: false, error: locked && !e.wrong ? "" : (e as Error).message });
+    }
   };
   const set = (k: keyof LineDraft) => (v: string) => setDraft({ ...draft, [k]: v });
 
@@ -250,13 +287,16 @@ export function Statements({ data, setData, canEdit }: { data: Data; setData: (d
         <label className="flex items-center gap-1.5 text-[13px] text-ink-subtle">
           <input type="checkbox" checked={unmatched} onChange={(e) => setUnmatched(e.target.checked)} /> Not matched only
         </label>
+        <label className="flex items-center gap-1.5 text-[13px] text-ink-subtle">
+          <input type="checkbox" checked={noInvoice} onChange={(e) => setNoInvoice(e.target.checked)} /> No invoice only
+        </label>
         <span className="text-xs text-ink-subtle">
           {shown.length} line(s) · {rm(sum(shown))}
         </span>
         {canEdit && (
           <div className="ml-auto flex gap-2">
             <button className="btn-default" onClick={() => pasteDialog.current?.showModal()}>
-              <ClipboardPaste className="h-4 w-4" /> Paste statement
+              <ClipboardPaste className="h-4 w-4" /> Add statement
             </button>
             <button className="btn-primary" onClick={() => open("new")}>
               <Plus className="h-4 w-4" /> Add line
@@ -298,11 +338,20 @@ export function Statements({ data, setData, canEdit }: { data: Data; setData: (d
                           <div className="text-ink">
                             {c.registerId} {c.vendor}
                           </div>
-                          <div className="text-xs text-ink-subtle">{[c.company, c.system].filter(Boolean).join(" · ")}</div>
+                          <div className="text-xs text-ink-subtle">{systemLabel(data, c)}</div>
                         </>
                       ) : (
                         <span className="pill bg-loz-orange text-loz-orange-ink">{NOT_MATCHED}</span>
                       )}
+                      <div className="mt-1 text-xs">
+                        {invoiceOf.has(l.id) ? (
+                          <span className="text-loz-green-ink">✓ Invoice {invoiceOf.get(l.id)!.invoiceNo}</span>
+                        ) : l.checkedByHand ? (
+                          <span className="text-loz-green-ink">✓ Checked by hand</span>
+                        ) : (
+                          <span className="pill bg-loz-blue text-loz-blue-ink">No invoice</span>
+                        )}
+                      </div>
                     </td>
                     <td className="w-32 whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-ink">{rm(l.amountMyr)}</td>
                     <td className="w-12 px-3 py-2.5 pr-4 text-right">
@@ -342,16 +391,79 @@ export function Statements({ data, setData, canEdit }: { data: Data; setData: (d
             <Field label="Amount charged (RM)" value={draft.amountMyr} onChange={set("amountMyr")} type="number" required hint="A refund is a minus amount" />
             <Select label="Matched to" value={draft.registerId} onChange={set("registerId")} options={chargeOptions} />
             <Field label="Notes" value={draft.notes} onChange={set("notes")} />
+            <Select
+              label="Checked by hand"
+              value={draft.checkedByHand ? "1" : "0"}
+              onChange={(v) => setDraft({ ...draft, checkedByHand: v === "1" })}
+              options={[["0", "No, waiting for its invoice"], ["1", "Yes, no invoice to be had (say why in Notes)"]]}
+            />
           </>
         )}
       </EditDialog>
 
-      <EditDialog dialogRef={pasteDialog} title="Paste statement" isNew stamp={null} onSave={addPasted} onRemove={async () => {}} onClose={() => {}} saveLabel="Add lines">
+      <EditDialog
+        dialogRef={pasteDialog}
+        title="Add statement"
+        isNew
+        stamp={null}
+        onSave={addPasted}
+        onRemove={async () => {}}
+        onClose={() => setPdf(null)}
+        saveLabel={`Add ${chosen.length} line(s)`}
+      >
         <div className="sm:col-span-2 text-[13px] text-ink-subtle">
-          Copy the software and AI lines from the bank statement (its PDF or CSV), one per line: <b>date</b>, <b>description</b>, <b>amount</b>.
+          Upload the bank statement PDF, or copy its lines (or a CSV) into the box: <b>date</b>, <b>description</b>, <b>amount</b>, one per line.
           Dates like 03/09/2026 are read day first; a date without a year (24 SEP) gets the latest year that is not in the future. A foreign amount
-          on the next line (USD 37.86) is kept as the line's note. Each line is matched to a charge by its vendor name when that is clear; the rest
-          stay Not matched for you to pick. Lines already saved on the card are left out.
+          on the next line (USD 37.86) is kept as the line's note. Lines naming a vendor on the Register are ticked; tick any others to add. Each line
+          is matched to a charge by its vendor name when that is clear; the rest stay Not matched for you to pick. Lines already saved on the card are
+          left out.
+        </div>
+        <div className="sm:col-span-2">
+          <label className="btn-default inline-flex cursor-pointer">
+            <FileUp className="h-4 w-4" /> Upload PDF
+            <input
+              type="file"
+              accept="application/pdf,.pdf"
+              className="sr-only"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                e.target.value = "";
+                if (f) void readPdf(f);
+              }}
+            />
+          </label>
+          {pdf && <span className="ml-2 text-[12px] text-ink-subtle">{pdf.busy ? `Reading ${pdf.file.name}...` : pdf.file.name}</span>}
+          {pdf?.locked && !pdf.busy && (
+            <div className="mt-2 flex flex-wrap items-end gap-2">
+              <label className="block text-[12px] font-semibold text-ink-subtle">
+                PDF password
+                <input
+                  className="input mt-1 w-56"
+                  type="password"
+                  autoComplete="off"
+                  value={pdf.password}
+                  onChange={(e) => setPdf({ ...pdf, password: e.target.value })}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      if (pdf.password) void readPdf(pdf.file, pdf.password);
+                    }
+                  }}
+                />
+                <span className="mt-1 block text-[11px] font-normal text-ink-subtlest">
+                  Often your IC number or date of birth. Used only to open the file here; never saved.
+                </span>
+              </label>
+              <button type="button" className="btn-primary mb-5" disabled={!pdf.password} onClick={() => void readPdf(pdf.file, pdf.password)}>
+                Open
+              </button>
+            </div>
+          )}
+          {pdf?.error && (
+            <div role="alert" className="mt-2 rounded bg-loz-red px-3 py-2 text-[12px] text-loz-red-ink">
+              {pdf.error}
+            </div>
+          )}
         </div>
         <label className="block text-[12px] font-semibold text-ink-subtle sm:col-span-2">
           Statement lines
@@ -362,15 +474,42 @@ export function Statements({ data, setData, canEdit }: { data: Data; setData: (d
             placeholder={"24 SEP SUPABASE SINGAPORE SG 692.36\nUSD 165.89\n03/09/2026, CLOUDFLARE SAN FRANCISCO, 25.30"}
           />
         </label>
-        <Select label="Card these lines are on" value={pasteCard} onChange={setPasteCard} options={cardOptions} />
+        <Select
+          label="Card these lines are on"
+          value={pasteCard}
+          onChange={(v) => {
+            setPasteCard(v);
+            setTicks(new Map());
+          }}
+          options={cardOptions}
+        />
         <div className="self-end text-[13px] text-ink-subtle">
-          {fresh.length} line(s) to add{repeats ? `, ${repeats} already saved` : ""}
-          {parsed.skipped ? `, ${parsed.skipped} skipped` : ""} · {rm(fresh.reduce((a, r) => a + r.amountMyr, 0))}
+          {chosen.length} of {fresh.length} line(s) ticked{repeats ? `, ${repeats} already saved` : ""}
+          {parsed.skipped ? `, ${parsed.skipped} skipped` : ""} · {rm(chosen.reduce((a, r) => a + r.amountMyr, 0))}
         </div>
         {fresh.length > 0 && (
-          <ul className="max-h-40 overflow-auto text-[12px] text-ink-subtle sm:col-span-2">
+          <div className="flex gap-3 text-[12px] sm:col-span-2">
+            <button type="button" className="text-primary hover:underline" onClick={() => tickAll(true)}>
+              Tick all
+            </button>
+            <button type="button" className="text-primary hover:underline" onClick={() => tickAll(false)}>
+              Untick all
+            </button>
+            <button type="button" className="text-primary hover:underline" onClick={() => setTicks(new Map())}>
+              Only Register vendors
+            </button>
+          </div>
+        )}
+        {fresh.length > 0 && (
+          <ul className="max-h-56 overflow-auto text-[12px] text-ink-subtle sm:col-span-2">
             {fresh.map((r, i) => (
-              <li key={i} className="flex gap-2 tabular-nums">
+              <li key={i} className={`flex items-center gap-2 tabular-nums ${ticked(i) ? "text-ink" : ""}`}>
+                <input
+                  type="checkbox"
+                  aria-label={`Add ${r.txnDate} ${r.description}`}
+                  checked={ticked(i)}
+                  onChange={(e) => setTicks(new Map(ticks).set(i, e.target.checked))}
+                />
                 <span className="w-20 shrink-0">{r.txnDate}</span>
                 <span className="flex-1 truncate">{r.description}</span>
                 {r.notes && <span>{r.notes}</span>}
