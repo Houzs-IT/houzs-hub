@@ -97,7 +97,9 @@ export function Invoices({ data, setData, canEdit }: { data: Data; setData: (d: 
   const review = useRef<HTMLDialogElement>(null);
   const [show, setShow] = useState<"all" | "unpaid" | "nocharge">("all");
   const [month, setMonth] = useState("");
-  const [project, setProject] = useState("");
+  const [refCharge, setRefCharge] = useState("");
+  const [refUse, setRefUse] = useState("");
+  const [refQ, setRefQ] = useState("");
   const [editing, setEditing] = useState<InvoiceRow | null>(null);
   const [form, setForm] = useState<Form | null>(null);
   const editDialog = useRef<HTMLDialogElement>(null);
@@ -169,18 +171,16 @@ export function Invoices({ data, setData, canEdit }: { data: Data; setData: (d: 
   };
 
   const months = [...new Set(data.invoices.map((i) => monthOf(i.invoiceDate)))].sort().reverse();
-  // What the picked project cost on an invoice (its own lines; plan, discounts and tax are the
-  // account's), or null when the invoice has no line for it.
-  const projectCost = (invoiceId: number) => {
-    const ls = data.invoiceLines.filter((l) => l.invoiceId === invoiceId && l.projectRef === project);
-    return ls.length ? ls.reduce((a, l) => a + l.amount, 0) : null;
-  };
-  const refLabel = (r: ProjectRef) => `${r.name || "Not named"} · ${r.ref.slice(0, 6)}…${r.inUse ? "" : " (not used)"}`;
   const shown = data.invoices.filter(
-    (i) =>
-      (!month || monthOf(i.invoiceDate) === month) &&
-      (!project || projectCost(i.id) !== null) &&
-      (show === "all" || (show === "unpaid" ? i.statementLineId === null : i.chargeId === null)),
+    (i) => (!month || monthOf(i.invoiceDate) === month) && (show === "all" || (show === "unpaid" ? i.statementLineId === null : i.chargeId === null)),
+  );
+  const refCharges = [...new Set(data.projectRefs.map((r) => r.chargeId))];
+  const needle = refQ.trim().toLowerCase();
+  const refsShown = data.projectRefs.filter(
+    (r) =>
+      (!refCharge || String(r.chargeId ?? "") === refCharge) &&
+      (!refUse || String(r.inUse) === refUse) &&
+      (!needle || `${r.ref} ${r.name} ${r.vendor}`.toLowerCase().includes(needle)),
   );
 
   const openEdit = (i: InvoiceRow) => {
@@ -226,18 +226,6 @@ export function Invoices({ data, setData, canEdit }: { data: Data; setData: (d: 
             </option>
           ))}
         </select>
-        {data.projectRefs.length > 0 && (
-          <select className="input max-w-[260px]" value={project} onChange={(e) => setProject(e.target.value)} aria-label="Project ID">
-            <option value="">All projects</option>
-            {[...data.projectRefs]
-              .sort((a, b) => b.inUse - a.inUse || (a.name || a.ref).localeCompare(b.name || b.ref))
-              .map((r) => (
-                <option key={r.ref} value={r.ref}>
-                  {refLabel(r)}
-                </option>
-              ))}
-          </select>
-        )}
         <select className="input" value={show} onChange={(e) => setShow(e.target.value as typeof show)} aria-label="Show">
           <option value="all">All invoices</option>
           <option value="unpaid">Payment not found yet</option>
@@ -246,7 +234,7 @@ export function Invoices({ data, setData, canEdit }: { data: Data; setData: (d: 
         <span className="text-xs text-ink-subtle">
           {shown.length} invoice(s)
           {(["USD", "MYR"] as const).map((cur) => {
-            const t = shown.filter((i) => i.currency === cur).reduce((a, i) => a + (project ? (projectCost(i.id) ?? 0) : i.total), 0);
+            const t = shown.filter((i) => i.currency === cur).reduce((a, i) => a + i.total, 0);
             return t ? ` · ${money(t, cur)}` : "";
           })}{" "}
           · the PDF is read here, then kept privately in the hub
@@ -317,16 +305,7 @@ export function Invoices({ data, setData, canEdit }: { data: Data; setData: (d: 
                     <td className="whitespace-nowrap px-3 py-2.5">
                       {l ? <span className="text-ink-subtle">{lineLabel(l)}</span> : <span className="pill bg-loz-orange text-loz-orange-ink">Not found yet</span>}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-ink">
-                      {project ? (
-                        <>
-                          {money(projectCost(i.id) ?? 0, i.currency)}
-                          <div className="text-[11px] text-ink-subtlest">of {money(i.total, i.currency)}</div>
-                        </>
-                      ) : (
-                        money(i.total, i.currency)
-                      )}
-                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-ink">{money(i.total, i.currency)}</td>
                     <td className="w-12 px-3 py-2.5 pr-4 text-right">
                       {canEdit && (
                         <button className="btn-subtle h-8 w-8 px-0" title="Edit" aria-label={`Edit ${i.vendor} ${i.invoiceNo}`} onClick={() => openEdit(i)}>
@@ -346,7 +325,30 @@ export function Invoices({ data, setData, canEdit }: { data: Data; setData: (d: 
         <section className="mt-6" aria-label="Project IDs">
           <h2 className="section-title">Project IDs on invoices</h2>
           <p className="mt-1 text-[12.5px] text-ink-subtle">Learned from the invoices. Name each one and say if it is still used; unused ones show on their system's tab.</p>
-          <div className={`card mt-2 ${SCROLL}`}>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <input className="input w-56" placeholder="Search ID or name" value={refQ} onChange={(e) => setRefQ(e.target.value)} aria-label="Search project IDs" />
+            <select className="input" value={refCharge} onChange={(e) => setRefCharge(e.target.value)} aria-label="Account">
+              <option value="">All accounts</option>
+              {refCharges.map((id) => {
+                const c = chargeOf(id);
+                return (
+                  <option key={String(id)} value={String(id ?? "")}>
+                    {c ? chargeLabel(data, c) : "No charge"}
+                  </option>
+                );
+              })}
+            </select>
+            <select className="input" value={refUse} onChange={(e) => setRefUse(e.target.value)} aria-label="In use">
+              <option value="">Used or not</option>
+              <option value="1">In use</option>
+              <option value="0">Not used</option>
+            </select>
+            <span className="text-xs text-ink-subtle">
+              {refsShown.length} of {data.projectRefs.length}
+            </span>
+          </div>
+          {refsShown.length === 0 && <div className="py-6 text-center text-sm text-ink-subtle">No project IDs match.</div>}
+          <div className={`card mt-2 ${SCROLL} ${refsShown.length ? "" : "hidden"}`}>
             <table className="w-full border-collapse text-[13px]">
               <thead>
                 <tr>
@@ -358,7 +360,7 @@ export function Invoices({ data, setData, canEdit }: { data: Data; setData: (d: 
                 </tr>
               </thead>
               <tbody>
-                {data.projectRefs.map((r) => {
+                {refsShown.map((r) => {
                   const c = chargeOf(r.chargeId);
                   return (
                     <tr key={r.ref} className="border-b border-line-subtle last:border-0">
