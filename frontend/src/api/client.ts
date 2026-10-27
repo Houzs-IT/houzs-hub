@@ -261,6 +261,12 @@ export type MonthlyStats = {
   rows: { month: string; system: string; type: TicketType; n: number }[];
 };
 
+export type DailyStats = {
+  days: string[];
+  today: string;
+  rows: { day: string; system: string; type: TicketType; n: number }[];
+};
+
 const BASE = "/api/v1/dev";
 
 export class ApiError extends Error {

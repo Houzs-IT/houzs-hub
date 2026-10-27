@@ -390,7 +390,7 @@ function Composer({ code, status, onDone }: { code: string; status: Status; onDo
             ref={fileRef}
             type="file"
             multiple
-            accept="image/*,application/pdf,video/mp4,video/quicktime"
+            accept="image/*,application/pdf,video/mp4,video/quicktime,.zip"
             className="hidden"
             onChange={(e) => {
               // Same limits as the server, told up front instead of after a long upload.
