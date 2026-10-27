@@ -6,13 +6,17 @@ import { readInvoiceText, type ReadInvoice, type ReadLine } from "../lib/invoice
 import { pdfText } from "../lib/pdfText";
 import { money } from "../lib/format";
 import { systemLabel } from "./BillingCharge";
-import { rm, TH } from "./BillingStatements";
+import { monthName, monthOf, rm, TH } from "./BillingStatements";
 
 // The Invoices tab of System billing. Invoice PDFs are read in the browser
 // (lib/invoiceRead.ts); for each one the page suggests the charge it is for and the card
 // statement line that paid it, the person checks, and the hub stores the PDF and links.
 
-const vendorWord = (v: string) => v.toLowerCase().match(/[a-z0-9]{4,}/)?.[0] ?? "";
+// Long lists scroll inside their box, about ten rows high, with the headings kept in view.
+const SCROLL = "max-h-[min(60vh,520px)] overflow-auto";
+const STICKY = "sticky top-0 z-10";
+
+const vendorWord =(v: string) => v.toLowerCase().match(/[a-z0-9]{4,}/)?.[0] ?? "";
 // "USD 12.29" kept on a statement line as its foreign amount.
 const foreignOf = (notes: string) => {
   const m = notes.match(/([A-Z]{3})\s?([\d,]+\.\d{2})/);
@@ -92,6 +96,8 @@ export function Invoices({ data, setData, canEdit }: { data: Data; setData: (d: 
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const review = useRef<HTMLDialogElement>(null);
   const [show, setShow] = useState<"all" | "unpaid" | "nocharge">("all");
+  const [month, setMonth] = useState("");
+  const [project, setProject] = useState("");
   const [editing, setEditing] = useState<InvoiceRow | null>(null);
   const [form, setForm] = useState<Form | null>(null);
   const editDialog = useRef<HTMLDialogElement>(null);
@@ -162,7 +168,20 @@ export function Invoices({ data, setData, canEdit }: { data: Data; setData: (d: 
     }
   };
 
-  const shown = data.invoices.filter((i) => show === "all" || (show === "unpaid" ? i.statementLineId === null : i.chargeId === null));
+  const months = [...new Set(data.invoices.map((i) => monthOf(i.invoiceDate)))].sort().reverse();
+  // What the picked project cost on an invoice (its own lines; plan, discounts and tax are the
+  // account's), or null when the invoice has no line for it.
+  const projectCost = (invoiceId: number) => {
+    const ls = data.invoiceLines.filter((l) => l.invoiceId === invoiceId && l.projectRef === project);
+    return ls.length ? ls.reduce((a, l) => a + l.amount, 0) : null;
+  };
+  const refLabel = (r: ProjectRef) => `${r.name || "Not named"} · ${r.ref.slice(0, 6)}…${r.inUse ? "" : " (not used)"}`;
+  const shown = data.invoices.filter(
+    (i) =>
+      (!month || monthOf(i.invoiceDate) === month) &&
+      (!project || projectCost(i.id) !== null) &&
+      (show === "all" || (show === "unpaid" ? i.statementLineId === null : i.chargeId === null)),
+  );
 
   const openEdit = (i: InvoiceRow) => {
     setEditing(i);
@@ -199,13 +218,38 @@ export function Invoices({ data, setData, canEdit }: { data: Data; setData: (d: 
   return (
     <>
       <div className="mt-4 flex flex-wrap items-center gap-2">
+        <select className="input" value={month} onChange={(e) => setMonth(e.target.value)} aria-label="Month">
+          <option value="">All months</option>
+          {months.map((m) => (
+            <option key={m} value={m}>
+              {monthName(m)}
+            </option>
+          ))}
+        </select>
+        {data.projectRefs.length > 0 && (
+          <select className="input max-w-[260px]" value={project} onChange={(e) => setProject(e.target.value)} aria-label="Project ID">
+            <option value="">All projects</option>
+            {[...data.projectRefs]
+              .sort((a, b) => b.inUse - a.inUse || (a.name || a.ref).localeCompare(b.name || b.ref))
+              .map((r) => (
+                <option key={r.ref} value={r.ref}>
+                  {refLabel(r)}
+                </option>
+              ))}
+          </select>
+        )}
         <select className="input" value={show} onChange={(e) => setShow(e.target.value as typeof show)} aria-label="Show">
           <option value="all">All invoices</option>
           <option value="unpaid">Payment not found yet</option>
           <option value="nocharge">No charge picked</option>
         </select>
         <span className="text-xs text-ink-subtle">
-          {shown.length} invoice(s) · the PDF is read here, then kept privately in the hub
+          {shown.length} invoice(s)
+          {(["USD", "MYR"] as const).map((cur) => {
+            const t = shown.filter((i) => i.currency === cur).reduce((a, i) => a + (project ? (projectCost(i.id) ?? 0) : i.total), 0);
+            return t ? ` · ${money(t, cur)}` : "";
+          })}{" "}
+          · the PDF is read here, then kept privately in the hub
         </span>
         {canEdit && (
           <div className="ml-auto flex gap-2">
@@ -238,12 +282,12 @@ export function Invoices({ data, setData, canEdit }: { data: Data; setData: (d: 
       )}
 
       {shown.length > 0 && (
-        <div className="card mt-3 overflow-x-auto">
+        <div className={`card mt-3 ${SCROLL}`}>
           <table className="w-full border-collapse text-[13px]">
             <thead>
               <tr>
                 {["Date", "Vendor", "Invoice", "Charge", "Paid by", "Total", ""].map((h, i) => (
-                  <th key={i} className={`${TH} whitespace-nowrap ${h === "Total" ? "text-right" : "text-left"}`}>
+                  <th key={i} className={`${TH} ${STICKY} whitespace-nowrap ${h === "Total" ? "text-right" : "text-left"}`}>
                     {h}
                   </th>
                 ))}
@@ -273,7 +317,16 @@ export function Invoices({ data, setData, canEdit }: { data: Data; setData: (d: 
                     <td className="whitespace-nowrap px-3 py-2.5">
                       {l ? <span className="text-ink-subtle">{lineLabel(l)}</span> : <span className="pill bg-loz-orange text-loz-orange-ink">Not found yet</span>}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-ink">{money(i.total, i.currency)}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-ink">
+                      {project ? (
+                        <>
+                          {money(projectCost(i.id) ?? 0, i.currency)}
+                          <div className="text-[11px] text-ink-subtlest">of {money(i.total, i.currency)}</div>
+                        </>
+                      ) : (
+                        money(i.total, i.currency)
+                      )}
+                    </td>
                     <td className="w-12 px-3 py-2.5 pr-4 text-right">
                       {canEdit && (
                         <button className="btn-subtle h-8 w-8 px-0" title="Edit" aria-label={`Edit ${i.vendor} ${i.invoiceNo}`} onClick={() => openEdit(i)}>
@@ -293,12 +346,12 @@ export function Invoices({ data, setData, canEdit }: { data: Data; setData: (d: 
         <section className="mt-6" aria-label="Project IDs">
           <h2 className="section-title">Project IDs on invoices</h2>
           <p className="mt-1 text-[12.5px] text-ink-subtle">Learned from the invoices. Name each one and say if it is still used; unused ones show on their system's tab.</p>
-          <div className="card mt-2 overflow-x-auto">
+          <div className={`card mt-2 ${SCROLL}`}>
             <table className="w-full border-collapse text-[13px]">
               <thead>
                 <tr>
                   {["Project ID", "Vendor", "Name", "Charge", "In use", ""].map((h, i) => (
-                    <th key={i} className={`${TH} text-left`}>
+                    <th key={i} className={`${TH} ${STICKY} text-left`}>
                       {h}
                     </th>
                   ))}
