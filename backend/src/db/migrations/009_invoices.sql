@@ -47,6 +47,25 @@ CREATE TABLE project_refs (
 );
 ALTER TABLE project_refs ENABLE ROW LEVEL SECURITY;
 
+-- The Supabase projects already known (from the Oct 2026 invoices and the systems' own
+-- notes, names as in each Supabase organisation), so invoices show names from the start.
+INSERT INTO project_refs (ref, vendor, name, charge_id, in_use, updated_at, updated_by)
+SELECT v.ref, 'Supabase', v.name, (SELECT id FROM charges WHERE register_id = v.reg ORDER BY id LIMIT 1), v.in_use,
+  to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'), 'setup'
+FROM (VALUES
+  ('cweomoenhsjvsxfsmiiw', 'Conts ERP', 'C02', 1),
+  ('ecgyrmblqfxvbfjlqkdq', 'Conts ERP Staging', 'C02', 1),
+  ('anogrigyjbduyzclzjgn', 'Houzs ERP SG', 'H02', 1),
+  ('minnapsemfzjmtvnnvdd', 'Houzs ERP Staging', 'H02', 1),
+  ('ctbaifabbzghtsrmpirm', 'Houzs PostgreSQL Database', 'H02', 1),
+  ('gzxzucvvbxbosjyidbsm', 'Houzs HR', 'H02', 0),
+  ('vpwdqtsxexpiqxzweivd', 'Hookka production', 'K01', 1),
+  ('kahxgvbfanbraazetefr', 'Hookka staging', 'K01', 1),
+  ('zaxygxwadidiqcphibma', 'Unused', 'K01', 0),
+  ('xxoszhxglfgkqkokvofa', 'Old Houzs ERP load target', 'K01', 0)
+) AS v(ref, name, reg, in_use)
+ON CONFLICT (ref) DO UPDATE SET name = excluded.name, in_use = excluded.in_use WHERE project_refs.name = '';
+
 -- A statement line with no invoice to be had (e.g. a vendor that sends none) can be
 -- checked by a person instead; the note says why.
 ALTER TABLE statement_lines
