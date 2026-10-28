@@ -1,4 +1,4 @@
-import { asc, count, desc, eq } from "drizzle-orm";
+import { and, asc, count, desc, eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { schema, type DB } from "../db/client";
 import { BILLING_SYSTEM_CODES, BILLING_SYSTEMS, CHARGE_BILLED, CHARGE_STATUSES, CURRENCIES } from "../db/schema";
@@ -7,6 +7,7 @@ import { nowIso } from "../services/tickets";
 import type { DevApp } from "../types";
 import { isUniqueViolation } from "./admin";
 import invoicesRoute, { refsRoute } from "./billingInvoices";
+import { syncAnthropicCosts, UsageSetupError } from "../services/anthropicUsage";
 
 // The Billing page: charges (the sheet's Register) and company cards (its Cards tab).
 // Totals are worked out on the page. Mounted inside routes/dev.ts, after devAuth.
@@ -72,6 +73,7 @@ function readCharge(b: Body, isNew: boolean): Read<Record<string, unknown>> {
     if (b.systemCode !== "" && !BILLING_SYSTEM_CODES.includes(b.systemCode as string)) return "Unknown system";
     out.systemCode = b.systemCode;
   }
+  if ("splitByUsage" in b) out.splitByUsage = b.splitByUsage ? 1 : 0;
   if ("splits" in b) {
     const s = readSplits(b.splits);
     if (typeof s === "string") return s;
@@ -79,6 +81,11 @@ function readCharge(b: Body, isNew: boolean): Read<Record<string, unknown>> {
     // A charge is either one system's or shared; never both.
     if (s.length) out.systemCode = "";
   } else if (typeof out.systemCode === "string" && out.systemCode) out.splits = [];
+  // Split by usage replaces a fixed system or % split.
+  if (out.splitByUsage === 1) {
+    out.systemCode = "";
+    out.splits = [];
+  }
   if ("accountId" in b) {
     if (b.accountId === null || b.accountId === "") out.accountId = null;
     else if (Number.isInteger(Number(b.accountId))) out.accountId = Number(b.accountId);
@@ -142,7 +149,7 @@ const stamp = (c: { get(k: "user"): { name: string } }) => ({ updatedAt: nowIso(
 billing.get("/", need("billing_view", "billing_edit"), async (c) => {
   const db = c.get("db");
   // ponytail: statement lines grow by a few dozen a month; whole table is fine for years. Page by month if that stops being true.
-  const [charges, splits, cards, accounts, lines, invoices, invoiceLines, projectRefs] = await Promise.all([
+  const [charges, splits, cards, accounts, lines, invoices, invoiceLines, projectRefs, workspaces, usage] = await Promise.all([
     db.select().from(ch).orderBy(asc(ch.registerId), asc(ch.id)),
     db.select().from(sp),
     db.select().from(cd).orderBy(asc(cd.nickname)),
@@ -152,6 +159,16 @@ billing.get("/", need("billing_view", "billing_edit"), async (c) => {
     db.select().from(schema.invoices).orderBy(desc(schema.invoices.invoiceDate), desc(schema.invoices.id)),
     db.select().from(schema.invoiceLines).orderBy(asc(schema.invoiceLines.id)),
     db.select().from(schema.projectRefs).orderBy(asc(schema.projectRefs.ref)),
+    db.select().from(schema.vendorWorkspaces).orderBy(asc(schema.vendorWorkspaces.vendor), asc(schema.vendorWorkspaces.name)),
+    db
+      .select({
+        month: sql<string>`substr(${schema.usageCosts.day}, 1, 7)`,
+        vendor: schema.usageCosts.vendor,
+        workspaceId: schema.usageCosts.workspaceId,
+        usd: sql<string>`sum(${schema.usageCosts.usd})`,
+      })
+      .from(schema.usageCosts)
+      .groupBy(sql`1`, schema.usageCosts.vendor, schema.usageCosts.workspaceId),
   ]);
   return c.json({
     charges: charges.map((r) => chargeOut(r, splits)),
@@ -162,6 +179,9 @@ billing.get("/", need("billing_view", "billing_edit"), async (c) => {
     invoices: invoices.map((r) => ({ ...r, total: Number(r.total) })),
     invoiceLines: invoiceLines.map((r) => ({ ...r, amount: Number(r.amount) })),
     projectRefs,
+    workspaces,
+    usage: usage.map((u) => ({ ...u, usd: Number(u.usd) })),
+    usageSyncedAt: workspaces.reduce<string | null>((a, w) => (a && a > w.updatedAt ? a : w.updatedAt), null),
   });
 });
 
@@ -329,6 +349,35 @@ billing.delete("/cards/:id", need("billing_edit"), async (c) => {
   if (n > 0) return c.json({ error: `${n} charge(s) still use this card. Move them to another card first.` }, 400);
   await db.delete(cd).where(eq(cd.id, id));
   return c.json({ ok: true });
+});
+
+// --- AI usage per system ----------------------------------------------------
+
+// Reads Anthropic's cost per workspace now, instead of waiting for the daily run.
+billing.post("/usage/refresh", need("billing_edit"), async (c) => {
+  try {
+    return c.json(await syncAnthropicCosts(c.env, c.get("db")));
+  } catch (e) {
+    if (e instanceof UsageSetupError) return c.json({ error: e.message }, 400);
+    console.error("[anthropic-usage]", e);
+    return c.json({ error: "Could not read Anthropic's cost report. Try again later." }, 502);
+  }
+});
+
+// Which system a vendor workspace is for. Only updatedBy changes: updatedAt is the time
+// the workspace was last read from the vendor (shown as "read ... ago").
+billing.patch("/workspaces", need("billing_edit"), async (c) => {
+  const b = (await c.req.json().catch(() => ({}))) as Body;
+  if (typeof b.vendor !== "string" || typeof b.workspaceId !== "string") return c.json({ error: "Unknown workspace" }, 400);
+  if (b.systemCode !== "" && !BILLING_SYSTEM_CODES.includes(b.systemCode as string)) return c.json({ error: "Unknown system" }, 400);
+  const w = schema.vendorWorkspaces;
+  const [row] = await c.get("db")
+    .update(w)
+    .set({ systemCode: b.systemCode as string, updatedBy: c.get("user").name })
+    .where(and(eq(w.vendor, b.vendor), eq(w.workspaceId, b.workspaceId)))
+    .returning();
+  if (!row) return c.json({ error: "Unknown workspace" }, 404);
+  return c.json({ workspace: row });
 });
 
 billing.route("/invoices", invoicesRoute);

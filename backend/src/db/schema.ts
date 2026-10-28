@@ -194,6 +194,8 @@ export const charges = pgTable("charges", {
   systemCode: text("system_code").notNull().default(""),
   projectRef: text("project_ref").notNull().default(""),
   module: text("module").notNull().default(""),
+  // 1: shared across systems each month by the vendor's usage per workspace (usage_costs).
+  splitByUsage: integer("split_by_usage").notNull().default(0),
   vendor: text("vendor").notNull(),
   serviceType: text("service_type").notNull().default(""),
   usedFor: text("used_for").notNull().default(""),
@@ -280,6 +282,32 @@ export const projectRefs = pgTable("project_refs", {
   updatedAt: text("updated_at").notNull(),
   updatedBy: text("updated_by"),
 });
+
+// A vendor's workspaces (Anthropic) and the system each one is for.
+export const vendorWorkspaces = pgTable(
+  "vendor_workspaces",
+  {
+    vendor: text("vendor").notNull(),
+    workspaceId: text("workspace_id").notNull(),
+    name: text("name").notNull().default(""),
+    systemCode: text("system_code").notNull().default(""),
+    updatedAt: text("updated_at").notNull(),
+    updatedBy: text("updated_by"),
+  },
+  (table) => [primaryKey({ columns: [table.vendor, table.workspaceId] })],
+);
+
+// Cost per workspace per day, from the vendor's own report.
+export const usageCosts = pgTable(
+  "usage_costs",
+  {
+    day: text("day").notNull(),
+    vendor: text("vendor").notNull(),
+    workspaceId: text("workspace_id").notNull(),
+    usd: numeric("usd", { precision: 14, scale: 6 }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.day, table.vendor, table.workspaceId] })],
+);
 
 // System health: what the hub checks, and the results (7 days kept).
 export const healthTargets = pgTable("health_targets", {

@@ -27,6 +27,7 @@ export type ChargeRow = {
   systemCode: string;
   projectRef: string;
   module: string;
+  splitByUsage: number;
   splits: { systemCode: string; percent: number }[];
   vendor: string;
   serviceType: string;
@@ -104,7 +105,11 @@ export type BillingData = {
   invoices: InvoiceRow[];
   invoiceLines: InvoiceLineRow[];
   projectRefs: ProjectRef[];
+  workspaces: VendorWorkspace[];
+  usage: { month: string; vendor: string; workspaceId: string; usd: number }[];
+  usageSyncedAt: string | null;
 };
+export type VendorWorkspace = { vendor: string; workspaceId: string; name: string; systemCode: string; updatedAt: string; updatedBy: string | null };
 
 export type AccountStatus = "yes" | "partly" | "not_yet" | "cant_move";
 export type AccountRow = {

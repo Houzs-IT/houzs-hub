@@ -11,6 +11,11 @@ export interface Env {
   // Signs the session cookie. `wrangler secret put SESSION_SECRET`;
   // locally in .dev.vars.
   SESSION_SECRET?: string;
+  // Anthropic Admin API key (sk-ant-admin...) of the company organisation, read-only use:
+  // the daily cost report per workspace. `wrangler secret put ANTHROPIC_ADMIN_KEY`.
+  ANTHROPIC_ADMIN_KEY?: string;
+  // Only for local tests against a stand-in; unset in production.
+  ANTHROPIC_ADMIN_BASE_URL?: string;
 }
 
 export type SysVars = { systemCode: string; reporterId: string };
