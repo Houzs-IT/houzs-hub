@@ -35,3 +35,21 @@ SELECT 'S08', 'Shared', 'Anthropic', 'AI',
   'Split per system from Anthropic''s cost report each day. Needs the ANTHROPIC_ADMIN_KEY secret on the hub.',
   to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'), to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'), 'setup'
 WHERE NOT EXISTS (SELECT 1 FROM charges WHERE register_id = 'S08');
+
+-- Anthropic invoices billed to the company organisation (it@) were parked on H01 until S08
+-- existed; they belong to S08. H01 (Wei Siang's own account) keeps only its own invoices.
+UPDATE invoices SET
+  charge_id = (SELECT id FROM charges WHERE register_id = 'S08' ORDER BY id LIMIT 1),
+  notes = CASE WHEN notes LIKE '%Move to S08%' THEN '' ELSE notes END
+WHERE vendor = 'Anthropic' AND bill_to LIKE '%it@houzscentury.com%'
+  AND charge_id = (SELECT id FROM charges WHERE register_id = 'H01' ORDER BY id LIMIT 1);
+
+-- Latest bill follows each charge's newest invoice again; H01 had none of its own.
+UPDATE charges c SET amount = i.total, currency = i.currency, checked_on = i.invoice_date
+FROM (
+  SELECT DISTINCT ON (charge_id) charge_id, total, currency, invoice_date
+  FROM invoices WHERE charge_id IS NOT NULL ORDER BY charge_id, invoice_date DESC, id DESC
+) i
+WHERE i.charge_id = c.id AND c.register_id IN ('H01', 'S08');
+UPDATE charges SET amount = NULL, checked_on = NULL
+WHERE register_id = 'H01' AND NOT EXISTS (SELECT 1 FROM invoices WHERE invoices.charge_id = charges.id);
