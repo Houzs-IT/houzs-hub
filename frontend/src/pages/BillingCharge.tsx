@@ -35,16 +35,61 @@ export function Pill({ status }: { status: ChargeStatus }) {
 // (all months when none is given), each workspace counted for its system. Until usage has
 // been read, or for a workspace with no system, it counts as "No system yet".
 export function usageShares(data: Data, vendor: string, month?: string): { code: string; part: number }[] {
+  const by = new Map<string, number>();
+  for (const s of moduleShares(data, vendor, month)) by.set(s.code, (by.get(s.code) ?? 0) + s.part);
+  return [...by].map(([code, part]) => ({ code, part }));
+}
+
+// The same split one level down: each workspace's real cost is shared by the module
+// estimates its system sends (module_usage), which can also move part of it to another
+// system the sender serves (e.g. 2990s calls made through Houzs ERP). A workspace whose
+// system sends no estimates for the month stays whole, with module "".
+export function moduleShares(data: Data, vendor: string, month?: string): { code: string; module: string; part: number }[] {
   const systemOf = new Map(data.workspaces.filter((w) => w.vendor === vendor).map((w) => [w.workspaceId, w.systemCode || NONE]));
-  const usd = new Map<string, number>();
+  const wsUsd = new Map<string, number>(); // by the workspace's system
   for (const u of data.usage) {
     if (u.vendor !== vendor || (month && u.month !== month)) continue;
     const code = systemOf.get(u.workspaceId) ?? NONE;
-    usd.set(code, (usd.get(code) ?? 0) + u.usd);
+    wsUsd.set(code, (wsUsd.get(code) ?? 0) + u.usd);
+  }
+  const usd = new Map<string, number>(); // "code|module"
+  const add = (code: string, module: string, v: number) => usd.set(`${code}|${module}`, (usd.get(`${code}|${module}`) ?? 0) + v);
+  for (const [source, cost] of wsUsd) {
+    const est = data.moduleUsage.filter((m) => m.vendor === vendor && m.sourceSystem === source && (!month || m.month === month));
+    const estTotal = est.reduce((a, m) => a + m.usd, 0);
+    if (source === NONE || estTotal <= 0) add(source, "", cost);
+    else for (const m of est) add(m.systemCode, m.module, (cost * m.usd) / estTotal);
   }
   const total = [...usd.values()].reduce((a, v) => a + v, 0);
-  if (total <= 0) return [{ code: NONE, part: 1 }];
-  return [...usd].map(([code, v]) => ({ code, part: v / total }));
+  if (total <= 0) return [{ code: NONE, module: "", part: 1 }];
+  return [...usd].map(([k, v]) => {
+    const [code, module] = k.split("|");
+    return { code: code!, module: module!, part: v / total };
+  });
+}
+
+// Plain names for the module (feature) names systems send; unknown ones are shown as sent.
+const MODULE_NAMES: Record<string, string> = {
+  scan_so: "Sales order scan",
+  scan_so_distill: "Sales order scan: learning",
+  cache_warm: "Sales order scan: warm-up",
+  scan_payment: "Payment slip scan",
+  scan_lorry_invoice: "Lorry invoice scan",
+  scan_gr: "Goods received scan",
+  scan_pi: "Purchase invoice scan",
+  bill_extract: "Bill reading",
+  credit_note_extract: "Credit note scan",
+  schedule_reconcile: "Schedule reconcile",
+  setup_invoice_extract: "Setup invoice reading",
+  threepl_bill_read: "3PL bill reading",
+  floorplan_size: "Floor plan measuring",
+  announcement_translate: "Announcement translation",
+  assistant: "Assistant",
+};
+export function moduleLabel(module: string) {
+  if (!module) return "Whole system";
+  if (module.startsWith("agent:")) return `Agent: ${module.slice(6).replace(/^\w/, (ch) => ch.toUpperCase())}`;
+  return MODULE_NAMES[module] ?? module;
 }
 
 // Which systems a charge counts towards, and what part of it each one carries.

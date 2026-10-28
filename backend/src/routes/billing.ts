@@ -149,7 +149,8 @@ const stamp = (c: { get(k: "user"): { name: string } }) => ({ updatedAt: nowIso(
 billing.get("/", need("billing_view", "billing_edit"), async (c) => {
   const db = c.get("db");
   // ponytail: statement lines grow by a few dozen a month; whole table is fine for years. Page by month if that stops being true.
-  const [charges, splits, cards, accounts, lines, invoices, invoiceLines, projectRefs, workspaces, usage] = await Promise.all([
+  const mu = schema.moduleUsage;
+  const [charges, splits, cards, accounts, lines, invoices, invoiceLines, projectRefs, workspaces, usage, modules] = await Promise.all([
     db.select().from(ch).orderBy(asc(ch.registerId), asc(ch.id)),
     db.select().from(sp),
     db.select().from(cd).orderBy(asc(cd.nickname)),
@@ -169,6 +170,19 @@ billing.get("/", need("billing_view", "billing_edit"), async (c) => {
       })
       .from(schema.usageCosts)
       .groupBy(sql`1`, schema.usageCosts.vendor, schema.usageCosts.workspaceId),
+    db
+      .select({
+        month: sql<string>`substr(${mu.day}, 1, 7)`,
+        vendor: mu.vendor,
+        sourceSystem: mu.sourceSystem,
+        systemCode: mu.systemCode,
+        module: mu.module,
+        usd: sql<string>`sum(${mu.usd})`,
+        calls: sql<string>`sum(${mu.calls})`,
+        receivedAt: sql<string>`max(${mu.receivedAt})`,
+      })
+      .from(mu)
+      .groupBy(sql`1`, mu.vendor, mu.sourceSystem, mu.systemCode, mu.module),
   ]);
   return c.json({
     charges: charges.map((r) => chargeOut(r, splits)),
@@ -182,6 +196,7 @@ billing.get("/", need("billing_view", "billing_edit"), async (c) => {
     workspaces,
     usage: usage.map((u) => ({ ...u, usd: Number(u.usd) })),
     usageSyncedAt: workspaces.reduce<string | null>((a, w) => (a && a > w.updatedAt ? a : w.updatedAt), null),
+    moduleUsage: modules.map((m) => ({ ...m, usd: Number(m.usd), calls: Number(m.calls) })),
   });
 });
 

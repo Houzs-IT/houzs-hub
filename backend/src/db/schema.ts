@@ -309,6 +309,23 @@ export const usageCosts = pgTable(
   (table) => [primaryKey({ columns: [table.day, table.vendor, table.workspaceId] })],
 );
 
+// A system's own estimate of its AI cost per day, per company and module; used as shares
+// of the real workspace cost above, never as money.
+export const moduleUsage = pgTable(
+  "module_usage",
+  {
+    day: text("day").notNull(),
+    vendor: text("vendor").notNull(),
+    sourceSystem: text("source_system").notNull(),
+    systemCode: text("system_code").notNull(),
+    module: text("module").notNull(),
+    usd: numeric("usd", { precision: 14, scale: 6 }).notNull(),
+    calls: integer("calls").notNull().default(0),
+    receivedAt: text("received_at").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.day, table.vendor, table.sourceSystem, table.systemCode, table.module] })],
+);
+
 // System health: what the hub checks, and the results (7 days kept).
 export const healthTargets = pgTable("health_targets", {
   id: id(),
