@@ -3,7 +3,7 @@ import { useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, json, type BillingData as Data, type ChargeRow } from "../api/client";
 import { fmtAgo, money } from "../lib/format";
-import { BILLED, NONE, partIn, Pill, sharesOf, useChargeEditor } from "./BillingCharge";
+import { BILLED, moduleLabel, moduleShares, NONE, partIn, Pill, sharesOf, useChargeEditor } from "./BillingCharge";
 import { monthName, monthOf, pct, rm, TH } from "./BillingStatements";
 
 // The Overview tab of System billing: every system side by side, then one sub-tab per
@@ -365,6 +365,7 @@ function OneSystem(props: {
           </table>
         </div>
       )}
+      {code !== NONE && <AiModules data={data} code={code} month={month} paid={paid} />}
       {code !== NONE && <Projects data={data} code={code} />}
     </>
   );
@@ -436,6 +437,35 @@ function AiUsage({ data, setData, month, canEdit }: { data: Data; setData: (d: D
   const total = ws.reduce((a, w) => a + usdOf(w.workspaceId), 0);
   const used = data.charges.some((c) => c.splitByUsage);
   if (!used && !ws.length) return null;
+  const systemName = (code: string) => data.systems.find((s) => s.code === code)?.name ?? code;
+
+  // The workspace's cost shared by its system's own module estimates for the month.
+  const moduleRows = (w: (typeof ws)[number]) => {
+    const est = data.moduleUsage.filter((m) => m.vendor === "Anthropic" && m.sourceSystem === w.systemCode && m.month === month);
+    const estTotal = est.reduce((a, m) => a + m.usd, 0);
+    const cost = usdOf(w.workspaceId);
+    if (!w.systemCode || estTotal <= 0) return [];
+    const last = est.reduce((a, m) => (a > m.receivedAt ? a : m.receivedAt), "");
+    return [
+      ...[...est]
+        .sort((a, b) => b.usd - a.usd)
+        .map((m) => (
+          <tr key={`${w.workspaceId}|${m.systemCode}|${m.module}`} className="border-b border-line-subtle text-[12.5px] last:border-0">
+            <td className="px-3 py-1.5 pl-10 text-ink-subtle">{moduleLabel(m.module)}</td>
+            <td className="px-3 py-1.5 text-ink-subtlest">
+              {systemName(m.systemCode)} · {m.calls} call(s)
+            </td>
+            <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-ink-subtle">{money((cost * m.usd) / estTotal)}</td>
+            <td className="px-3 py-1.5 pr-4 text-right tabular-nums text-ink-subtlest">{pct(m.usd, estTotal)}</td>
+          </tr>
+        )),
+      <tr key={`${w.workspaceId}|note`} className="border-b border-line-subtle last:border-0">
+        <td colSpan={4} className="px-3 py-1.5 pl-10 text-[11px] text-ink-subtlest">
+          Split by {systemName(w.systemCode)}'s own log of its AI calls, last sent {fmtAgo(last)}. The total is Anthropic's real cost.
+        </td>
+      </tr>,
+    ];
+  };
 
   const refresh = async () => {
     setBusy(true);
@@ -510,11 +540,55 @@ function AiUsage({ data, setData, month, canEdit }: { data: Data; setData: (d: D
                   <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{money(usdOf(w.workspaceId))}</td>
                   <td className="px-3 py-2 pr-4 text-right tabular-nums text-ink-subtle">{pct(usdOf(w.workspaceId), total)}</td>
                 </tr>
-              ))}
+              )).flatMap((row, i) => [row, ...moduleRows(ws[i]!)])}
             </tbody>
           </table>
         </div>
       )}
+    </section>
+  );
+}
+
+// This system's AI money for the month by module: each split-by-usage charge's card payments
+// that month, shared by moduleShares. Shown only when the system sends module estimates.
+function AiModules({ data, code, month, paid }: { data: Data; code: string; month: string; paid: (c: ChargeRow, m: string) => number }) {
+  const byModule = new Map<string, number>();
+  for (const c of data.charges.filter((x) => x.splitByUsage)) {
+    const amount = paid(c, month);
+    if (!amount) continue;
+    for (const s of moduleShares(data, c.vendor, month)) {
+      if (s.code === code) byModule.set(s.module, (byModule.get(s.module) ?? 0) + amount * s.part);
+    }
+  }
+  const rows = [...byModule].sort((a, b) => b[1] - a[1]);
+  if (!rows.length || (rows.length === 1 && rows[0]![0] === "")) return null;
+  const total = rows.reduce((a, [, v]) => a + v, 0);
+  return (
+    <section className="mt-6" aria-label="AI by module">
+      <h2 className="section-title">AI by module, {monthName(month)}</h2>
+      <p className="mt-1 text-[12.5px] text-ink-subtle">This system's share of the Anthropic credit paid this month, split by its own log of AI calls.</p>
+      <div className="card mt-2 overflow-x-auto">
+        <table className="w-full border-collapse text-[13px]">
+          <thead>
+            <tr>
+              {["Module", "Paid", "Share"].map((h, i) => (
+                <th key={h} className={`${TH} whitespace-nowrap ${i ? "text-right" : "text-left"}`}>
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(([module, v]) => (
+              <tr key={module} className="border-b border-line-subtle last:border-0">
+                <td className="px-3 py-2 pl-4 text-ink">{moduleLabel(module)}</td>
+                <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{rm(v)}</td>
+                <td className="px-3 py-2 pr-4 text-right tabular-nums text-ink-subtle">{pct(v, total)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }

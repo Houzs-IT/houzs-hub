@@ -108,7 +108,10 @@ export type BillingData = {
   workspaces: VendorWorkspace[];
   usage: { month: string; vendor: string; workspaceId: string; usd: number }[];
   usageSyncedAt: string | null;
+  moduleUsage: ModuleUsage[];
 };
+// A system's own AI cost estimate for one month, company (systemCode) and module; shares only.
+export type ModuleUsage = { month: string; vendor: string; sourceSystem: string; systemCode: string; module: string; usd: number; calls: number; receivedAt: string };
 export type VendorWorkspace = { vendor: string; workspaceId: string; name: string; systemCode: string; updatedAt: string; updatedBy: string | null };
 
 export type AccountStatus = "yes" | "partly" | "not_yet" | "cant_move";
