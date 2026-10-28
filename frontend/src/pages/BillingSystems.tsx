@@ -12,6 +12,7 @@ import { monthName, monthOf, pct, rm, TH } from "./BillingStatements";
 // charge counts towards each system by its share.
 
 const UNMATCHED = "unmatched";
+const MIN_SHARE = 0.01; // below 1% a charge is not counted as one of a system's services
 const prevMonth = (m: string) => {
   const d = new Date(`${m}-01T00:00:00`);
   d.setMonth(d.getMonth() - 1);
@@ -91,8 +92,11 @@ export function SystemsOverview({ data, setData, canEdit }: { data: Data; setDat
       const part = partIn(c, code, data, month);
       const partBefore = partIn(c, code, data, before);
       if (!part && !partBefore) continue;
-      if (part && live(c)) t.services += 1;
-      if (part && (c.status === "to_confirm" || c.status === "to_fill_in")) t.open += 1;
+      // A sliver of a usage split (e.g. 0.1% from a workspace with no system) still counts as
+      // money, but does not make the charge one of this system's services.
+      const counts = part >= MIN_SHARE;
+      if (counts && live(c)) t.services += 1;
+      if (counts && (c.status === "to_confirm" || c.status === "to_fill_in")) t.open += 1;
       t.paid += paid(c, month) * part;
       t.before += paid(c, before) * partBefore;
       if (isUse(c)) t.use += paid(c, month) * part;
@@ -185,7 +189,7 @@ function AllSystems(props: {
   );
   // A shared charge shows in several rows, so count services once here.
   const services = data.charges.filter(live).length;
-  const noSystem = data.charges.filter((c) => partIn(c, NONE, data, month) > 0).length;
+  const noSystem = data.charges.filter((c) => partIn(c, NONE, data, month) >= MIN_SHARE).length;
   // Checked = the line has its invoice, or a person checked it by hand.
   const withInvoice = new Set(data.invoices.map((i) => i.statementLineId));
   const notChecked = data.lines.filter((l) => monthOf(l.txnDate) === month && !withInvoice.has(l.id) && !l.checkedByHand).length;
