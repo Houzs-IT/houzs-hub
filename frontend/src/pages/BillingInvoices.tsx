@@ -6,13 +6,17 @@ import { readInvoiceText, type ReadInvoice, type ReadLine } from "../lib/invoice
 import { pdfText } from "../lib/pdfText";
 import { money } from "../lib/format";
 import { systemLabel } from "./BillingCharge";
-import { rm, TH } from "./BillingStatements";
+import { monthName, monthOf, rm, TH } from "./BillingStatements";
 
 // The Invoices tab of System billing. Invoice PDFs are read in the browser
 // (lib/invoiceRead.ts); for each one the page suggests the charge it is for and the card
 // statement line that paid it, the person checks, and the hub stores the PDF and links.
 
-const vendorWord = (v: string) => v.toLowerCase().match(/[a-z0-9]{4,}/)?.[0] ?? "";
+// Long lists scroll inside their box, about ten rows high, with the headings kept in view.
+const SCROLL = "max-h-[min(60vh,520px)] overflow-auto";
+const STICKY = "sticky top-0 z-10";
+
+const vendorWord =(v: string) => v.toLowerCase().match(/[a-z0-9]{4,}/)?.[0] ?? "";
 // "USD 12.29" kept on a statement line as its foreign amount.
 const foreignOf = (notes: string) => {
   const m = notes.match(/([A-Z]{3})\s?([\d,]+\.\d{2})/);
@@ -92,6 +96,11 @@ export function Invoices({ data, setData, canEdit }: { data: Data; setData: (d: 
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const review = useRef<HTMLDialogElement>(null);
   const [show, setShow] = useState<"all" | "unpaid" | "nocharge">("all");
+  const [month, setMonth] = useState("");
+  const [vendor, setVendor] = useState("");
+  const [refCharge, setRefCharge] = useState("");
+  const [refUse, setRefUse] = useState("");
+  const [refQ, setRefQ] = useState("");
   const [editing, setEditing] = useState<InvoiceRow | null>(null);
   const [form, setForm] = useState<Form | null>(null);
   const editDialog = useRef<HTMLDialogElement>(null);
@@ -162,7 +171,22 @@ export function Invoices({ data, setData, canEdit }: { data: Data; setData: (d: 
     }
   };
 
-  const shown = data.invoices.filter((i) => show === "all" || (show === "unpaid" ? i.statementLineId === null : i.chargeId === null));
+  const months = [...new Set(data.invoices.map((i) => monthOf(i.invoiceDate)))].sort().reverse();
+  const vendors = [...new Set(data.invoices.map((i) => i.vendor))].sort();
+  const shown = data.invoices.filter(
+    (i) =>
+      (!month || monthOf(i.invoiceDate) === month) &&
+      (!vendor || i.vendor === vendor) &&
+      (show === "all" || (show === "unpaid" ? i.statementLineId === null : i.chargeId === null)),
+  );
+  const refCharges = [...new Set(data.projectRefs.map((r) => r.chargeId))];
+  const needle = refQ.trim().toLowerCase();
+  const refsShown = data.projectRefs.filter(
+    (r) =>
+      (!refCharge || String(r.chargeId ?? "") === refCharge) &&
+      (!refUse || String(r.inUse) === refUse) &&
+      (!needle || `${r.ref} ${r.name} ${r.vendor}`.toLowerCase().includes(needle)),
+  );
 
   const openEdit = (i: InvoiceRow) => {
     setEditing(i);
@@ -199,13 +223,32 @@ export function Invoices({ data, setData, canEdit }: { data: Data; setData: (d: 
   return (
     <>
       <div className="mt-4 flex flex-wrap items-center gap-2">
+        <select className="input" value={month} onChange={(e) => setMonth(e.target.value)} aria-label="Month">
+          <option value="">All months</option>
+          {months.map((m) => (
+            <option key={m} value={m}>
+              {monthName(m)}
+            </option>
+          ))}
+        </select>
+        <select className="input" value={vendor} onChange={(e) => setVendor(e.target.value)} aria-label="Vendor">
+          <option value="">All vendors</option>
+          {vendors.map((v) => (
+            <option key={v}>{v}</option>
+          ))}
+        </select>
         <select className="input" value={show} onChange={(e) => setShow(e.target.value as typeof show)} aria-label="Show">
           <option value="all">All invoices</option>
           <option value="unpaid">Payment not found yet</option>
           <option value="nocharge">No charge picked</option>
         </select>
         <span className="text-xs text-ink-subtle">
-          {shown.length} invoice(s) · the PDF is read here, then kept privately in the hub
+          {shown.length} invoice(s)
+          {(["USD", "MYR"] as const).map((cur) => {
+            const t = shown.filter((i) => i.currency === cur).reduce((a, i) => a + i.total, 0);
+            return t ? ` · ${money(t, cur)}` : "";
+          })}{" "}
+          · the PDF is read here, then kept privately in the hub
         </span>
         {canEdit && (
           <div className="ml-auto flex gap-2">
@@ -238,12 +281,12 @@ export function Invoices({ data, setData, canEdit }: { data: Data; setData: (d: 
       )}
 
       {shown.length > 0 && (
-        <div className="card mt-3 overflow-x-auto">
+        <div className={`card mt-3 ${SCROLL}`}>
           <table className="w-full border-collapse text-[13px]">
             <thead>
               <tr>
                 {["Date", "Vendor", "Invoice", "Charge", "Paid by", "Total", ""].map((h, i) => (
-                  <th key={i} className={`${TH} whitespace-nowrap ${h === "Total" ? "text-right" : "text-left"}`}>
+                  <th key={i} className={`${TH} ${STICKY} whitespace-nowrap ${h === "Total" ? "text-right" : "text-left"}`}>
                     {h}
                   </th>
                 ))}
@@ -254,7 +297,13 @@ export function Invoices({ data, setData, canEdit }: { data: Data; setData: (d: 
                 const c = chargeOf(i.chargeId);
                 const l = lineOf(i.statementLineId);
                 return (
-                  <tr key={i.id} className="border-b border-line-subtle align-top last:border-0">
+                  <tr
+                    key={i.id}
+                    // Anywhere on the row opens the invoice PDF; the pencil edits.
+                    onClick={(e) => i.fileKey && !(e.target as HTMLElement).closest("a,button") && window.open(invoiceFileUrl(i.id), "_blank", "noopener")}
+                    title={i.fileKey ? "Open the invoice PDF" : undefined}
+                    className={`border-b border-line-subtle align-top last:border-0 ${i.fileKey ? "cursor-pointer hover:bg-surface-dim" : ""}`}
+                  >
                     <td className="w-28 whitespace-nowrap px-3 py-2.5 pl-4 text-ink-subtle">{i.invoiceDate}</td>
                     <td className="px-3 py-2.5">
                       <div className="font-medium text-ink">{i.vendor}</div>
@@ -293,19 +342,42 @@ export function Invoices({ data, setData, canEdit }: { data: Data; setData: (d: 
         <section className="mt-6" aria-label="Project IDs">
           <h2 className="section-title">Project IDs on invoices</h2>
           <p className="mt-1 text-[12.5px] text-ink-subtle">Learned from the invoices. Name each one and say if it is still used; unused ones show on their system's tab.</p>
-          <div className="card mt-2 overflow-x-auto">
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <input className="input w-56" placeholder="Search ID or name" value={refQ} onChange={(e) => setRefQ(e.target.value)} aria-label="Search project IDs" />
+            <select className="input" value={refCharge} onChange={(e) => setRefCharge(e.target.value)} aria-label="Account">
+              <option value="">All accounts</option>
+              {refCharges.map((id) => {
+                const c = chargeOf(id);
+                return (
+                  <option key={String(id)} value={String(id ?? "")}>
+                    {c ? chargeLabel(data, c) : "No charge"}
+                  </option>
+                );
+              })}
+            </select>
+            <select className="input" value={refUse} onChange={(e) => setRefUse(e.target.value)} aria-label="In use">
+              <option value="">Used or not</option>
+              <option value="1">In use</option>
+              <option value="0">Not used</option>
+            </select>
+            <span className="text-xs text-ink-subtle">
+              {refsShown.length} of {data.projectRefs.length}
+            </span>
+          </div>
+          {refsShown.length === 0 && <div className="py-6 text-center text-sm text-ink-subtle">No project IDs match.</div>}
+          <div className={`card mt-2 ${SCROLL} ${refsShown.length ? "" : "hidden"}`}>
             <table className="w-full border-collapse text-[13px]">
               <thead>
                 <tr>
                   {["Project ID", "Vendor", "Name", "Charge", "In use", ""].map((h, i) => (
-                    <th key={i} className={`${TH} text-left`}>
+                    <th key={i} className={`${TH} ${STICKY} text-left`}>
                       {h}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {data.projectRefs.map((r) => {
+                {refsShown.map((r) => {
                   const c = chargeOf(r.chargeId);
                   return (
                     <tr key={r.ref} className="border-b border-line-subtle last:border-0">
