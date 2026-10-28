@@ -364,7 +364,8 @@ billing.post("/usage/refresh", need("billing_edit"), async (c) => {
   }
 });
 
-// Which system a vendor workspace is for.
+// Which system a vendor workspace is for. Only updatedBy changes: updatedAt is the time
+// the workspace was last read from the vendor (shown as "read ... ago").
 billing.patch("/workspaces", need("billing_edit"), async (c) => {
   const b = (await c.req.json().catch(() => ({}))) as Body;
   if (typeof b.vendor !== "string" || typeof b.workspaceId !== "string") return c.json({ error: "Unknown workspace" }, 400);
@@ -372,7 +373,7 @@ billing.patch("/workspaces", need("billing_edit"), async (c) => {
   const w = schema.vendorWorkspaces;
   const [row] = await c.get("db")
     .update(w)
-    .set({ systemCode: b.systemCode as string, ...stamp(c) })
+    .set({ systemCode: b.systemCode as string, updatedBy: c.get("user").name })
     .where(and(eq(w.vendor, b.vendor), eq(w.workspaceId, b.workspaceId)))
     .returning();
   if (!row) return c.json({ error: "Unknown workspace" }, 404);

@@ -20,7 +20,7 @@ export class UsageSetupError extends Error {}
 async function get<T>(env: Env, path: string): Promise<T> {
   const base = env.ANTHROPIC_ADMIN_BASE_URL || "https://api.anthropic.com";
   const res = await fetch(base + path, {
-    headers: { "x-api-key": env.ANTHROPIC_ADMIN_KEY!, "anthropic-version": "2023-06-01", "User-Agent": "HouzsITHub/1.0" },
+    headers: { "x-api-key": env.ANTHROPIC_ADMIN_KEY!, "anthropic-version": "2026-10-21", "User-Agent": "HouzsITHub/1.0" },
   });
   if (res.status === 401 || res.status === 403) throw new UsageSetupError("Anthropic refused the admin key: check ANTHROPIC_ADMIN_KEY on the hub");
   if (!res.ok) throw new Error(`Anthropic ${path.split("?")[0]}: HTTP ${res.status}`);
@@ -34,9 +34,10 @@ export async function syncAnthropicCosts(env: Env, db: DB): Promise<{ workspaces
   const now = new Date().toISOString();
 
   // Workspaces: names kept fresh; a new one is matched to a system by name (e.g. "Hookka").
+  // Archived ones too: their past costs are still in the cost report.
   const workspaces: Workspace[] = [];
   for (let after = ""; ; ) {
-    const page = await get<Page<Workspace>>(env, `/v1/organizations/workspaces?limit=100${after ? `&after_id=${after}` : ""}`);
+    const page = await get<Page<Workspace>>(env, `/v1/organizations/workspaces?limit=100&include_archived=true${after ? `&after_id=${after}` : ""}`);
     workspaces.push(...page.data);
     if (!page.has_more || !page.last_id) break;
     after = page.last_id;

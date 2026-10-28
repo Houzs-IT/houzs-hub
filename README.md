@@ -136,6 +136,11 @@ It needs two repository secrets:
 
 Secrets such as `SESSION_SECRET` stay in Cloudflare and are not touched by a deploy.
 
+Optional Worker secret `ANTHROPIC_ADMIN_KEY`: an Admin API key (`sk-ant-admin...`) of
+the company Anthropic organisation. With it, System billing reads the cost per
+workspace once a day (and on "Read now") to split Anthropic credit between systems.
+Without it nothing is read.
+
 Migrations are the numbered files in `backend/src/db/migrations`. Each runs once and
 is recorded by file name, so never edit one that has already been applied; add a new
 file instead. `000_baseline.sql` is the whole database as of 2026-10-15 (it replaced
