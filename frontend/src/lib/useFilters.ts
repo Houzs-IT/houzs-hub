@@ -1,6 +1,6 @@
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
-const FILTER_KEYS = ["system", "type", "priority", "assignee", "status", "q"] as const;
+const FILTER_KEYS = ["system", "type", "priority", "assignee", "reporter", "status", "q"] as const;
 
 const split = (v: string | null) => (v ? v.split(",").filter(Boolean) : []);
 

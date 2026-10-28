@@ -25,6 +25,7 @@ export default function FilterButton({
   selected,
   onChange,
   isDefault = false,
+  searchable = false,
 }: {
   label: string;
   options: Option[];
@@ -32,10 +33,18 @@ export default function FilterButton({
   onChange: (next: string[]) => void;
   // A preset selection the user did not choose (Status: Active) looks like an untouched filter.
   isDefault?: boolean;
+  searchable?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [term, setTerm] = useState("");
   const ref = useOutside<HTMLDivElement>(open, () => setOpen(false));
   const on = selected.length > 0 && !isDefault;
+
+  useEffect(() => {
+    if (!open) setTerm("");
+  }, [open]);
+
+  const shown = term.trim() ? options.filter((o) => o.label.toLowerCase().includes(term.trim().toLowerCase())) : options;
 
   function toggle(v: string) {
     onChange(selected.includes(v) ? selected.filter((x) => x !== v) : [...selected, v]);
@@ -61,7 +70,20 @@ export default function FilterButton({
       {open && <div className="fixed inset-0 z-20 bg-black/30 sm:hidden" onClick={() => setOpen(false)} />}
       {open && (
         <div role="menu" aria-label={label} className="absolute left-0 top-10 z-30 max-h-[60vh] min-w-[220px] overflow-y-auto overscroll-contain rounded-[10px] border border-transparent bg-overlay py-1.5 shadow-overlay max-sm:fixed max-sm:inset-x-4 max-sm:bottom-4 max-sm:top-auto">
-          {options.map((o) => {
+          {searchable && (
+            <div className="px-2 pb-1.5">
+              <input
+                autoFocus
+                className="input block w-full"
+                aria-label={`Search ${label.toLowerCase()}`}
+                placeholder="Search"
+                value={term}
+                onChange={(e) => setTerm(e.target.value)}
+              />
+            </div>
+          )}
+          {searchable && shown.length === 0 && <div className="px-3 py-1.5 text-[13px] text-ink-subtle">No match</div>}
+          {shown.map((o) => {
             const checked = selected.includes(o.value);
             return (
               <button

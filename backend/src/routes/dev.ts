@@ -176,7 +176,7 @@ function pick<T extends string>(v: string | undefined, allowed: readonly T[]): T
 }
 
 // Every filter accepts a comma list. status: "active" = the open-ish set,
-// "all" or absent = no status filter. assignee: "me", "none" or user ids.
+// "all" or absent = no status filter. assignee: "me", "none" or user ids. reporter: exact names.
 function filterWhere(q: Record<string, string | undefined>, me: User, withStatus: boolean): SQL | undefined {
   const parts: (SQL | undefined)[] = [];
   const systems = list(q.system);
@@ -196,6 +196,9 @@ function filterWhere(q: Record<string, string | undefined>, me: User, withStatus
       ) ?? sql`false`,
     );
   }
+
+  const reporters = list(q.reporter);
+  if (reporters.length) parts.push(inArray(t.reporterName, reporters));
 
   // ponytail: '%term%' cannot use a btree index, so search scans the filtered set. Add a pg_trgm
   // GIN index on code, legacy_code, title and reporter_name if "All statuses" searches get slow.
@@ -298,6 +301,13 @@ dev.get("/tickets/stats", async (c) => {
     my_active: mine[0]?.n ?? 0,
     unread_notifications: unreadNotifications,
   });
+});
+
+// ponytail: distinct over the whole table; reporters are bounded by staff across the systems. Index reporter_name if it slows.
+dev.get("/tickets/reporters", async (c) => {
+  const db = c.get("db");
+  const rows = await db.selectDistinct({ name: t.reporterName }).from(t).orderBy(asc(t.reporterName));
+  return c.json({ reporters: rows.map((r) => r.name) });
 });
 
 // Reports page: tickets submitted per month (Malaysia time) by system and type.

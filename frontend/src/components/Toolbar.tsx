@@ -1,6 +1,6 @@
 import { Search, SlidersHorizontal } from "lucide-react";
 import { useEffect, useState } from "react";
-import type { Status } from "../api/client";
+import { api, type Status } from "../api/client";
 import { ACTIVE, PRIORITIES, PRIORITY_LABEL, STATUSES, STATUS_LABEL, TYPES, TYPE_LABEL } from "../lib/labels";
 import { useFilters } from "../lib/useFilters";
 import { Avatar, PriorityIcon, TypeIcon } from "./Bits";
@@ -17,6 +17,13 @@ export default function Toolbar({ showStatus = true, showAssignee = true }: { sh
   const { me, users, systems } = useHub();
   const f = useFilters();
   const [q, setQ] = useState(f.get("q") ?? "");
+  const [reporters, setReporters] = useState<string[]>([]);
+
+  useEffect(() => {
+    api<{ reporters: string[] }>("/tickets/reporters")
+      .then((d) => setReporters(d.reporters))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     const id = setTimeout(() => {
@@ -31,7 +38,7 @@ export default function Toolbar({ showStatus = true, showAssignee = true }: { sh
   const statusDefault = !f.get("status");
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const activeFilterCount =
-    ["system", "type", "priority", "assignee"].filter((key) => f.list(key).length).length + (showStatus && !statusDefault ? 1 : 0);
+    ["system", "type", "priority", "assignee", "reporter"].filter((key) => f.list(key).length).length + (showStatus && !statusDefault ? 1 : 0);
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -88,6 +95,14 @@ export default function Toolbar({ showStatus = true, showAssignee = true }: { sh
             onChange={(v) => f.set({ assignee: v })}
           />
         )}
+        {/* A name from a shared link stays listed even if no ticket carries it any more. */}
+        <FilterButton
+          label="Reporter"
+          searchable
+          options={[...new Set([...reporters, ...f.list("reporter")])].map((r) => ({ value: r, label: r, icon: <Avatar name={r} size={20} /> }))}
+          selected={f.list("reporter")}
+          onChange={(v) => f.set({ reporter: v })}
+        />
         {(f.hasFilters || (showStatus && !statusDefault)) && (
           <button className="btn-subtle" onClick={f.clear}>
             Clear filters
