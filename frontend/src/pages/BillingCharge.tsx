@@ -85,6 +85,13 @@ const MODULE_NAMES: Record<string, string> = {
   floorplan_size: "Floor plan measuring",
   announcement_translate: "Announcement translation",
   assistant: "Assistant",
+  // Hookka
+  scan_po: "Customer PO scan",
+  scan_supplier_do: "Supplier document scan",
+  scan_doc_boundary: "Supplier PDF splitting",
+  scan_distill_customer: "Customer PO scan: learning",
+  scan_distill_supplier: "Supplier scan: learning",
+  agent_brain: "Agents",
 };
 export function moduleLabel(module: string) {
   if (!module) return "Whole system";
