@@ -1,5 +1,5 @@
-import { Pencil, Plus } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { ChevronDown, ChevronRight, Pencil, Plus } from "lucide-react";
+import { Fragment, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, json, type BillingData as Data, type ChargeRow } from "../api/client";
 import { fmtAgo, money } from "../lib/format";
@@ -283,6 +283,13 @@ function OneSystem(props: {
   open: (c: ChargeRow | "new", preset?: Partial<Pick<ChargeRow, "systemCode">>) => void;
 }) {
   const { data, code, month, before, t, paid, canEdit, open } = props;
+  const [shown, setShown] = useState<Set<number>>(new Set());
+  const toggle = (id: number) =>
+    setShown((s) => {
+      const next = new Set(s);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
   const rows = data.charges
     .filter((c) => partIn(c, code, data, month) > 0 || partIn(c, code, data, before) > 0)
     .sort((a, b) => paid(b, month) * partIn(b, code, data, month) - paid(a, month) * partIn(a, code, data, month) || a.vendor.localeCompare(b.vendor));
@@ -307,6 +314,7 @@ function OneSystem(props: {
       {code === NONE && rows.length > 0 && (
         <p className="mt-1 text-[12.5px] text-ink-subtle">Open each one and pick its system, or "Shared, split by %" when several systems use it.</p>
       )}
+      {code !== NONE && <UnusedProjects data={data} code={code} />}
       {rows.length === 0 && <div className="py-12 text-center text-sm text-ink-subtle">Nothing here.</div>}
       {rows.length > 0 && (
         <div className="card mt-2 overflow-x-auto">
@@ -325,13 +333,36 @@ function OneSystem(props: {
                 const part = partIn(c, code, data, month);
                 const partBefore = partIn(c, code, data, before);
                 const shared = sharesOf(c, data, month).length > 1;
+                const detail = code === NONE ? null : detailOf(c, data, code, month);
+                const isOpen = !!detail && shown.has(c.id);
                 return (
-                  <tr key={c.id} className="border-b border-line-subtle align-top last:border-0">
+                  <Fragment key={c.id}>
+                  <tr
+                    className={`align-top ${isOpen ? "" : "border-b border-line-subtle last:border-0"} ${detail ? "cursor-pointer hover:bg-surface-dim" : ""}`}
+                    onClick={detail ? () => toggle(c.id) : undefined}
+                  >
                     <td className="px-3 py-2.5 pl-4">
-                      <div className="font-medium text-ink">
-                        {c.vendor} <span className="text-xs font-normal text-ink-subtlest">{c.registerId}</span>
+                      <div className="flex items-start gap-1 font-medium text-ink">
+                        {detail ? (
+                          <button
+                            className="-ml-1 mt-px rounded text-ink-subtle hover:text-ink"
+                            aria-expanded={isOpen}
+                            aria-label={`${isOpen ? "Hide" : "Show"} usage for ${c.registerId} ${c.vendor}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggle(c.id);
+                            }}
+                          >
+                            {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                          </button>
+                        ) : (
+                          <span className="w-4 shrink-0" />
+                        )}
+                        <span>
+                          {c.vendor} <span className="text-xs font-normal text-ink-subtlest">{c.registerId}</span>
+                        </span>
                       </div>
-                      {c.usedFor && <div className="max-w-xs text-xs text-ink-subtlest">{c.usedFor}</div>}
+                      {c.usedFor && <div className="max-w-xs pl-5 text-xs text-ink-subtlest">{c.usedFor}</div>}
                     </td>
                     <td className="max-w-[220px] px-3 py-2.5">
                       <div className="break-words text-ink">{c.projectRef || <span className="text-ink-subtlest">Not set</span>}</div>
@@ -353,77 +384,129 @@ function OneSystem(props: {
                     </td>
                     <td className="w-12 px-3 py-2.5 pr-4 text-right">
                       {canEdit && (
-                        <button className="btn-subtle h-8 w-8 px-0" title="Edit" aria-label={`Edit ${c.registerId} ${c.vendor}`} onClick={() => open(c)}>
+                        <button className="btn-subtle h-8 w-8 px-0" title="Edit" aria-label={`Edit ${c.registerId} ${c.vendor}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            open(c);
+                          }}
+                        >
                           <Pencil className="h-4 w-4" />
                         </button>
                       )}
                     </td>
                   </tr>
+                  {isOpen && detail && (
+                    <tr className="border-b border-line-subtle last:border-0">
+                      <td colSpan={9} className="px-3 pb-3 pl-9 pr-4">
+                        <UsageDetail detail={detail} />
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 );
               })}
             </tbody>
           </table>
         </div>
       )}
-      {code !== NONE && <AiModules data={data} code={code} month={month} paid={paid} />}
-      {code !== NONE && <Projects data={data} code={code} />}
     </>
   );
 }
 
-// Cost per project ID on each of this system's latest invoices (Supabase prints them),
-// with projects marked not in use added up, so their cost stays in sight until deleted.
-function Projects({ data, code }: { data: Data; code: string }) {
-  const rows: { ref: string; name: string; inUse: boolean; amount: number; currency: string; date: string; vendor: string }[] = [];
+// What one charge's money went on, for its dropdown in a system's table: credit split by
+// usage goes by this system's modules (the vendor's real cost for the month, shared by the
+// system's own log of its calls); anything else by project ID on its latest invoice.
+type Detail = { title: string; rows: { key: string; label: ReactNode; sub: string; amount: string; share: string; dim: boolean }[]; note: string };
+
+function detailOf(c: ChargeRow, data: Data, code: string, month: string): Detail | null {
+  if (c.splitByUsage) {
+    const cost = data.usage.filter((u) => u.vendor === c.vendor && u.month === month).reduce((a, u) => a + u.usd, 0);
+    const mine = moduleShares(data, c.vendor, month).filter((s) => s.code === code && s.part > 0);
+    if (!cost || !mine.length || (mine.length === 1 && mine[0]!.module === "")) return null;
+    const calls = (module: string) =>
+      data.moduleUsage.filter((m) => m.vendor === c.vendor && m.month === month && m.systemCode === code && m.module === module).reduce((a, m) => a + m.calls, 0);
+    const whole = mine.reduce((a, s) => a + s.part, 0);
+    return {
+      title: `Usage by module, ${monthName(month)}`,
+      rows: [...mine]
+        .sort((a, b) => b.part - a.part)
+        .map((s) => ({ key: s.module, label: moduleLabel(s.module), sub: s.module ? `${calls(s.module)} call(s)` : "", amount: money(cost * s.part), share: pct(s.part, whole), dim: false })),
+      note: `${c.vendor}'s real cost so far this month, split by this system's own log of its calls. Paid money follows the card statements.`,
+    };
+  }
+  const latest = data.invoices.find((i) => i.chargeId === c.id); // invoices come newest first
+  if (!latest) return null;
+  const byRef = new Map<string, number>();
+  for (const l of data.invoiceLines) if (l.invoiceId === latest.id && l.projectRef && l.kind === "charge") byRef.set(l.projectRef, (byRef.get(l.projectRef) ?? 0) + l.amount);
+  if (!byRef.size) return null;
+  const part = partIn(c, code, data);
+  const whole = [...byRef.values()].reduce((a, v) => a + v, 0);
+  return {
+    title: `Usage by project ID, invoice ${latest.invoiceNo}`,
+    rows: [...byRef]
+      .sort((a, b) => b[1] - a[1])
+      .map(([ref, amount]) => {
+        const r = data.projectRefs.find((x) => x.ref === ref);
+        const inUse = r ? !!r.inUse : true;
+        return {
+          key: ref,
+          label: (
+            <>
+              {r?.name || <span className="text-loz-orange-ink">Not named</span>}
+              {!inUse && <span className="pill ml-2 bg-loz-grey text-loz-grey-ink">Not used</span>}
+            </>
+          ),
+          sub: ref,
+          amount: money(amount * part, latest.currency),
+          share: pct(amount, whole),
+          dim: !inUse,
+        };
+      }),
+    note: `From the latest invoice, dated ${latest.invoiceDate}${part < 1 ? `, this system's ${pct(part, 1)} share` : ""}. Charges only; tax and discounts are left out.`,
+  };
+}
+
+function UsageDetail({ detail }: { detail: Detail }) {
+  return (
+    <div className="max-w-3xl rounded-md border border-line-subtle px-3 py-2">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-subtle">{detail.title}</div>
+      <table className="mt-1 w-full border-collapse text-[12.5px]">
+        <tbody>
+          {detail.rows.map((r) => (
+            <tr key={r.key} className={`border-b border-line-subtle last:border-0 ${r.dim ? "text-ink-subtlest" : ""}`}>
+              <td className="py-1.5 pr-3">
+                <div className={r.dim ? "" : "text-ink"}>{r.label}</div>
+                {r.sub && <div className="font-mono text-[11px] text-ink-subtlest">{r.sub}</div>}
+              </td>
+              <td className="whitespace-nowrap py-1.5 pr-3 text-right tabular-nums">{r.amount}</td>
+              <td className="w-16 whitespace-nowrap py-1.5 text-right tabular-nums text-ink-subtle">{r.share}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="mt-1 text-[11px] text-ink-subtlest">{detail.note}</p>
+    </div>
+  );
+}
+
+// Projects marked not in use on this system's latest invoices, added up above the table so
+// their cost stays in sight until they are deleted at the vendor.
+function UnusedProjects({ data, code }: { data: Data; code: string }) {
+  const costs: string[] = [];
   for (const c of data.charges.filter((x) => partIn(x, code, data) > 0)) {
-    const latest = data.invoices.find((i) => i.chargeId === c.id); // invoices come newest first
+    const latest = data.invoices.find((i) => i.chargeId === c.id);
     if (!latest) continue;
-    const byRef = new Map<string, number>();
-    for (const l of data.invoiceLines) if (l.invoiceId === latest.id && l.projectRef && l.kind === "charge") byRef.set(l.projectRef, (byRef.get(l.projectRef) ?? 0) + l.amount);
-    for (const [ref, amount] of byRef) {
-      const r = data.projectRefs.find((x) => x.ref === ref);
-      rows.push({ ref, name: r?.name ?? "", inUse: r ? !!r.inUse : true, amount: amount * partIn(c, code, data), currency: latest.currency, date: latest.invoiceDate, vendor: latest.vendor });
+    for (const l of data.invoiceLines) {
+      if (l.invoiceId !== latest.id || !l.projectRef || l.kind !== "charge") continue;
+      const r = data.projectRefs.find((x) => x.ref === l.projectRef);
+      if (r && !r.inUse) costs.push(money(l.amount * partIn(c, code, data), latest.currency));
     }
   }
-  if (!rows.length) return null;
-  rows.sort((a, b) => b.amount - a.amount);
-  const unused = rows.filter((r) => !r.inUse);
+  if (!costs.length) return null;
   return (
-    <section className="mt-6" aria-label="Projects">
-      <h2 className="section-title">Projects on the latest invoices</h2>
-      {unused.length > 0 && (
-        <p className="mt-1 text-[12.5px] text-loz-orange-ink">
-          {unused.length} project(s) not in use cost {unused.map((r) => money(r.amount, r.currency)).join(" + ")} on their latest invoice. Delete them at the vendor to stop paying.
-        </p>
-      )}
-      <div className="card mt-2 overflow-x-auto">
-        <table className="w-full border-collapse text-[13px]">
-          <thead>
-            <tr>
-              {["Project ID", "Name", "Vendor", "Invoice date", "Cost"].map((h, i) => (
-                <th key={h} className={`${TH} whitespace-nowrap ${i === 4 ? "text-right" : "text-left"}`}>
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.ref} className={`border-b border-line-subtle last:border-0 ${r.inUse ? "" : "text-ink-subtlest"}`}>
-                <td className="px-3 py-2 pl-4 font-mono text-[12px]">{r.ref}</td>
-                <td className="px-3 py-2">
-                  {r.name || <span className="text-loz-orange-ink">Not named</span>}
-                  {!r.inUse && <span className="pill ml-2 bg-loz-grey text-loz-grey-ink">Not used</span>}
-                </td>
-                <td className="px-3 py-2">{r.vendor}</td>
-                <td className="px-3 py-2">{r.date}</td>
-                <td className="whitespace-nowrap px-3 py-2 pr-4 text-right tabular-nums">{money(r.amount, r.currency)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
+    <p className="mt-1 text-[12.5px] text-loz-orange-ink">
+      {costs.length} project line(s) not in use cost {costs.join(" + ")} on their latest invoice. Open the arrow on the charge to see which, and delete them at the vendor to stop paying.
+    </p>
   );
 }
 
@@ -545,50 +628,6 @@ function AiUsage({ data, setData, month, canEdit }: { data: Data; setData: (d: D
           </table>
         </div>
       )}
-    </section>
-  );
-}
-
-// This system's AI money for the month by module: each split-by-usage charge's card payments
-// that month, shared by moduleShares. Shown only when the system sends module estimates.
-function AiModules({ data, code, month, paid }: { data: Data; code: string; month: string; paid: (c: ChargeRow, m: string) => number }) {
-  const byModule = new Map<string, number>();
-  for (const c of data.charges.filter((x) => x.splitByUsage)) {
-    const amount = paid(c, month);
-    if (!amount) continue;
-    for (const s of moduleShares(data, c.vendor, month)) {
-      if (s.code === code) byModule.set(s.module, (byModule.get(s.module) ?? 0) + amount * s.part);
-    }
-  }
-  const rows = [...byModule].sort((a, b) => b[1] - a[1]);
-  if (!rows.length || (rows.length === 1 && rows[0]![0] === "")) return null;
-  const total = rows.reduce((a, [, v]) => a + v, 0);
-  return (
-    <section className="mt-6" aria-label="AI by module">
-      <h2 className="section-title">AI by module, {monthName(month)}</h2>
-      <p className="mt-1 text-[12.5px] text-ink-subtle">This system's share of the Anthropic credit paid this month, split by its own log of AI calls.</p>
-      <div className="card mt-2 overflow-x-auto">
-        <table className="w-full border-collapse text-[13px]">
-          <thead>
-            <tr>
-              {["Module", "Paid", "Share"].map((h, i) => (
-                <th key={h} className={`${TH} whitespace-nowrap ${i ? "text-right" : "text-left"}`}>
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(([module, v]) => (
-              <tr key={module} className="border-b border-line-subtle last:border-0">
-                <td className="px-3 py-2 pl-4 text-ink">{moduleLabel(module)}</td>
-                <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{rm(v)}</td>
-                <td className="px-3 py-2 pr-4 text-right tabular-nums text-ink-subtle">{pct(v, total)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
     </section>
   );
 }
