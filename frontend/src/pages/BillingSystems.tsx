@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Pencil, Plus } from "lucide-react";
+import { ChevronDown, ChevronRight, Download, Pencil, Plus } from "lucide-react";
 import { Fragment, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, json, type BillingData as Data, type ChargeRow } from "../api/client";
@@ -18,11 +18,11 @@ const prevMonth = (m: string) => {
   d.setMonth(d.getMonth() - 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 };
-const live = (c: ChargeRow) => c.status !== "cancelled";
+export const live = (c: ChargeRow) => c.status !== "cancelled";
 const isUse = (c: ChargeRow) => c.billed === "credit" || c.billed === "usage";
 
 // Latest bill as a monthly amount: yearly ones spread over 12 months.
-function fixedPerMonth(c: ChargeRow) {
+export function fixedPerMonth(c: ChargeRow) {
   if (!live(c) || c.amount === null) return { usd: 0, myr: 0 };
   const a = c.billed === "monthly" ? c.amount : c.billed === "yearly" ? c.amount / 12 : 0;
   return c.currency === "MYR" ? { usd: 0, myr: a } : { usd: a, myr: 0 };
@@ -137,6 +137,17 @@ export function SystemsOverview({ data, setData, canEdit }: { data: Data; setDat
           ))}
         </select>
         <span className="text-xs text-ink-subtle">Paid = card statement lines that month. Fixed = latest bills, yearly ones ÷ 12.</span>
+        <button
+          className="btn-default ml-auto h-8 px-3"
+          title={`Download ${monthName(month)} as an Excel file: summary, by vendor, charges, AI usage, invoices and statement lines`}
+          onClick={() =>
+            void import("./billingExport").then(({ downloadBillingExport }) =>
+              downloadBillingExport({ data, month, before, paid, totalsFor, unmatched: { now: unmatched, before: unmatchedBefore, lines: unmatchedLines } }),
+            )
+          }
+        >
+          <Download className="h-3.5 w-3.5" /> Export to Excel
+        </button>
       </div>
 
       {view === "" ? (
@@ -161,16 +172,11 @@ export function SystemsOverview({ data, setData, canEdit }: { data: Data; setDat
   );
 }
 
-type T = { services: number; open: number; paid: number; before: number; use: number; usd: number; myr: number };
+export type T = { services: number; open: number; paid: number; before: number; use: number; usd: number; myr: number };
+export type Unmatched = { now: number; before: number; lines: number };
 
-function AllSystems(props: {
-  data: Data;
-  month: string;
-  totalsFor: (code: string) => T;
-  unmatched: { now: number; before: number; lines: number };
-  pick: (v: string) => void;
-}) {
-  const { data, month, totalsFor, unmatched, pick } = props;
+// The All systems figures, shared by the page and the Excel export so the two agree.
+export function allSystemsOf(data: Data, month: string, totalsFor: (code: string) => T, unmatched: Unmatched) {
   const rows = [...data.systems.map((s) => ({ code: s.code, name: s.name })), { code: NONE, name: "No system yet" }].map((r) => ({
     ...r,
     t: totalsFor(r.code),
@@ -193,6 +199,19 @@ function AllSystems(props: {
   // Checked = the line has its invoice, or a person checked it by hand.
   const withInvoice = new Set(data.invoices.map((i) => i.statementLineId));
   const notChecked = data.lines.filter((l) => monthOf(l.txnDate) === month && !withInvoice.has(l.id) && !l.checkedByHand).length;
+  const toConfirm = data.charges.filter((c) => c.status === "to_confirm" || c.status === "to_fill_in").length;
+  return { rows, all, services, noSystem, notChecked, toConfirm };
+}
+
+function AllSystems(props: {
+  data: Data;
+  month: string;
+  totalsFor: (code: string) => T;
+  unmatched: Unmatched;
+  pick: (v: string) => void;
+}) {
+  const { data, month, totalsFor, unmatched, pick } = props;
+  const { rows, all, services, noSystem, notChecked, toConfirm } = allSystemsOf(data, month, totalsFor, unmatched);
 
   return (
     <>
@@ -262,7 +281,7 @@ function AllSystems(props: {
                   <Fixed usd={all.usd} myr={all.myr} />
                 </td>
                 <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{rm(all.use)}</td>
-                <td className="px-3 py-2 pr-4 text-right tabular-nums">{data.charges.filter((c) => c.status === "to_confirm" || c.status === "to_fill_in").length}</td>
+                <td className="px-3 py-2 pr-4 text-right tabular-nums">{toConfirm}</td>
               </tr>
             </tbody>
           </table>
