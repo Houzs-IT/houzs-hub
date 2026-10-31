@@ -263,16 +263,33 @@ export type TicketFull = {
   updatedAt: string;
 };
 
-// Tickets submitted per month; months with no tickets have no rows.
-export type MonthlyStats = {
-  months: string[];
-  rows: { month: string; system: string; type: TicketType; n: number }[];
-};
-
-export type DailyStats = {
-  days: string[];
+// Reports dashboard (GET /tickets/report). Every list covers all systems; the page filters.
+// Keys are days (this / last month) or months. hours is null for tickets imported from
+// the old Sheet (done rows) or not picked up yet (response rows).
+export type ReportRange = "this" | "last" | 6 | 12;
+export type ReportAge = "d0" | "d7" | "d14" | "d30";
+type Period = "now" | "prev";
+type KeyCount = { k: string; sys: string; type: TicketType; n: number };
+export type Report = {
+  range: ReportRange;
+  daily: boolean;
+  keys: string[];
   today: string;
-  rows: { day: string; system: string; type: TicketType; n: number }[];
+  start: string;
+  end: string;
+  prev_start: string;
+  active: { sys: string; type: TicketType; status: Status; priority: Priority; unassigned: boolean; age: ReportAge; n: number; oldest: string }[];
+  oldest: { code: string; title: string; sys: string; type: TicketType; status: Status; priority: Priority; created_at: string; assignee: string | null }[];
+  done: { sys: string; type: TicketType; priority: Priority; period: Period; hours: number | null }[];
+  response: { sys: string; type: TicketType; priority: Priority; period: Period; hours: number | null }[];
+  opened: { sys: string; type: TicketType; period: Period; n: number }[];
+  flow_opened: KeyCount[];
+  flow_done: KeyCount[];
+  backlog: KeyCount[];
+  reopened: { sys: string; type: TicketType; period: Period; n: number }[];
+  reporters: { name: string; sys: string; department: string | null; opened: number; bugs: number; open_now: number }[];
+  follow_ups: { name: string; sys: string; n: number }[];
+  workload: { assignee: string | null; sys: string; status: Status; n: number; oldest: string }[];
 };
 
 const BASE = "/api/v1/dev";
