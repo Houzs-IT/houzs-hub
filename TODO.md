@@ -132,7 +132,7 @@ staging (`hookka-erp-staging-sg`), feature PR goes to staging first.
       This period (submitted, done, typical bug / dev time to done, first response, reopened),
       submitted vs done chart with the still-open line, open tickets per system (status, unassigned,
       age bands, oldest), oldest 10, bug vs development speed by priority, systems compared,
-      top reporters and departments, workload per assignee, submitted per system table.
+      top reporters and departments (Bug / Dev split), IT team, submitted per system table.
 - Decisions:
   - Done = Done or Closed, at `resolved_at` (else `closed_at`). Rejected leaves the open count but is not done.
   - Durations skip imported Sheet tickets (`legacy_code` set): 154 of 192 have `resolved_at = created_at`.
@@ -140,6 +140,14 @@ staging (`hookka-erp-staging-sg`), feature PR goes to staging first.
   - Department stands in for module: `page_url` is filled on 15 of 166 live tickets, department on 165.
     A real module field needs each system's IT Support form to send one (phase 2).
   - Reopened = a status change from Done / Closed back to an open status, by anyone.
+- [x] IT team section — Lim 2026-11-02 ("each IT's closing speed, the tickets they hold, what stage"):
+      per person open now by stage, done vs before, typical / 9-in-10 time to done, first response,
+      reopened, oldest open; click a person for their open tickets as stage columns with time in stage.
+      Replaces the Workload table. The report now returns `open_tickets` (every open ticket, with
+      `stage_since` = last status change) in place of `oldest` and `workload`.
+  - Speed is credited to whoever holds the ticket now (no assignee history is kept). Imported done
+    tickets have no assignee, so "No one assigned" only counts open tickets.
+  - Page polish in the same change: jump bar between sections, loading skeleton, "Updated hh:mm".
 - [ ] Phase 2: module per ticket, time excluding Waiting Reporter (from `ticket_events`), SLA targets per
       priority (see Open questions) and % met.
 - [ ] AI usage per system + monthly charges
