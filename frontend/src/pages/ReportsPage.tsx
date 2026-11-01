@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { api, type Priority, type Report, type ReportAge, type ReportRange, type Status, type TicketType } from "../api/client";
 import { Avatar, Lozenge, PriorityIcon, SystemTag, TypeIcon } from "../components/Bits";
 import { useHub } from "../components/Layout";
-import { ACTIVE, PRIORITIES, PRIORITY_LABEL, STATUS_LABEL, TYPES, TYPE_LABEL } from "../lib/labels";
+import { PRIORITIES, PRIORITY_LABEL, STATUS_LABEL, TYPES, TYPE_LABEL } from "../lib/labels";
 import { useFilters } from "../lib/useFilters";
 
 const RANGES: { value: ReportRange; label: string }[] = [
@@ -67,14 +67,24 @@ export default function ReportsPage() {
   const tableType: TicketType = filters.get("type") === "development" ? "development" : "bug";
   const [data, setData] = useState<Report | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadedAt, setLoadedAt] = useState<Date | null>(null);
 
   useEffect(() => {
+    let live = true;
+    setLoading(true);
     api<Report>(`/tickets/report?range=${range}`)
       .then((d) => {
+        if (!live) return;
         setData(d);
         setError(null);
+        setLoadedAt(new Date());
       })
-      .catch((e: Error) => setError(e.message));
+      .catch((e: Error) => live && setError(e.message))
+      .finally(() => live && setLoading(false));
+    return () => {
+      live = false;
+    };
   }, [range, version]);
 
   // The old range's numbers stay up until the new one lands.
@@ -116,27 +126,45 @@ export default function ReportsPage() {
             value={String(range)}
             onChange={(v) => filters.set({ range: v === "this" ? null : v })}
           />
+          <span className="text-[12px] text-ink-subtlest" aria-live="polite">
+            {loading ? "Loading…" : loadedAt ? `Updated ${loadedAt.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}` : ""}
+          </span>
         </div>
 
         {error && <div className="mt-4 rounded-md bg-loz-red px-3 py-2 text-[13px] text-loz-red-ink">{error}</div>}
 
+        {!r && loading && <Skeleton />}
+
         {r && (
-          <>
-            <NowSection r={r} mine={mine} system={system} />
-            <PeriodSection r={r} mine={mine} prevLabel={prevLabel} />
-            <FlowChart r={r} mine={mine} />
-            <OpenBySystem r={r} systems={systems} system={system} />
-            <Oldest r={r} mine={mine} />
-            <Speed r={r} mine={mine} prevLabel={prevLabel} />
-            <Scorecard r={r} systems={systems} system={system} />
-            <People r={r} mine={mine} />
-            <Workload r={r} mine={mine} />
-            <SubmittedTable r={r} systems={systems} system={system} tableType={tableType} onType={(t) => filters.set({ type: t === "bug" ? null : t })} />
+          <div className={`transition-opacity ${loading ? "opacity-60" : ""}`}>
+            <JumpBar />
+            <div id="now" className="scroll-mt-14">
+              <NowSection r={r} mine={mine} system={system} />
+              <PeriodSection r={r} mine={mine} prevLabel={prevLabel} />
+            </div>
+            <div id="trend" className="scroll-mt-14">
+              <FlowChart r={r} mine={mine} />
+            </div>
+            <div id="team" className="scroll-mt-14">
+              <Team r={r} mine={mine} prevLabel={prevLabel} />
+            </div>
+            <div id="systems" className="scroll-mt-14">
+              <OpenBySystem r={r} systems={systems} system={system} />
+              <Oldest r={r} mine={mine} />
+            </div>
+            <div id="speed" className="scroll-mt-14">
+              <Speed r={r} mine={mine} prevLabel={prevLabel} />
+              <Scorecard r={r} systems={systems} system={system} />
+            </div>
+            <div id="reporters" className="scroll-mt-14">
+              <People r={r} mine={mine} />
+              <SubmittedTable r={r} systems={systems} system={system} tableType={tableType} onType={(t) => filters.set({ type: t === "bug" ? null : t })} />
+            </div>
             <p className="mt-4 text-[12px] text-ink-subtlest">
               Times to done and first response leave out the tickets imported from the old Sheet: most of them carry no real done time.
               Done means Done or Closed; Rejected tickets leave the open count but are not counted as done.
             </p>
-          </>
+          </div>
         )}
       </div>
     </div>
@@ -467,7 +495,7 @@ function AgeBars({ rows }: { rows: { code: string; name: string; total: number; 
 // ---- Oldest open tickets ---------------------------------------------------
 
 function Oldest({ r, mine }: { r: Report; mine: Mine }) {
-  const rows = mine(r.oldest)
+  const rows = mine(r.open_tickets)
     .sort((a, b) => a.created_at.localeCompare(b.created_at))
     .slice(0, 10);
   return (
@@ -743,57 +771,265 @@ function People({ r, mine }: { r: Report; mine: Mine }) {
   );
 }
 
-// ---- Workload --------------------------------------------------------------
+// ---- IT team ---------------------------------------------------------------
 
-function Workload({ r, mine }: { r: Report; mine: Mine }) {
-  const by = new Map<string, { name: string | null; byStatus: number[]; total: number; oldest: string }>();
-  for (const x of mine(r.workload)) {
-    const key = x.assignee ?? "";
-    const w = by.get(key) ?? { name: x.assignee, byStatus: ACTIVE.map(() => 0), total: 0, oldest: x.oldest };
-    w.byStatus[ACTIVE.indexOf(x.status)] += x.n;
-    w.total += x.n;
-    if (x.oldest < w.oldest) w.oldest = x.oldest;
-    by.set(key, w);
-  }
-  const rows = [...by.values()].sort((a, b) => (a.name === null ? -1 : b.name === null ? 1 : b.total - a.total));
+const STAGE_COLOR: Partial<Record<Status, string>> = {
+  open: "rgb(var(--loz-grey-ink))",
+  in_progress: "rgb(var(--loz-blue-ink))",
+  testing: "rgb(var(--loz-purple-ink))",
+  waiting_reporter: "rgb(var(--loz-orange-ink))",
+  on_hold: "rgb(var(--loz-yellow-ink))",
+};
+const since = (iso: string) => duration((Date.now() - Date.parse(iso)) / 3_600_000);
+
+type OpenTicket = Report["open_tickets"][number];
+
+// Speed is credited to whoever holds the ticket now; hand-overs are rare enough not to skew it.
+function Team({ r, mine, prevLabel }: { r: Report; mine: Mine; prevLabel: string }) {
+  const open = mine(r.open_tickets);
+  const done = mine(r.done);
+  const response = mine(r.response);
+  const reopened = mine(r.reopened);
+  // "No one" only stands for unassigned open tickets: imported done tickets have no assignee either.
+  const names = new Set<string | null>([
+    ...open.map((t) => t.assignee),
+    ...done.filter((x) => x.period === "now" && x.assignee).map((x) => x.assignee),
+  ]);
+  const people = [...names]
+    .map((name) => {
+      const o = open.filter((t) => t.assignee === name);
+      const d = name === null ? [] : done.filter((x) => x.assignee === name);
+      const hours = (p: string) => d.filter((x) => x.period === p && x.hours !== null).map((x) => x.hours!);
+      return {
+        name,
+        id: o.find((t) => t.assignee_id)?.assignee_id ?? null,
+        open: o,
+        byStage: STATUS_COLUMNS.map((st) => o.filter((t) => t.status === st).length),
+        done: d.filter((x) => x.period === "now").length,
+        donePrev: d.filter((x) => x.period === "prev").length,
+        median: percentile(hours("now"), 0.5),
+        p90: percentile(hours("now"), 0.9),
+        prevMedian: percentile(hours("prev"), 0.5),
+        response: name === null ? null : percentile(response.filter((x) => x.assignee === name && x.period === "now" && x.hours !== null).map((x) => x.hours!), 0.5),
+        reopened: name === null ? 0 : sum(reopened.filter((x) => x.assignee === name && x.period === "now").map((x) => x.n)),
+        oldest: o.map((t) => t.created_at).sort()[0] ?? null,
+      };
+    })
+    .sort((a, b) => (a.name === null ? -1 : b.name === null ? 1 : b.open.length - a.open.length || b.done - a.done));
+  const [picked, setPicked] = useState<string | null>(null);
+  const key = (name: string | null) => name ?? "";
+  // Opens on the busiest named person; "No one" is a click away.
+  const selected = people.find((p) => key(p.name) === picked) ?? people.find((p) => p.name !== null && p.open.length) ?? people[0];
+  const maxOpen = Math.max(1, ...people.map((p) => p.open.length));
+
   return (
-    <Section title="Workload" note="Open tickets per person right now.">
-      {rows.length === 0 ? (
-        <Empty>No open tickets.</Empty>
+    <Section
+      title="IT team"
+      note={`Open tickets per person right now, and what each finished in this period ("Before" = ${prevLabel}). Click a person to see their tickets by stage.`}
+    >
+      {people.length === 0 ? (
+        <Empty>No open or finished tickets.</Empty>
       ) : (
-        <Table>
-          <thead>
-            <tr className="text-[11px] text-ink-subtle">
-              <Th left sticky>
-                Assignee
-              </Th>
-              <Th>Total</Th>
-              {ACTIVE.map((s) => (
-                <Th key={s}>{STATUS_LABEL[s]}</Th>
-              ))}
-              <Th>Oldest</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((w) => (
-              <tr key={w.name ?? ""} className="border-t border-line-subtle">
-                <Td left sticky>
-                  <span className="flex items-center gap-1.5">
-                    <Avatar name={w.name} size={18} />
-                    <span className={w.name ? "text-ink" : "text-loz-orange-ink"}>{w.name ?? "No one assigned"}</span>
-                  </span>
-                </Td>
-                <Td strong>{w.total}</Td>
-                {w.byStatus.map((n, i) => (
-                  <Td key={ACTIVE[i]}>{n}</Td>
-                ))}
-                <Td>{daysOld(w.oldest)} d</Td>
+        <>
+          <StageLegend />
+          <Table>
+            <thead>
+              <tr className="text-[11px] text-ink-subtle">
+                <Th left sticky>
+                  IT person
+                </Th>
+                <Th>Open now</Th>
+                <Th left>By stage</Th>
+                <Th>Done</Th>
+                <Th>Before</Th>
+                <Th>Typical time to done</Th>
+                <Th>9 in 10 done within</Th>
+                <Th>Typical first response</Th>
+                <Th>Reopened</Th>
+                <Th>Oldest open</Th>
               </tr>
-            ))}
-          </tbody>
-        </Table>
+            </thead>
+            <tbody>
+              {people.map((p) => {
+                const on = selected && key(selected.name) === key(p.name);
+                return (
+                  <tr
+                    key={key(p.name)}
+                    onClick={() => setPicked(key(p.name))}
+                    className={`cursor-pointer border-t border-line-subtle ${on ? "bg-primary-soft" : "hover:bg-surface-2"}`}
+                  >
+                    <Td left sticky highlight={on}>
+                      <button type="button" aria-pressed={on} className="flex items-center gap-1.5 text-left" onClick={() => setPicked(key(p.name))}>
+                        <Avatar name={p.name} size={20} />
+                        <span className={p.name ? "font-medium text-ink" : "text-loz-orange-ink"}>{p.name ?? "No one assigned"}</span>
+                      </button>
+                    </Td>
+                    <Td strong>{p.open.length}</Td>
+                    <td className="min-w-[130px] px-2 py-1.5">
+                      <StageBar counts={p.byStage} width={(p.open.length / maxOpen) * 100} />
+                    </td>
+                    <Td strong={!!p.name}>{p.name ? p.done : "–"}</Td>
+                    <Td>
+                      {p.name ? <span className={p.done > p.donePrev ? "text-loz-green-ink" : p.done < p.donePrev ? "text-loz-red-ink" : ""}>{p.donePrev}</span> : "–"}
+                    </Td>
+                    <Td strong={p.median !== null}>
+                      <span className={p.median !== null && p.prevMedian !== null ? (p.median <= p.prevMedian ? "text-loz-green-ink" : "text-loz-red-ink") : ""}>
+                        {duration(p.median)}
+                      </span>
+                    </Td>
+                    <Td>{duration(p.p90)}</Td>
+                    <Td>{duration(p.response)}</Td>
+                    <Td tone={p.reopened ? "warn" : undefined}>{p.reopened}</Td>
+                    <Td tone={p.oldest && daysOld(p.oldest) >= 30 ? "bad" : p.oldest && daysOld(p.oldest) >= 7 ? "warn" : undefined}>
+                      {p.oldest ? `${daysOld(p.oldest)} d` : "–"}
+                    </Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </Table>
+          <p className="mt-2 text-[12px] text-ink-subtlest">
+            Time to done is coloured against the person's own typical time before. A finished ticket counts for whoever holds it now.
+          </p>
+          {selected && <Queue name={selected.name} id={selected.id} tickets={selected.open} />}
+        </>
       )}
     </Section>
+  );
+}
+
+function StageLegend() {
+  return (
+    <div className="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-ink-subtle">
+      {STATUS_COLUMNS.map((st) => (
+        <span key={st} className="flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-sm" style={{ background: STAGE_COLOR[st] }} />
+          {STATUS_LABEL[st]}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function StageBar({ counts, width }: { counts: number[]; width: number }) {
+  const total = sum(counts);
+  if (!total) return <span className="text-[12px] text-ink-disabled">–</span>;
+  return (
+    <div className="flex h-2.5 overflow-hidden rounded-full bg-surface-2">
+      <div className="flex h-full" style={{ width: `${width}%` }}>
+        {counts.map((n, i) =>
+          n ? (
+            <div
+              key={STATUS_COLUMNS[i]}
+              title={`${STATUS_LABEL[STATUS_COLUMNS[i]]}: ${n}`}
+              style={{ width: `${(n / total) * 100}%`, background: STAGE_COLOR[STATUS_COLUMNS[i]] }}
+            />
+          ) : null,
+        )}
+      </div>
+    </div>
+  );
+}
+
+// One person's open tickets as stage columns, the longest in its stage on top.
+function Queue({ name, id, tickets }: { name: string | null; id: number | null; tickets: OpenTicket[] }) {
+  const listLink = `/tickets?${new URLSearchParams({ assignee: name === null ? "none" : String(id ?? ""), status: "active" })}`;
+  return (
+    <div className="mt-4 border-t border-line-subtle pt-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <Avatar name={name} size={24} />
+        <h3 className="text-[14px] font-bold text-ink">{name ?? "No one assigned"}</h3>
+        <span className="text-[12px] text-ink-subtle">{tickets.length} open</span>
+        {(name === null || id !== null) && tickets.length > 0 && (
+          <Link to={listLink} className="ml-auto text-[12px] font-semibold text-primary hover:underline">
+            Open in list →
+          </Link>
+        )}
+      </div>
+      {tickets.length === 0 ? (
+        <Empty>Nothing open right now.</Empty>
+      ) : (
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          {STATUS_COLUMNS.map((st) => {
+            const list = tickets.filter((t) => t.status === st).sort((a, b) => a.stage_since.localeCompare(b.stage_since));
+            return (
+              <div key={st} className={`min-w-0 rounded-lg bg-surface-2 p-2 ${list.length ? "" : "max-lg:hidden"}`}>
+                <div className="mb-2 flex items-center gap-1.5 px-1 text-[11px] font-semibold uppercase tracking-wider text-ink-subtle">
+                  <span className="h-2 w-2 rounded-full" style={{ background: STAGE_COLOR[st] }} />
+                  {STATUS_LABEL[st]}
+                  <span className="ml-auto tabular-nums">{list.length}</span>
+                </div>
+                <div className="space-y-1.5">
+                  {list.length === 0 && <div className="px-1 pb-1 text-[12px] text-ink-disabled">None</div>}
+                  {list.map((t) => (
+                    <Link
+                      key={t.code}
+                      to={`/tickets/${encodeURIComponent(t.code)}`}
+                      className="block rounded-md border border-line-subtle bg-surface px-2.5 py-2 transition-colors hover:border-primary"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <TypeIcon type={t.type} size={14} />
+                        <span className="font-docno text-[11.5px] font-semibold text-ink-subtle">{t.code}</span>
+                        <span className="ml-auto">
+                          <PriorityIcon priority={t.priority} />
+                        </span>
+                      </div>
+                      <div className="mt-1 line-clamp-2 text-[12.5px] leading-snug text-ink">{t.title}</div>
+                      <div className="mt-1.5 text-[11px] text-ink-subtlest">
+                        <span className={daysOld(t.stage_since) >= 7 ? "font-semibold text-loz-orange-ink" : ""}>{since(t.stage_since)} in stage</span>
+                        {" · "}open {since(t.created_at)}
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- Page bits -------------------------------------------------------------
+
+const JUMPS = [
+  ["now", "Now"],
+  ["trend", "Trend"],
+  ["team", "IT team"],
+  ["systems", "Systems"],
+  ["speed", "Speed"],
+  ["reporters", "Reporters"],
+] as const;
+
+function JumpBar() {
+  return (
+    <nav aria-label="Report sections" className="sticky -top-6 z-10 -mx-4 mt-3 flex gap-1 overflow-x-auto bg-canvas/90 px-4 py-2 backdrop-blur md:-mx-8 md:px-8">
+      {JUMPS.map(([id, label]) => (
+        <button
+          key={id}
+          type="button"
+          onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+          className="tap shrink-0 rounded-full border border-line bg-surface px-3 py-1 text-[12px] font-semibold text-ink-subtle hover:border-primary hover:text-primary"
+        >
+          {label}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+function Skeleton() {
+  return (
+    <div className="mt-4 animate-pulse space-y-4" aria-hidden>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        {Array.from({ length: 6 }, (_, i) => (
+          <div key={i} className="card h-[84px]" />
+        ))}
+      </div>
+      <div className="card h-[280px]" />
+      <div className="card h-[200px]" />
+    </div>
   );
 }
 

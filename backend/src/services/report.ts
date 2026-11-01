@@ -63,7 +63,7 @@ export async function buildReport(db: DB, range: ReportRange) {
   const period = (ts: ReturnType<typeof sql>) => sql`CASE WHEN ${ts} >= ${w.start}::timestamptz THEN 'now' ELSE 'prev' END`;
   const backlogPoints = w.keys.map((k, i) => ({ k, at: w.backlogAt[i] })).filter((p): p is { k: string; at: string } => !!p.at);
 
-  const [active, oldest, done, response, opened, flowOpened, flowDone, backlog, reopened, reporters, followUps, workload] = await Promise.all([
+  const [active, openTickets, done, response, opened, flowOpened, flowDone, backlog, reopened, reporters, followUps] = await Promise.all([
     // Open tickets now, by system / type / status / priority / age band.
     rows<Row>(
       db,
@@ -75,27 +75,29 @@ export async function buildReport(db: DB, range: ReportRange) {
         count(*)::int AS n, min(t.created_at) AS oldest
       FROM tickets t WHERE ${ACTIVE} GROUP BY 1, 2, 3, 4, 5, 6`,
     ),
-    // The ten oldest open tickets of each system; the page keeps the oldest ten of its filter.
+    // Every open ticket, for the oldest list and each person's queue. stage_since is the
+    // last status change, or submission when it never moved.
     rows<Row>(
       db,
-      sql`SELECT code, title, sys, type, status, priority, created_at, assignee FROM (
-        SELECT t.code, t.title, t.system_code AS sys, t.type, t.status, t.priority, t.created_at, u.name AS assignee,
-          row_number() OVER (PARTITION BY t.system_code ORDER BY t.created_at) AS r
-        FROM tickets t LEFT JOIN users u ON u.id = t.assignee_id WHERE ${ACTIVE}) x WHERE r <= 10`,
+      sql`SELECT t.code, t.title, t.system_code AS sys, t.type, t.status, t.priority, t.created_at,
+        t.assignee_id, u.name AS assignee,
+        COALESCE((SELECT max(e.created_at) FROM ticket_events e WHERE e.ticket_id = t.id AND e.kind = 'status'), t.created_at) AS stage_since
+      FROM tickets t LEFT JOIN users u ON u.id = t.assignee_id WHERE ${ACTIVE}`,
     ),
     // One row per ticket done in this or the previous window; hours is null for imported ones.
+    // assignee is whoever holds the ticket now, normally the person who finished it.
     rows<Row>(
       db,
-      sql`SELECT t.system_code AS sys, t.type, t.priority, ${period(DONE_AT)} AS period,
+      sql`SELECT t.system_code AS sys, t.type, t.priority, ${period(DONE_AT)} AS period, u.name AS assignee,
         CASE WHEN t.legacy_code IS NULL THEN round((EXTRACT(EPOCH FROM ${DONE_AT} - ${CREATED}) / 3600)::numeric, 2)::float8 END AS hours
-      FROM tickets t WHERE ${inBoth(DONE_AT)}`,
+      FROM tickets t LEFT JOIN users u ON u.id = t.assignee_id WHERE ${inBoth(DONE_AT)}`,
     ),
     // First response: hours from submitted to picked up, for tickets submitted in either window.
     rows<Row>(
       db,
-      sql`SELECT t.system_code AS sys, t.type, t.priority, ${period(CREATED)} AS period,
+      sql`SELECT t.system_code AS sys, t.type, t.priority, ${period(CREATED)} AS period, u.name AS assignee,
         round((EXTRACT(EPOCH FROM t.picked_up_at::timestamptz - ${CREATED}) / 3600)::numeric, 2)::float8 AS hours
-      FROM tickets t WHERE ${inBoth(CREATED)} AND t.legacy_code IS NULL`,
+      FROM tickets t LEFT JOIN users u ON u.id = t.assignee_id WHERE ${inBoth(CREATED)} AND t.legacy_code IS NULL`,
     ),
     rows<Row>(
       db,
@@ -131,11 +133,11 @@ export async function buildReport(db: DB, range: ReportRange) {
     // A done ticket moved back to work: the fix did not hold.
     rows<Row>(
       db,
-      sql`SELECT t.system_code AS sys, t.type, ${period(sql`e.created_at::timestamptz`)} AS period, count(*)::int AS n
-      FROM ticket_events e JOIN tickets t ON t.id = e.ticket_id
+      sql`SELECT t.system_code AS sys, t.type, ${period(sql`e.created_at::timestamptz`)} AS period, u.name AS assignee, count(*)::int AS n
+      FROM ticket_events e JOIN tickets t ON t.id = e.ticket_id LEFT JOIN users u ON u.id = t.assignee_id
       WHERE e.kind = 'status' AND e.from_value IN ('resolved', 'closed') AND e.to_value NOT IN ('resolved', 'closed', 'rejected')
         AND ${inBoth(sql`e.created_at::timestamptz`)}
-      GROUP BY 1, 2, 3`,
+      GROUP BY 1, 2, 3, 4`,
     ),
     rows<Row>(
       db,
@@ -154,11 +156,6 @@ export async function buildReport(db: DB, range: ReportRange) {
       WHERE e.kind = 'comment' AND e.author_kind = 'reporter' AND ${inWindow(sql`e.created_at::timestamptz`)}
       GROUP BY 1, 2`,
     ),
-    rows<Row>(
-      db,
-      sql`SELECT u.name AS assignee, t.system_code AS sys, t.status, count(*)::int AS n, min(t.created_at) AS oldest
-      FROM tickets t LEFT JOIN users u ON u.id = t.assignee_id WHERE ${ACTIVE} GROUP BY 1, 2, 3`,
-    ),
   ]);
 
   return {
@@ -170,7 +167,7 @@ export async function buildReport(db: DB, range: ReportRange) {
     prev_start: w.prevStart,
     end: w.end,
     active,
-    oldest,
+    open_tickets: openTickets,
     done,
     response,
     opened,
@@ -180,6 +177,5 @@ export async function buildReport(db: DB, range: ReportRange) {
     reopened,
     reporters,
     follow_ups: followUps,
-    workload,
   };
 }

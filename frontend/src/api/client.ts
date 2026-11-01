@@ -279,17 +279,29 @@ export type Report = {
   end: string;
   prev_start: string;
   active: { sys: string; type: TicketType; status: Status; priority: Priority; unassigned: boolean; age: ReportAge; n: number; oldest: string }[];
-  oldest: { code: string; title: string; sys: string; type: TicketType; status: Status; priority: Priority; created_at: string; assignee: string | null }[];
-  done: { sys: string; type: TicketType; priority: Priority; period: Period; hours: number | null }[];
-  response: { sys: string; type: TicketType; priority: Priority; period: Period; hours: number | null }[];
+  // Every open ticket; stage_since = last status change, or submission if it never moved.
+  open_tickets: {
+    code: string;
+    title: string;
+    sys: string;
+    type: TicketType;
+    status: Status;
+    priority: Priority;
+    created_at: string;
+    assignee_id: number | null;
+    assignee: string | null;
+    stage_since: string;
+  }[];
+  // assignee = whoever holds the ticket now.
+  done: { sys: string; type: TicketType; priority: Priority; period: Period; assignee: string | null; hours: number | null }[];
+  response: { sys: string; type: TicketType; priority: Priority; period: Period; assignee: string | null; hours: number | null }[];
   opened: { sys: string; type: TicketType; period: Period; n: number }[];
   flow_opened: KeyCount[];
   flow_done: KeyCount[];
   backlog: KeyCount[];
-  reopened: { sys: string; type: TicketType; period: Period; n: number }[];
+  reopened: { sys: string; type: TicketType; period: Period; assignee: string | null; n: number }[];
   reporters: { name: string; sys: string; department: string | null; opened: number; bugs: number; open_now: number }[];
   follow_ups: { name: string; sys: string; n: number }[];
-  workload: { assignee: string | null; sys: string; status: Status; n: number; oldest: string }[];
 };
 
 const BASE = "/api/v1/dev";
