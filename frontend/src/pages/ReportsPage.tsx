@@ -82,12 +82,15 @@ export default function ReportsPage() {
   const mine = <T extends { sys: string }>(rows: T[]) => rows.filter((x) => !system || x.sys === system);
   const periodLabel =
     range === "this" ? "this month so far" : range === "last" ? (r ? longMonth(r.keys[0]) : "last month") : `the last ${range} months`;
+  const soFar = r ? Math.max(1, Math.ceil((Date.parse(r.end) - Date.parse(r.start)) / DAY)) : 1;
   const prevLabel = !r
     ? ""
     : range === "last"
-      ? `the month before`
+      ? "the month before"
       : range === "this"
-        ? `the ${Math.max(1, Math.round((Date.parse(r.end) - Date.parse(r.start)) / DAY))} days before`
+        ? soFar === 1
+          ? "the day before"
+          : `the ${soFar} days before`
         : `the ${range} months before`;
 
   return (
@@ -369,7 +372,7 @@ function OpenBySystem({ r, systems, system }: { r: Report; systems: SystemList; 
             <Th left sticky>
               System
             </Th>
-            <Th>Open</Th>
+            <Th>Total open</Th>
             {STATUS_COLUMNS.map((s) => (
               <Th key={s}>{STATUS_LABEL[s]}</Th>
             ))}
@@ -761,7 +764,7 @@ function Workload({ r, mine }: { r: Report; mine: Mine }) {
               <Th left sticky>
                 Assignee
               </Th>
-              <Th>Open</Th>
+              <Th>Total</Th>
               {ACTIVE.map((s) => (
                 <Th key={s}>{STATUS_LABEL[s]}</Th>
               ))}
@@ -854,7 +857,8 @@ function SubmittedTable({
 
 function Section({ title, note, action, flush, children }: { title: string; note?: string; action?: ReactNode; flush?: boolean; children: ReactNode }) {
   return (
-    <section className={`card p-4 md:p-5 ${flush ? "" : "mt-4"}`}>
+    // min-w-0: inside a grid, a wide table would otherwise stretch the card past the screen.
+    <section className={`card min-w-0 p-4 md:p-5 ${flush ? "" : "mt-4"}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 className="section-title">{title}</h2>
