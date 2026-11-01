@@ -24,6 +24,7 @@ import {
   TooLargeError,
   validateFiles,
 } from "../services/tickets";
+import { buildReport, type ReportRange } from "../services/report";
 import type { DevApp } from "../types";
 import { broadcastTicketChanges, getLiveRoom } from "../live";
 import accounts from "./accounts";
@@ -310,44 +311,11 @@ dev.get("/tickets/reporters", async (c) => {
   return c.json({ reporters: rows.map((r) => r.name) });
 });
 
-// Reports page: tickets submitted per month (Malaysia time) by system and type.
-// The type is the current one, so a ticket IT re-typed counts where it belongs.
-dev.get("/tickets/monthly", async (c) => {
-  const db = c.get("db");
-  const months = Math.min(36, Math.max(1, Number(c.req.query("months")) || 12));
-  const myNow = new Date(Date.now() + 8 * 3600_000);
-  const keys = Array.from({ length: months }, (_, i) =>
-    new Date(Date.UTC(myNow.getUTCFullYear(), myNow.getUTCMonth() - (months - 1 - i), 1)).toISOString().slice(0, 7),
-  );
-  // created_at is a toISOString() string, so comparing text compares instants.
-  const from = new Date(Date.parse(`${keys[0]}-01T00:00:00+08:00`)).toISOString();
-  const month = sql<string>`to_char(${t.createdAt}::timestamptz AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM')`;
-  const rows = await db
-    .select({ month, system: t.systemCode, type: t.type, n: count() })
-    .from(t)
-    .where(gte(t.createdAt, from))
-    .groupBy(month, t.systemCode, t.type);
-  return c.json({ months: keys, rows });
-});
-
-// Same counts per day for the current Malaysia month; every day of the month is
-// listed so the chart keeps its width while the month fills in.
-dev.get("/tickets/daily", async (c) => {
-  const db = c.get("db");
-  const myNow = new Date(Date.now() + 8 * 3600_000);
-  const y = myNow.getUTCFullYear();
-  const m = myNow.getUTCMonth();
-  const days = Array.from({ length: new Date(Date.UTC(y, m + 1, 0)).getUTCDate() }, (_, i) =>
-    new Date(Date.UTC(y, m, i + 1)).toISOString().slice(0, 10),
-  );
-  const from = new Date(Date.parse(`${days[0]}T00:00:00+08:00`)).toISOString();
-  const day = sql<string>`to_char(${t.createdAt}::timestamptz AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD')`;
-  const rows = await db
-    .select({ day, system: t.systemCode, type: t.type, n: count() })
-    .from(t)
-    .where(gte(t.createdAt, from))
-    .groupBy(day, t.systemCode, t.type);
-  return c.json({ days, today: myNow.toISOString().slice(0, 10), rows });
+// Reports dashboard: backlog, speed, and per-system / reporter breakdowns for one window.
+dev.get("/tickets/report", async (c) => {
+  const r = c.req.query("range");
+  const range: ReportRange = r === "6" || r === "12" ? (Number(r) as 6 | 12) : r === "last" ? "last" : "this";
+  return c.json(await buildReport(c.get("db"), range));
 });
 
 async function findTicket(db: DB, code: string) {

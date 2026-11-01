@@ -121,6 +121,26 @@ staging (`hookka-erp-staging-sg`), feature PR goes to staging first.
 - [x] `/reports` page under IT Workspace: 6 / 12 / 24 months, system filter, Bug vs Development bars,
       tiles for last month vs month before, per-system table (Bug / Development)
 - [x] Counts use the ticket's current type, so IT re-typing a mis-picked ticket fixes the numbers
-- [ ] Later if asked: resolved per month, SLA, by priority
+
+### 5b. Reports dashboard — Lim 2026-11-01 ("open tickets per system, done, pending, how long open")
+
+- [x] `GET /dev/tickets/report?range=this|last|6|12` (services/report.ts) replaces `/tickets/monthly`
+      and `/tickets/daily`. One call, all systems; the page filters by system itself.
+- [x] Page opens on **This month**; Last month / 6 / 12 months. Everything except "Right now" is
+      compared with a window of the same length straight before it.
+- [x] Sections: Right now (open, not picked up, waiting on reporter / on hold, open > 7 / 14 / 30 days),
+      This period (submitted, done, typical bug / dev time to done, first response, reopened),
+      submitted vs done chart with the still-open line, open tickets per system (status, unassigned,
+      age bands, oldest), oldest 10, bug vs development speed by priority, systems compared,
+      top reporters and departments, workload per assignee, submitted per system table.
+- Decisions:
+  - Done = Done or Closed, at `resolved_at` (else `closed_at`). Rejected leaves the open count but is not done.
+  - Durations skip imported Sheet tickets (`legacy_code` set): 154 of 192 have `resolved_at = created_at`.
+  - Typical = median, "9 in 10 within" = P90. Averages would be dragged by a few stuck tickets.
+  - Department stands in for module: `page_url` is filled on 15 of 166 live tickets, department on 165.
+    A real module field needs each system's IT Support form to send one (phase 2).
+  - Reopened = a status change from Done / Closed back to an open status, by anyone.
+- [ ] Phase 2: module per ticket, time excluding Waiting Reporter (from `ticket_events`), SLA targets per
+      priority (see Open questions) and % met.
 - [ ] AI usage per system + monthly charges
 - [ ] Email / WhatsApp notify on status change

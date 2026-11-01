@@ -58,6 +58,13 @@
   /* Reports chart: Bug / Development, checked for colour-blind separation per theme. */
   --chart-bug: #b23a3a;
   --chart-dev: #2a9d8f;
+  /* Reports: submitted / done bars, the still-open line, and open-ticket age bands. */
+  --chart-done: #8fb8a8;
+  --chart-backlog: #a16a2e;
+  --age-0: #9fd1c6;
+  --age-7: #e9c46a;
+  --age-14: #e08a4b;
+  --age-30: #b23a3a;
 }
 
 .dark {
@@ -112,6 +119,12 @@
   --sidebar-active: rgba(64, 170, 156, 0.2);
   --chart-bug: #e5695f;
   --chart-dev: #2fa596;
+  --chart-done: #5f8577;
+  --chart-backlog: #e0a458;
+  --age-0: #3f7f72;
+  --age-7: #c9a243;
+  --age-14: #d0773a;
+  --age-30: #e5695f;
 }
 
 html,
