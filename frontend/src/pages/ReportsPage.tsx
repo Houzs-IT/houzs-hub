@@ -678,7 +678,8 @@ function People({ r, mine }: { r: Report; mine: Mine }) {
                   Reporter
                 </Th>
                 <Th>Submitted</Th>
-                <Th>Bugs</Th>
+                <Th>Bug</Th>
+                <Th>Dev</Th>
                 <Th>Follow-ups</Th>
                 <Th>Open now</Th>
               </tr>
@@ -695,6 +696,8 @@ function People({ r, mine }: { r: Report; mine: Mine }) {
                   </Td>
                   <Td strong>{x.opened}</Td>
                   <Td>{x.bugs}</Td>
+                  {/* Two ticket types only, so whatever is not a bug is development. */}
+                  <Td>{x.opened - x.bugs}</Td>
                   <Td tone={x.chases >= 3 ? "warn" : undefined}>{x.chases}</Td>
                   <Td>{x.open_now}</Td>
                 </tr>
