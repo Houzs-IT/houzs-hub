@@ -221,7 +221,7 @@ export type Attachment = { id: number; event_id: number; filename: string; mime:
 
 export type TicketEvent = {
   id: number;
-  kind: "created" | "comment" | "status" | "assign" | "priority" | "type";
+  kind: "created" | "comment" | "status" | "assign" | "priority" | "type" | "module";
   visibility: "public" | "internal";
   authorKind: "reporter" | "developer" | "system";
   authorName: string;
@@ -252,6 +252,7 @@ export type TicketFull = {
   reporterPhone: string | null;
   reporterDepartment: string | null;
   pageUrl: string | null;
+  module: string | null;
   userAgent: string | null;
   appVersion: string | null;
   assigneeId: number | null;
@@ -265,7 +266,8 @@ export type TicketFull = {
 
 // Reports dashboard (GET /tickets/report). Every list covers all systems; the page filters.
 // Keys are days (this / last month) or months. hours is null for tickets imported from
-// the old Sheet (done rows) or not picked up yet (response rows).
+// the old Sheet (done rows) or not picked up yet (response rows). it_hours / waiting_hours leave
+// out / count the time in Waiting Reporter, which the SLA does not count.
 export type ReportRange = "this" | "last" | 6 | 12;
 export type ReportAge = "d0" | "d7" | "d14" | "d30";
 type Period = "now" | "prev";
@@ -288,12 +290,24 @@ export type Report = {
     status: Status;
     priority: Priority;
     created_at: string;
+    module: string | null;
+    legacy: boolean;
     assignee_id: number | null;
     assignee: string | null;
+    waiting_hours: number;
     stage_since: string;
   }[];
-  // assignee = whoever holds the ticket now.
-  done: { sys: string; type: TicketType; priority: Priority; period: Period; assignee: string | null; hours: number | null }[];
+  // assignee = who held the ticket when it was done (response: who picked it up).
+  done: {
+    sys: string;
+    type: TicketType;
+    priority: Priority;
+    module: string | null;
+    period: Period;
+    assignee: string | null;
+    hours: number | null;
+    it_hours: number | null;
+  }[];
   response: { sys: string; type: TicketType; priority: Priority; period: Period; assignee: string | null; hours: number | null }[];
   opened: { sys: string; type: TicketType; period: Period; n: number }[];
   flow_opened: KeyCount[];
@@ -302,6 +316,7 @@ export type Report = {
   reopened: { sys: string; type: TicketType; period: Period; assignee: string | null; n: number }[];
   reporters: { name: string; sys: string; department: string | null; opened: number; bugs: number; open_now: number }[];
   follow_ups: { name: string; sys: string; n: number }[];
+  modules: { sys: string; module: string | null; opened: number; bugs: number; open_now: number }[];
 };
 
 const BASE = "/api/v1/dev";

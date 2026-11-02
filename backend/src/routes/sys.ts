@@ -106,6 +106,7 @@ sys.post("/tickets", async (c) => {
       reporterPhone: str(fields.reporter_phone, 40),
       reporterDepartment: str(fields.reporter_department, 120),
       pageUrl: str(fields.page_url, 1000),
+      module: str(fields.module, 60),
       userAgent: str(fields.user_agent, 500),
       appVersion: str(fields.app_version, 60),
       lastPublicActivityAt: now,

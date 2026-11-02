@@ -26,7 +26,8 @@ Phase 1 = ticketing only. System Health / Dashboard / AI usage billing come late
 - [x] Change own display name; handed-out passwords must be replaced on first sign-in (2026-10-12)
 - [x] Email optional on new accounts; change or remove your own email on My account (2026-10-13)
 - [ ] 2990s stack — no local repo yet.
-- [ ] SLA hours per priority (High / Medium / Low).
+- [x] SLA hours per priority: High 1 d, Medium 3 d, Low 7 d, paused in Waiting Reporter (Lim 2026-11-02,
+      the recommended defaults). Change them in `frontend/src/lib/labels.ts` (`SLA_HOURS`).
 
 ## 1. Hub backend — done 2026-10-08 (local), not deployed
 
@@ -145,10 +146,25 @@ staging (`hookka-erp-staging-sg`), feature PR goes to staging first.
       reopened, oldest open; click a person for their open tickets as stage columns with time in stage.
       Replaces the Workload table. The report now returns `open_tickets` (every open ticket, with
       `stage_since` = last status change) in place of `oldest` and `workload`.
-  - Speed is credited to whoever holds the ticket now (no assignee history is kept). Imported done
-    tickets have no assignee, so "No one assigned" only counts open tickets.
+  - Speed was first credited to whoever holds the ticket now; since 2026-11-02 it reads the assign
+    events (see 5b phase 2). Imported done tickets have no assignee, so "No one assigned" only counts
+    open tickets.
   - Page polish in the same change: jump bar between sections, loading skeleton, "Updated hh:mm".
-- [ ] Phase 2: module per ticket, time excluding Waiting Reporter (from `ticket_events`), SLA targets per
-      priority (see Open questions) and % met.
+- [x] Phase 2 — Lim 2026-11-02 ("继续处理完"):
+  - SLA: `SLA_HOURS` in `lib/labels.ts`, counted on time excluding Waiting Reporter. Reports shows
+    Past SLA (open now), Met SLA % (this period, vs before) in the tiles, Speed table, Systems
+    compared, IT team and By module; each open ticket in a person's queue shows time left / overdue.
+    Imported tickets count as neither met nor missed.
+  - Time excluding Waiting Reporter: `WAITING_H` in services/report.ts sums the Waiting Reporter spans
+    from status events (still waiting = until now). Done rows carry `it_hours`, open rows `waiting_hours`.
+  - Credit by history: done goes to whoever held the ticket when it was done (last assign event up to
+    then), first response to whoever it was first assigned to, reopened to the holder at the reopen.
+    Falls back to the current assignee when a ticket has no assign event.
+  - Module: `tickets.module` (014_ticket_module.sql, which also allows the new `module` event kind).
+    Systems may send `module` with POST /sys/tickets (README); IT sets or corrects it on the ticket page
+    (free text, the system's existing modules suggested; an internal timeline event). Reports → By
+    module. Nothing is filled until a system sends it or IT sets it.
+- [ ] Each system's IT Support form: send `module` (Houzs ERP, Hookka, 2990s, Connect, Conts, Carres).
+- [ ] SLA in business hours (skip nights / weekends / public holidays) if calendar hours prove too harsh.
 - [ ] AI usage per system + monthly charges
 - [ ] Email / WhatsApp notify on status change

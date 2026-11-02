@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { api, type Priority, type Report, type ReportAge, type ReportRange, type Status, type TicketType } from "../api/client";
 import { Avatar, Lozenge, PriorityIcon, SystemTag, TypeIcon } from "../components/Bits";
 import { useHub } from "../components/Layout";
-import { PRIORITIES, PRIORITY_LABEL, STATUS_LABEL, TYPES, TYPE_LABEL } from "../lib/labels";
+import { PRIORITIES, PRIORITY_LABEL, SLA_HOURS, STATUS_LABEL, TYPES, TYPE_LABEL } from "../lib/labels";
 import { useFilters } from "../lib/useFilters";
 
 const RANGES: { value: ReportRange; label: string }[] = [
@@ -45,6 +45,22 @@ function duration(hours: number | null) {
   if (hours < 24) return `${hours.toFixed(1)} h`;
   return `${(hours / 24).toFixed(1)} d`;
 }
+
+// SLA: done within its priority's hours, not counting time in Waiting Reporter.
+// Imported tickets have no real times and count as neither met nor missed.
+type Timed = { priority: Priority; it_hours: number | null };
+const metSla = (x: Timed) => x.it_hours !== null && x.it_hours <= SLA_HOURS[x.priority];
+function slaRate(rows: Timed[]) {
+  const timed = rows.filter((x) => x.it_hours !== null);
+  return timed.length ? Math.round((timed.filter(metSla).length / timed.length) * 100) : null;
+}
+const pct = (n: number | null) => (n === null ? "–" : `${n}%`);
+// SLA hours an open ticket has used so far; past its target means overdue.
+const slaUsed = (t: OpenTicket) => (Date.now() - Date.parse(t.created_at)) / 3_600_000 - t.waiting_hours;
+const pastSla = (t: OpenTicket) => !t.legacy && slaUsed(t) > SLA_HOURS[t.priority];
+// Targets are whole days or hours, so no decimals.
+const slaTarget = (p: Priority) => (SLA_HOURS[p] % 24 === 0 ? `${SLA_HOURS[p] / 24} d` : `${SLA_HOURS[p]} h`);
+const SLA_NOTE = `SLA: ${PRIORITIES.map((p) => `${PRIORITY_LABEL[p]} ${slaTarget(p)}`).join(", ")} from submitted to done, not counting time in Waiting Reporter.`;
 
 // Round the axis top up to 1 / 2 / 5 x 10^n so there are at most four gridlines.
 function axisTicks(max: number) {
@@ -158,6 +174,7 @@ export default function ReportsPage() {
             </div>
             <div id="reporters" className="scroll-mt-14">
               <People r={r} mine={mine} />
+              <Modules r={r} mine={mine} />
               <SubmittedTable r={r} systems={systems} system={system} tableType={tableType} onType={(t) => filters.set({ type: t === "bug" ? null : t })} />
             </div>
             <p className="mt-4 text-[12px] text-ink-subtlest">
@@ -181,12 +198,14 @@ function NowSection({ r, mine, system }: { r: Report; mine: Mine; system: string
   const n = (f: (x: Report["active"][number]) => boolean) => sum(active.filter(f).map((x) => x.n));
   const list = (extra: Record<string, string>) => `/tickets?${new URLSearchParams({ ...(system ? { system } : {}), ...extra })}`;
   const older = (from: ReportAge[]) => n((x) => from.includes(x.age));
+  const overdue = mine(r.open_tickets).filter(pastSla).length;
   return (
     <Section title="Right now">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
         <Tile label="Open tickets" value={n(() => true)} to={list({ status: "active" })} note={`${n((x) => x.type === "bug")} bug · ${n((x) => x.type === "development")} dev`} />
         <Tile label="Not picked up" value={n((x) => x.status === "open")} to={list({ status: "open" })} note={`${n((x) => x.unassigned)} with no one assigned`} />
         <Tile label="Waiting on reporter / on hold" value={n((x) => WAITING.includes(x.status))} to={list({ status: WAITING.join(",") })} note="Not in IT's hands" />
+        <Tile label="Past SLA" value={overdue} tone="bad" note="Over target, not counting waiting on reporter" />
         <Tile label="Open over 7 days" value={older(["d7", "d14", "d30"])} tone="warn" to={list({ status: "active", sort: "created", dir: "asc" })} />
         <Tile label="Open over 14 days" value={older(["d14", "d30"])} tone="warn" to={list({ status: "active", sort: "created", dir: "asc" })} />
         <Tile label="Open over 30 days" value={older(["d30"])} tone="bad" to={list({ status: "active", sort: "created", dir: "asc" })} />
@@ -211,9 +230,10 @@ function PeriodSection({ r, mine, prevLabel }: { r: Report; mine: Mine; prevLabe
   const reopened = mine(r.reopened);
   return (
     <Section title="This period">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
         <Tile label="Submitted" value={count(opened, "now")} note={vsCount(count(opened, "now"), count(opened, "prev"), prevLabel)} />
         <Tile label="Done" value={doneN("now")} note={vsCount(doneN("now"), doneN("prev"), prevLabel)} goodWhenUp />
+        <SlaTile now={slaRate(done.filter((x) => x.period === "now"))} before={slaRate(done.filter((x) => x.period === "prev"))} />
         <Tile label="Bug: typical time to done" value={duration(median(done, "now", "bug"))} note={vsTime(median(done, "now", "bug"), median(done, "prev", "bug"))} />
         <Tile
           label="Development: typical time to done"
@@ -229,7 +249,7 @@ function PeriodSection({ r, mine, prevLabel }: { r: Report; mine: Mine; prevLabe
         />
       </div>
       <p className="mt-2 text-[12px] text-ink-subtlest">
-        Typical = median: half the tickets took less, half took more. First response = submitted until someone picked it up.
+        Typical = median: half the tickets took less, half took more. First response = submitted until someone picked it up. {SLA_NOTE}
       </p>
     </Section>
   );
@@ -512,6 +532,7 @@ function Oldest({ r, mine }: { r: Report; mine: Mine }) {
                 <span className="font-docno text-[12px] font-semibold text-ink-subtle">{t.code}</span>
                 <span className="min-w-0 flex-1 basis-40 truncate text-[13px] text-ink">{t.title}</span>
                 <PriorityIcon priority={t.priority} />
+                {pastSla(t) && <SlaPill />}
                 <Lozenge status={t.status} />
                 <span className="flex items-center gap-1.5 text-[12px] text-ink-subtle">
                   <Avatar name={t.assignee} size={18} />
@@ -546,6 +567,7 @@ function Speed({ r, mine, prevLabel }: { r: Report; mine: Mine; prevLabel: strin
         <span className="flex items-center gap-1 pl-5 text-ink-subtle">
           <PriorityIcon priority={priority} />
           {PRIORITY_LABEL[priority]}
+          <span className="text-[11px] text-ink-subtlest">· SLA {slaTarget(priority)}</span>
         </span>
       ),
       type,
@@ -553,7 +575,7 @@ function Speed({ r, mine, prevLabel }: { r: Report; mine: Mine; prevLabel: strin
     })),
   ]);
   return (
-    <Section title="Speed: bug vs development" note={`Tickets done in this period. "Before" is the typical time to done in ${prevLabel}.`}>
+    <Section title="Speed: bug vs development" note={`Tickets done in this period. "Before" is the typical time to done in ${prevLabel}. ${SLA_NOTE}`}>
       <Table>
         <thead>
           <tr className="text-[11px] text-ink-subtle">
@@ -563,15 +585,21 @@ function Speed({ r, mine, prevLabel }: { r: Report; mine: Mine; prevLabel: strin
             <Th>Done</Th>
             <Th>Typical first response</Th>
             <Th>Typical time to done</Th>
+            <Th>Excl. waiting on reporter</Th>
             <Th>9 in 10 done within</Th>
             <Th>Before</Th>
+            <Th>Met SLA</Th>
             <Th>Still open</Th>
           </tr>
         </thead>
         <tbody>
           {groups.map((g, i) => {
             const match = (x: { type: TicketType; priority: Priority }) => x.type === g.type && (!g.priority || x.priority === g.priority);
-            const hours = (rows: typeof done, p: string) => rows.filter((x) => match(x) && x.period === p && x.hours !== null).map((x) => x.hours!);
+            const hours = (rows: { type: TicketType; priority: Priority; period: string; hours: number | null }[], p: string) =>
+              rows.filter((x) => match(x) && x.period === p && x.hours !== null).map((x) => x.hours!);
+            const doneNow = done.filter((x) => match(x) && x.period === "now");
+            const itMedian = percentile(doneNow.filter((x) => x.it_hours !== null).map((x) => x.it_hours!), 0.5);
+            const rate = slaRate(doneNow);
             const now = hours(done, "now");
             const med = percentile(now, 0.5);
             const prev = percentile(hours(done, "prev"), 0.5);
@@ -584,10 +612,12 @@ function Speed({ r, mine, prevLabel }: { r: Report; mine: Mine; prevLabel: strin
                 <Td strong={!g.priority}>{done.filter((x) => match(x) && x.period === "now").length}</Td>
                 <Td>{duration(percentile(hours(response, "now"), 0.5))}</Td>
                 <Td strong={!g.priority}>{duration(med)}</Td>
+                <Td>{duration(itMedian)}</Td>
                 <Td>{duration(percentile(now, 0.9))}</Td>
                 <Td>
                   <span className={med !== null && prev !== null ? (med <= prev ? "text-loz-green-ink" : "text-loz-red-ink") : ""}>{duration(prev)}</span>
                 </Td>
+                <Td tone={rate !== null && rate < 80 ? "bad" : undefined}>{pct(rate)}</Td>
                 <Td>{open}</Td>
               </tr>
             );
@@ -613,7 +643,7 @@ function Scorecard({ r, systems, system }: { r: Report; systems: SystemList; sys
     const chases = sum(r.follow_ups.filter((x) => x.sys === s.code).map((x) => x.n));
     const reopened = sum(r.reopened.filter((x) => x.sys === s.code && x.period === "now").map((x) => x.n));
     const open = sum(r.active.filter((x) => x.sys === s.code).map((x) => x.n));
-    return { ...s, now, prev, bugs, done: done.length, bugMedian: percentile(bugHours, 0.5), reporters, chases, reopened, open };
+    return { ...s, now, prev, bugs, done: done.length, bugMedian: percentile(bugHours, 0.5), sla: slaRate(done), reporters, chases, reopened, open };
   });
   rows.sort((a, b) => b.now - a.now || b.open - a.open);
   const maxShare = Math.max(1, ...rows.map((x) => x.now));
@@ -631,6 +661,7 @@ function Scorecard({ r, systems, system }: { r: Report; systems: SystemList; sys
             <Th>Bug share</Th>
             <Th>Done</Th>
             <Th>Typical bug fix</Th>
+            <Th>Met SLA</Th>
             <Th>Reopened</Th>
             <Th>People reporting</Th>
             <Th>Reporter follow-ups</Th>
@@ -658,6 +689,7 @@ function Scorecard({ r, systems, system }: { r: Report; systems: SystemList; sys
               <Td>{s.now ? `${Math.round((s.bugs / s.now) * 100)}%` : "–"}</Td>
               <Td>{s.done}</Td>
               <Td>{duration(s.bugMedian)}</Td>
+              <Td tone={s.sla !== null && s.sla < 80 ? "bad" : undefined}>{pct(s.sla)}</Td>
               <Td tone={s.reopened ? "warn" : undefined}>{s.reopened}</Td>
               <Td>{s.reporters}</Td>
               <Td>{s.chases}</Td>
@@ -805,6 +837,8 @@ function Team({ r, mine, prevLabel }: { r: Report; mine: Mine; prevLabel: string
         id: o.find((t) => t.assignee_id)?.assignee_id ?? null,
         open: o,
         byStage: STATUS_COLUMNS.map((st) => o.filter((t) => t.status === st).length),
+        overdue: o.filter(pastSla).length,
+        sla: slaRate(d.filter((x) => x.period === "now")),
         done: d.filter((x) => x.period === "now").length,
         donePrev: d.filter((x) => x.period === "prev").length,
         median: percentile(hours("now"), 0.5),
@@ -840,8 +874,10 @@ function Team({ r, mine, prevLabel }: { r: Report; mine: Mine; prevLabel: string
                 </Th>
                 <Th>Open now</Th>
                 <Th left>By stage</Th>
+                <Th>Past SLA</Th>
                 <Th>Done</Th>
                 <Th>Before</Th>
+                <Th>Met SLA</Th>
                 <Th>Typical time to done</Th>
                 <Th>9 in 10 done within</Th>
                 <Th>Typical first response</Th>
@@ -868,10 +904,12 @@ function Team({ r, mine, prevLabel }: { r: Report; mine: Mine; prevLabel: string
                     <td className="min-w-[130px] px-2 py-1.5">
                       <StageBar counts={p.byStage} width={(p.open.length / maxOpen) * 100} />
                     </td>
+                    <Td tone={p.overdue ? "bad" : undefined}>{p.overdue}</Td>
                     <Td strong={!!p.name}>{p.name ? p.done : "–"}</Td>
                     <Td>
                       {p.name ? <span className={p.done > p.donePrev ? "text-loz-green-ink" : p.done < p.donePrev ? "text-loz-red-ink" : ""}>{p.donePrev}</span> : "–"}
                     </Td>
+                    <Td tone={p.sla !== null && p.sla < 80 ? "bad" : undefined}>{p.name ? pct(p.sla) : "–"}</Td>
                     <Td strong={p.median !== null}>
                       <span className={p.median !== null && p.prevMedian !== null ? (p.median <= p.prevMedian ? "text-loz-green-ink" : "text-loz-red-ink") : ""}>
                         {duration(p.median)}
@@ -889,7 +927,8 @@ function Team({ r, mine, prevLabel }: { r: Report; mine: Mine; prevLabel: string
             </tbody>
           </Table>
           <p className="mt-2 text-[12px] text-ink-subtlest">
-            Time to done is coloured against the person's own typical time before. A finished ticket counts for whoever holds it now.
+            Time to done is coloured against the person's own typical time before. A finished ticket counts for whoever held it when it was
+            done; first response for whoever picked it up. {SLA_NOTE}
           </p>
           {selected && <Queue name={selected.name} id={selected.id} tickets={selected.open} />}
         </>
@@ -979,6 +1018,7 @@ function Queue({ name, id, tickets }: { name: string | null; id: number | null; 
                         <span className={daysOld(t.stage_since) >= 7 ? "font-semibold text-loz-orange-ink" : ""}>{since(t.stage_since)} in stage</span>
                         {" · "}open {since(t.created_at)}
                       </div>
+                      {!t.legacy && <SlaLeft t={t} />}
                     </Link>
                   ))}
                 </div>
@@ -988,6 +1028,88 @@ function Queue({ name, id, tickets }: { name: string | null; id: number | null; 
         </div>
       )}
     </div>
+  );
+}
+
+function SlaPill() {
+  return <span className="rounded-full bg-loz-red px-2 py-[3px] text-[10px] font-bold uppercase leading-none tracking-wider text-loz-red-ink">Past SLA</span>;
+}
+
+// Time left on an open ticket's SLA, or how far past it; the clock is paused while waiting on the reporter.
+function SlaLeft({ t }: { t: OpenTicket }) {
+  const left = SLA_HOURS[t.priority] - slaUsed(t);
+  const paused = t.status === "waiting_reporter";
+  const cls = left < 0 ? "font-semibold text-loz-red-ink" : left < SLA_HOURS[t.priority] / 4 ? "font-semibold text-loz-orange-ink" : "text-ink-subtlest";
+  return (
+    <div className={`mt-0.5 text-[11px] ${cls}`}>
+      {left < 0 ? `Past SLA by ${duration(-left)}` : `SLA: ${duration(left)} left`}
+      {paused && <span className="font-normal text-ink-subtlest"> · paused</span>}
+    </div>
+  );
+}
+
+function SlaTile({ now, before }: { now: number | null; before: number | null }) {
+  const note = before === null ? undefined : { text: `Before: ${before}%`, good: now === null ? undefined : now >= before };
+  return <Tile label="Met SLA" value={pct(now)} note={note} tone={now !== null && now < 80 ? "bad" : undefined} />;
+}
+
+// ---- Modules ---------------------------------------------------------------
+
+function Modules({ r, mine }: { r: Report; mine: Mine }) {
+  const rows = mine(r.modules);
+  const done = mine(r.done).filter((x) => x.period === "now");
+  const named = rows.filter((x) => x.module);
+  const list = rows
+    .map((x) => {
+      const d = done.filter((y) => y.sys === x.sys && y.module === x.module);
+      return { ...x, done: d.length, sla: slaRate(d) };
+    })
+    .filter((x) => x.opened || x.open_now)
+    .sort((a, b) => b.opened - a.opened || b.open_now - a.open_now)
+    .slice(0, 15);
+  return (
+    <Section
+      title="By module"
+      note="Which part of each system the tickets are about. Systems send the module with each ticket; IT can set or correct it on the ticket page."
+    >
+      {named.length === 0 ? (
+        <Empty>No module set on any ticket yet. Set one on a ticket's page, or have the system send `module` with each ticket.</Empty>
+      ) : (
+        <Table>
+          <thead>
+            <tr className="text-[11px] text-ink-subtle">
+              <Th left sticky>
+                Module
+              </Th>
+              <Th>Submitted</Th>
+              <Th>Bug</Th>
+              <Th>Dev</Th>
+              <Th>Open now</Th>
+              <Th>Done</Th>
+              <Th>Met SLA</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {list.map((x) => (
+              <tr key={`${x.sys}|${x.module ?? ""}`} className="border-t border-line-subtle">
+                <Td left sticky>
+                  <div className="flex items-center gap-1.5">
+                    <SystemTag code={x.sys} />
+                    <span className={x.module ? "text-ink" : "text-ink-subtlest"}>{x.module ?? "Not set"}</span>
+                  </div>
+                </Td>
+                <Td strong>{x.opened}</Td>
+                <Td>{x.bugs}</Td>
+                <Td>{x.opened - x.bugs}</Td>
+                <Td>{x.open_now}</Td>
+                <Td>{x.done}</Td>
+                <Td tone={x.sla !== null && x.sla < 80 ? "bad" : undefined}>{pct(x.sla)}</Td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
+    </Section>
   );
 }
 
@@ -1022,8 +1144,8 @@ function JumpBar() {
 function Skeleton() {
   return (
     <div className="mt-4 animate-pulse space-y-4" aria-hidden>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        {Array.from({ length: 6 }, (_, i) => (
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
+        {Array.from({ length: 7 }, (_, i) => (
           <div key={i} className="card h-[84px]" />
         ))}
       </div>

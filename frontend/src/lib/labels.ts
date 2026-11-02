@@ -38,6 +38,10 @@ export const PRIORITIES = Object.keys(PRIORITY_LABEL) as Priority[];
 export const TYPES = Object.keys(TYPE_LABEL) as TicketType[];
 export const ACTIVE: Status[] = ["open", "in_progress", "on_hold", "testing", "waiting_reporter"];
 
+// SLA: hours from submitted to done, per priority, not counting time in Waiting Reporter.
+// Set by Lim 2026-11-02 (the recommended defaults); change them here.
+export const SLA_HOURS: Record<Priority, number> = { high: 24, medium: 72, low: 168 };
+
 // The reporter spoke last on a ticket someone is already working.
 export const isReporterWaiting = (ticket: TicketRow) =>
   ticket.last_public_actor === "reporter" && ticket.status !== "open" && ACTIVE.includes(ticket.status);
