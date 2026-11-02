@@ -18,7 +18,7 @@ export type TicketPriority = (typeof TICKET_PRIORITIES)[number];
 export type TicketStatus = (typeof TICKET_STATUSES)[number];
 export type Visibility = "public" | "internal";
 export type AuthorKind = "reporter" | "developer" | "system";
-export type EventKind = "created" | "comment" | "status" | "assign" | "priority" | "type";
+export type EventKind = "created" | "comment" | "status" | "assign" | "priority" | "type" | "module";
 
 const id = () => integer("id").primaryKey().generatedByDefaultAsIdentity();
 
@@ -92,6 +92,7 @@ export const tickets = pgTable("tickets", {
   reporterPhone: text("reporter_phone"),
   reporterDepartment: text("reporter_department"),
   pageUrl: text("page_url"),
+  module: text("module"),
   userAgent: text("user_agent"),
   appVersion: text("app_version"),
   assigneeId: integer("assignee_id"),

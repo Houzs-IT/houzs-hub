@@ -10,7 +10,7 @@ import { useOutside } from "./FilterButton";
 import ImageLightbox from "./ImageLightbox";
 import { useHub } from "./Layout";
 
-type Detail = { ticket: TicketFull; events: TicketEvent[] };
+type Detail = { ticket: TicketFull; events: TicketEvent[]; modules?: string[] };
 
 const MAX_FILES = 5;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
@@ -110,6 +110,15 @@ function historyText(e: TicketEvent): ReactNode {
         <ArrowRight className="h-3.5 w-3.5 text-ink-subtlest" />
         {e.toValue && <Lozenge status={e.toValue as Status} />}
       </span>
+    );
+  if (e.kind === "module")
+    return e.toValue ? (
+      <>
+        set the Module to <b className="font-semibold">{e.toValue}</b>
+        {e.fromValue && <> (was {e.fromValue})</>}
+      </>
+    ) : (
+      <>cleared the Module {e.fromValue}</>
     );
   const label = (v: string | null) =>
     e.kind === "priority" ? PRIORITY_LABEL[v as keyof typeof PRIORITY_LABEL] ?? v : TYPE_LABEL[v as keyof typeof TYPE_LABEL] ?? v;
@@ -423,6 +432,38 @@ function Composer({ code, status, onDone }: { code: string; status: Status; onDo
   );
 }
 
+// Free text so each system can name its own modules; the ones already used are suggested.
+function ModuleField({ value, options, disabled, onSave }: { value: string | null; options: string[]; disabled: boolean; onSave: (v: string | null) => void }) {
+  const [draft, setDraft] = useState(value ?? "");
+  const save = () => {
+    const next = draft.trim() || null;
+    if (next !== value) onSave(next);
+  };
+  return (
+    <>
+      <input
+        className="inline-select cursor-text"
+        list="ticket-modules"
+        placeholder="Not set"
+        maxLength={60}
+        value={draft}
+        disabled={disabled}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={save}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+          if (e.key === "Escape") setDraft(value ?? "");
+        }}
+      />
+      <datalist id="ticket-modules">
+        {options.map((m) => (
+          <option key={m} value={m} />
+        ))}
+      </datalist>
+    </>
+  );
+}
+
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="grid grid-cols-[110px_1fr] items-center gap-3 py-1.5">
@@ -643,6 +684,9 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
                 ))}
               </select>
             </div>
+          </Row>
+          <Row label="Module">
+            <ModuleField key={t.module ?? ""} value={t.module} options={data.modules ?? []} disabled={saving} onSave={(module) => patch({ module })} />
           </Row>
           {/* Tickets from before occurred_at defaulted to submission time fall back to it here too. */}
           <Row label="Occurred">{fmtDateTime(t.occurredAt ?? t.createdAt)}</Row>

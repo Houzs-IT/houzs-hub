@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, gt, gte, inArray, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, gte, inArray, ilike, isNotNull, isNull, or, sql, type SQL } from "drizzle-orm";
 import { Hono } from "hono";
 import { schema, type DB } from "../db/client";
 import {
@@ -328,7 +328,7 @@ dev.get("/tickets/:code", async (c) => {
   const ticket = await findTicket(db, c.req.param("code"));
   if (!ticket) return c.json({ error: "Not found" }, 404);
 
-  const [events, atts, [system]] = await Promise.all([
+  const [events, atts, [system], modules] = await Promise.all([
     db.select().from(schema.ticketEvents).where(eq(schema.ticketEvents.ticketId, ticket.id)).orderBy(asc(schema.ticketEvents.id)),
     db
       .select({
@@ -341,11 +341,18 @@ dev.get("/tickets/:code", async (c) => {
       .from(schema.ticketAttachments)
       .where(eq(schema.ticketAttachments.ticketId, ticket.id)),
     db.select({ name: schema.systems.name }).from(schema.systems).where(eq(schema.systems.code, ticket.systemCode)),
+    // Modules already used in this system, offered when IT sets one.
+    db
+      .selectDistinct({ module: t.module })
+      .from(t)
+      .where(and(eq(t.systemCode, ticket.systemCode), isNotNull(t.module)))
+      .orderBy(t.module),
   ]);
 
   return c.json({
     ticket: { ...ticket, system_name: system?.name ?? ticket.systemCode },
     events: events.map((e) => ({ ...e, attachments: atts.filter((a) => a.event_id === e.id) })),
+    modules: modules.map((m) => m.module!),
   });
 });
 
@@ -354,17 +361,18 @@ type Changes = {
   priority?: Ticket["priority"];
   type?: Ticket["type"];
   assigneeId?: number | null;
+  module?: string | null;
 };
 
 // Writes one timeline event per changed field. Status and assignee changes are
 // public (the reporter sees who is on it and where it stands); priority and
-// type are triage detail and stay internal.
+// type (and module) are triage detail and stay internal.
 // ponytail: the events insert and the ticket update are two statements without a
 // transaction; wrap them in db.transaction if a half-applied change is ever seen.
 async function applyChanges(db: DB, ticket: Ticket, me: User, ch: Changes, at: string) {
   const patch: Partial<Ticket> = {};
   const events: (typeof schema.ticketEvents.$inferInsert)[] = [];
-  const event = (kind: "assign" | "status" | "priority" | "type", visibility: "public" | "internal", fromValue: string | null, toValue: string | null) =>
+  const event = (kind: "assign" | "status" | "priority" | "type" | "module", visibility: "public" | "internal", fromValue: string | null, toValue: string | null) =>
     events.push({ ticketId: ticket.id, kind, visibility, authorKind: "developer", authorName: me.name, userId: me.id, fromValue, toValue, createdAt: at });
   let publicTouch = false;
 
@@ -399,6 +407,11 @@ async function applyChanges(db: DB, ticket: Ticket, me: User, ch: Changes, at: s
     }
   }
 
+  if (ch.module !== undefined && ch.module !== ticket.module) {
+    event("module", "internal", ticket.module, ch.module);
+    patch.module = ch.module;
+  }
+
   if (events.length) await db.insert(schema.ticketEvents).values(events);
   if (publicTouch) {
     patch.lastPublicActivityAt = at;
@@ -420,6 +433,7 @@ function parseChanges(f: Record<string, string | undefined>): Changes {
     else if (/^\d+$/.test(f.assignee_id)) ch.assigneeId = Number(f.assignee_id);
     else throw new InputError("assignee_id must be a user id or null");
   }
+  if (f.module !== undefined) ch.module = f.module === "null" ? null : f.module.trim().slice(0, 60) || null;
   return ch;
 }
 
