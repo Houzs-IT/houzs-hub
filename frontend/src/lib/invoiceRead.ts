@@ -1,6 +1,6 @@
 // Reads a vendor invoice from the text of its PDF (lib/pdfText.ts gives one line per printed
 // row, pieces joined by two spaces). Known layouts: Supabase (cost per project ID), Cloudflare
-// and Anthropic (Stripe invoices). Anything else gets the general fields when they can be
+// and Anthropic (Stripe invoices), Channex. Anything else gets the general fields when they can be
 // found; the person fills in the rest. Nothing here talks to the hub.
 
 export type InvoiceLineKind = "charge" | "tax" | "discount" | "rounding";
@@ -23,16 +23,19 @@ const VENDORS: [RegExp, string][] = [
   [/Supabase Pte/i, "Supabase"],
   [/Cloudflare, Inc/i, "Cloudflare"],
   [/Anthropic, PBC/i, "Anthropic"],
+  [/Channex\.io/i, "Channex"],
 ];
 const VENDOR_MAIL = /@(supabase|cloudflare|anthropic|stripe)\./i;
 const PROJECT_REF = /^[a-z]{20}$/; // Supabase project IDs
 const AMT = String.raw`([\d,]+\.\d{2})`;
 const num = (s: string) => Number(s.replace(/,/g, ""));
 
-// "Oct 17, 2026" / "October 17, 2026" / "17/10/2026" to 2026-10-17.
+// "Oct 17, 2026" / "October 17, 2026" / "17 Oct 2026" / "17/10/2026" to 2026-10-17.
 function date(s: string): string | null {
   let m = s.match(/([A-Za-z]{3})[a-z]*\.?\s+(\d{1,2}),?\s+(\d{4})/);
   if (m && MONTHS[m[1]!.toLowerCase()]) return `${m[3]}-${MONTHS[m[1]!.toLowerCase()]}-${m[2]!.padStart(2, "0")}`;
+  m = s.match(/(\d{1,2})\s+([A-Za-z]{3})[a-z]*\.?\s+(\d{4})/);
+  if (m && MONTHS[m[2]!.toLowerCase()]) return `${m[3]}-${MONTHS[m[2]!.toLowerCase()]}-${m[1]!.padStart(2, "0")}`;
   m = s.match(/(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})/);
   return m ? `${m[3]}-${m[2]!.padStart(2, "0")}-${m[1]!.padStart(2, "0")}` : null;
 }
@@ -78,7 +81,11 @@ export function readInvoiceText(text: string): ReadInvoice {
     out.billTo = [name, mail].filter(Boolean).join(" · ");
   }
 
+  if (out.vendor === "Channex") readChannexHeader(rows, out);
+
   out.lines = readLines(rows);
+  // Channex prints a Type column between the description and the quantity.
+  if (out.vendor === "Channex") out.lines = out.lines.map((l) => ({ ...l, description: l.description.replace(/\s+(Subscription|Usage)$/, "") }));
   const sum = out.lines.reduce((a, l) => a + l.amount, 0);
   if (out.total !== null) {
     const diff = Math.round((out.total - sum) * 100) / 100;
@@ -95,6 +102,26 @@ export function readInvoiceText(text: string): ReadInvoice {
   if (out.total === null) out.warnings.push("Total not found: type it.");
   out.lines = out.lines.map((l) => ({ ...l, amount: Math.round(l.amount * 100) / 100 }));
   return out;
+}
+
+// Channex labels its header "Invoice:", "Date:" and "Total:", beside the address it bills to.
+function readChannexHeader(rows: string[], out: ReadInvoice) {
+  for (const [i, r] of rows.entries()) {
+    const no = r.match(/^(.*?)\s*Invoice:\s+(\S+)/);
+    if (no && !out.invoiceNo) {
+      out.invoiceNo = no[2]!;
+      out.billTo = no[1]!.trim() || rows[i - 1]?.trim() || "";
+    }
+    const d = r.match(/\bDate:\s+(.+)$/);
+    if (d && !out.invoiceDate) out.invoiceDate = date(d[1]!) ?? "";
+    const t = r.match(new RegExp(String.raw`\bTotal:\s+\$${AMT}`));
+    if (t) out.total = num(t[1]!);
+    const p = r.match(/^(\d{1,2} [A-Za-z]{3} \d{4})\s+-\s+(\d{1,2} [A-Za-z]{3} \d{4})$/);
+    if (p) {
+      out.periodFrom = date(p[1]!);
+      out.periodTo = date(p[2]!);
+    }
+  }
 }
 
 // The lines that cost money: "Description  Qty  $Unit  [8%]  $Amount" rows, discounts, and the
