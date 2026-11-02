@@ -28,6 +28,12 @@ binding = "HYPERDRIVE"
 id = "b69ab87887944295afe3f39134e6434d"
 localConnectionString = "postgres://postgres:postgres@127.0.0.1:54329/postgres"
 
+# Health alert emails (src/services/healthAlerts.ts). They go out once the secret
+# RESEND_API_KEY is set: `wrangler secret put RESEND_API_KEY`.
+[vars]
+HEALTH_ALERT_TO = "it@houzscentury.com"
+HEALTH_ALERT_FROM = "Houzs IT Hub <no-reply@houzscentury.com>"
+
 [[r2_buckets]]
 binding = "FILES"
 bucket_name = "houzs-it-hub"

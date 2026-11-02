@@ -8,6 +8,7 @@ import sysAiUsage from "./routes/sysAiUsage";
 import sysHealth from "./routes/sysHealth";
 import { notifyTicketsChanged } from "./live";
 import { runHealthChecks } from "./services/health";
+import { sendHealthAlerts } from "./services/healthAlerts";
 import { nowIso } from "./services/tickets";
 import type { Env } from "./types";
 import { syncAnthropicCosts, UsageSetupError } from "./services/anthropicUsage";
@@ -58,10 +59,15 @@ async function autoCloseResolved(env: Env) {
 export default {
   fetch: app.fetch,
   // One cron, every 5 minutes, so the hub adds no trigger to its account's quota:
-  // health checks run each time; the ticket auto-close and the Anthropic cost read once a
+  // health checks and their alert emails run each time; the ticket auto-close and the Anthropic cost read once a
   // day at 02:00 UTC (10:00 GMT+8).
   async scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext) {
-    ctx.waitUntil(runHealthChecks(getDb(env)));
+    const db = getDb(env);
+    ctx.waitUntil(
+      runHealthChecks(db)
+        .then(() => sendHealthAlerts(env, db))
+        .catch((e) => console.error("[health]", e)),
+    );
     const at = new Date(event.scheduledTime);
     if (at.getUTCHours() === 2 && at.getUTCMinutes() < 5) {
       ctx.waitUntil(autoCloseResolved(env));

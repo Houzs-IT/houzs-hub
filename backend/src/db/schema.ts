@@ -360,6 +360,15 @@ export const healthReports = pgTable("health_reports", {
   report: jsonb("report").$type<HealthReport>().notNull(),
 });
 
+// A problem the hub has emailed about, or is about to (see services/healthAlerts.ts).
+export const healthAlerts = pgTable("health_alerts", {
+  key: text("key").primaryKey(),
+  system: text("system").notNull(),
+  what: text("what").notNull(),
+  since: text("since").notNull(),
+  emailedAt: text("emailed_at"),
+});
+
 export type HealthStatus = "ok" | "warning" | "critical" | "off";
 export type HealthReport = {
   ok: boolean;
