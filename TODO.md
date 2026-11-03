@@ -164,7 +164,14 @@ staging (`hookka-erp-staging-sg`), feature PR goes to staging first.
     Systems may send `module` with POST /sys/tickets (README); IT sets or corrects it on the ticket page
     (free text, the system's existing modules suggested; an internal timeline event). Reports → By
     module. Nothing is filled until a system sends it or IT sets it.
-- [ ] Each system's IT Support form: send `module` (Houzs ERP, Hookka, 2990s, Connect, Conts, Carres).
+- [x] Each system's IT Support form sends `module` (2026-11-03): a "Which part of the system" picker built from
+      that app's own menu, pre-picked from the page the reporter came from, "Not sure" sends nothing.
+      Houzs ERP (Houzs Century + 2990s) Houzs-Century/Houzs-ERP#5144 — sidebar top entry + group, e.g.
+      "Supply Chain · Procurement"; Connect Houzs-IT/houzs-connect#158 — rail item or "Settings · <page>", always
+      sent in English; Hookka Houzs-IT/hookka-erp-testing#1143 — sidebar group, e.g. "Sales & Customers";
+      Conts Houzs-IT/Conts-ERP#584 — "<workspace> · <group>", e.g. "The Conts · Reservations". All live; no real
+      ticket has been sent to confirm end to end yet.
+- [ ] Carres: no repository found for its IT Support form; needs the owner to say where it lives.
 - [ ] SLA in business hours (skip nights / weekends / public holidays) if calendar hours prove too harsh.
 - [ ] AI usage per system + monthly charges
 - [ ] Email / WhatsApp notify on status change
