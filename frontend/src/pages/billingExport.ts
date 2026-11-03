@@ -4,7 +4,7 @@
 import type { BillingData as Data, ChargeRow } from "../api/client";
 import { money } from "../lib/format";
 import { buildXlsx, type Cell, type Sheet } from "../lib/xlsx";
-import { BILLED, moduleLabel, NONE, sharesOf, STATUS } from "./BillingCharge";
+import { areaRank, BILLED, featureArea, moduleLabel, NONE, sharesOf, STATUS } from "./BillingCharge";
 import { allSystemsOf, fixedPerMonth, live, type T, type Unmatched } from "./BillingSystems";
 import { monthName, monthOf } from "./BillingStatements";
 
@@ -157,7 +157,7 @@ function aiUsage({ data, month }: ExportInput): Sheet {
     [{ v: `Anthropic cost, ${monthName(month)}`, s: "title" }],
     [{ v: "Each workspace's total is Anthropic's real cost. Modules split it by the system's own log of its AI calls.", s: "note" }],
     [],
-    head(["Workspace / module", "System", "Calls", "Cost (USD)", "Share"]),
+    head(["Workspace / module / feature", "System", "Calls", "Cost (USD)", "Share"]),
   ];
   for (const w of ws) {
     const cost = usdOf(w.workspaceId);
@@ -166,8 +166,17 @@ function aiUsage({ data, month }: ExportInput): Sheet {
     const est = data.moduleUsage.filter((m) => m.vendor === "Anthropic" && m.sourceSystem === w.systemCode && m.month === month);
     const estTotal = est.reduce((a, m) => a + m.usd, 0);
     if (!w.systemCode || estTotal <= 0) continue;
-    for (const m of [...est].sort((a, b) => b.usd - a.usd)) {
-      rows.push([`    ${moduleLabel(m.module)}`, systemName(m.systemCode), m.calls, { v: (cost * m.usd) / estTotal, s: "usd" }, { v: m.usd / estTotal, s: "pct" }]);
+    // By module (as the system's menu names it), then feature: the same grouping as the page.
+    const groups = new Map<string, typeof est>();
+    for (const m of est) groups.set(`${m.systemCode}|${featureArea(m.module)}`, [...(groups.get(`${m.systemCode}|${featureArea(m.module)}`) ?? []), m]);
+    const usdOf2 = (items: typeof est) => items.reduce((x, m) => x + m.usd, 0);
+    for (const [k, items] of [...groups].sort(([a, x], [b, y]) => areaRank(a.split("|")[1]!) - areaRank(b.split("|")[1]!) || usdOf2(y) - usdOf2(x))) {
+      const [sys, area] = k.split("|") as [string, string];
+      const calls = items.reduce((x, m) => x + m.calls, 0);
+      rows.push([`    ${area}`, systemName(sys), calls, { v: (cost * usdOf2(items)) / estTotal, s: "usd" }, { v: usdOf2(items) / estTotal, s: "pct" }]);
+      for (const m of [...items].sort((a, b) => b.usd - a.usd)) {
+        rows.push([`        ${moduleLabel(m.module)}`, systemName(m.systemCode), m.calls, { v: (cost * m.usd) / estTotal, s: "usd" }, { v: m.usd / estTotal, s: "pct" }]);
+      }
     }
   }
   rows.push([{ v: "Total", s: "bold" }, null, null, { v: total, s: "usdBold" }, { v: total ? 1 : null, s: "pctBold" }]);
