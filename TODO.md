@@ -174,4 +174,9 @@ staging (`hookka-erp-staging-sg`), feature PR goes to staging first.
 - [ ] Carres: no repository found for its IT Support form; needs the owner to say where it lives.
 - [ ] SLA in business hours (skip nights / weekends / public holidays) if calendar hours prove too harsh.
 - [ ] AI usage per system + monthly charges
+- [x] System billing by module — Lim 2026-11-03 ("by 系统、by module、by submodule"): each system's page has a
+      By module table (module → charge / AI feature) that adds up to its Paid in By system. AI features map to the
+      system's menu modules in `FEATURES` (`frontend/src/pages/BillingCharge.tsx`), e.g. `scan_gr` → Supply Chain ·
+      Procurement; assistant / agents / unknown → Others; a charge with no module = Infrastructure. The AI usage by
+      workspace table groups features by the same modules. A new AI feature needs one line in `FEATURES`.
 - [ ] Email / WhatsApp notify on status change
