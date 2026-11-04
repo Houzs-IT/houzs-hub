@@ -106,8 +106,8 @@ export type BillingData = {
   invoiceLines: InvoiceLineRow[];
   projectRefs: ProjectRef[];
   workspaces: VendorWorkspace[];
-  usage: { month: string; vendor: string; workspaceId: string; usd: number }[];
-  usageSyncedAt: string | null;
+  /** `usd` is in `currency`: Meta's WhatsApp charges are ringgit. */
+  usage: { month: string; vendor: string; workspaceId: string; usd: number; currency: string }[];
   moduleUsage: ModuleUsage[];
 };
 // A system's own AI cost estimate for one month, company (systemCode) and module; shares only.

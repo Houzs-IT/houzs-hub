@@ -256,7 +256,7 @@ export function useChargeEditor(data: Data, setData: (d: Data) => void) {
           />
           {!!draft.splitByUsage && (
             <p className="-mt-2 text-[11px] text-ink-subtlest sm:col-span-2">
-              Each month is shared by what each workspace used, read from the vendor (Anthropic) every day. Set each workspace's system on the Overview.
+              Each month is shared by what each workspace used: read from Anthropic, or sent by Houzs Connect for Meta, every day. Set each workspace's system on the Overview.
             </p>
           )}
           <Field label="Company" value={draft.company} onChange={set("company")} hint="Conts, Houzs, Hookka or Shared" />

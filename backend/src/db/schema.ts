@@ -298,7 +298,8 @@ export const vendorWorkspaces = pgTable(
   (table) => [primaryKey({ columns: [table.vendor, table.workspaceId] })],
 );
 
-// Cost per workspace per day, from the vendor's own report.
+// Cost per workspace per day, from the vendor's own report. `usd` is in `currency`
+// (Meta's WhatsApp charges are ringgit); a month's cost is kept on its first day.
 export const usageCosts = pgTable(
   "usage_costs",
   {
@@ -306,6 +307,7 @@ export const usageCosts = pgTable(
     vendor: text("vendor").notNull(),
     workspaceId: text("workspace_id").notNull(),
     usd: numeric("usd", { precision: 14, scale: 6 }).notNull(),
+    currency: text("currency").notNull().default("USD"),
   },
   (table) => [primaryKey({ columns: [table.day, table.vendor, table.workspaceId] })],
 );
