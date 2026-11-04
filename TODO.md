@@ -175,12 +175,17 @@ staging (`hookka-erp-staging-sg`), feature PR goes to staging first.
       `activeNavModule` (rail module, e.g. "Sales Order"; "Finance · Money in"), no visible field, because its modal
       opens in place and its approved UI was not to change. #2239 pinned its Playwright CI jobs to ubuntu-24.04.
 - [ ] System billing, data to settle (read 2026-11-04, nothing changed):
-  - H01 (Anthropic, RM634.26 in Oct, status to_confirm, no system): six RM158 top-ups on Card 6402 from 24 Sep to
-    19 Oct. Its notes list Houzs ERP AI features, migration 010 calls it Wei Siang's own account. Owner to decide
-    the system; until then Houzs ERP shows RM0 paid.
+  - [x] H01 (Anthropic, RM634.26 in Oct) set to Split by usage, Lim 2026-11-04: K03's notes say Houzs ERP and Hookka
+    share this account and its card lines all sit on H01. Oct now reads Houzs ERP RM565.79, Hookka +RM66.42,
+    2990s RM2.05. Its two Sep lines stay under No system: Sep has no usage to split by. To undo: PATCH
+    `/billing/charges/11` with `{ "splitByUsage": 0 }`. Status stays to_confirm.
+  - H11 (Connect's Anthropic key) says it expires 4 Nov 2026 and receipt reading stops then; a paid key under it@
+    is the owner's to set. UNTESTED whether it has stopped.
   - S08 (Anthropic credit, split by usage): invoice AFUJNPXZ-0001 of 2026-10-23 (USD 108) has no statement line.
     The imported lines end before it, so match it when the next card statement is imported.
-  - Four Sep Anthropic lines (RM89.48, RM88.95, RM22.24, RM889.55) are unmatched to any charge.
+  - Four Sep Anthropic lines on Visa 6177 (RM89.48, RM88.95, RM22.24, RM889.55) are unmatched: USD 216 looks like S01,
+    but S01 is on Card 6402 and paid USD 216 there too on 30 Sep, so owner to say whose card and what they are.
+  - By module's Usage column shows USD and ringgit apart: Meta (S09) reports in ringgit, in Others.
 - [ ] SLA in business hours (skip nights / weekends / public holidays) if calendar hours prove too harsh.
 - [ ] AI usage per system + monthly charges
 - [x] System billing by module — Lim 2026-11-03 ("by 系统、by module、by submodule"): each system's page has a
