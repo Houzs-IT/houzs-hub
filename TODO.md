@@ -170,8 +170,17 @@ staging (`hookka-erp-staging-sg`), feature PR goes to staging first.
       "Supply Chain · Procurement"; Connect Houzs-IT/houzs-connect#158 — rail item or "Settings · <page>", always
       sent in English; Hookka Houzs-IT/hookka-erp-testing#1143 — sidebar group, e.g. "Sales & Customers";
       Conts Houzs-IT/Conts-ERP#584 — "<workspace> · <group>", e.g. "The Conts · Reservations". All live; no real
-      ticket has been sent to confirm end to end yet.
-- [ ] Carres: no repository found for its IT Support form; needs the owner to say where it lives.
+      Confirmed by real tickets on 2026-11-04 (HC-0210 Supply Chain · Transportation; Hookka HR & Operations).
+- [x] Carres sends `module` too (2026-11-04), Houzs-IT/Carres-Portal-v2#2238: stamped from the page by
+      `activeNavModule` (rail module, e.g. "Sales Order"; "Finance · Money in"), no visible field, because its modal
+      opens in place and its approved UI was not to change. #2239 pinned its Playwright CI jobs to ubuntu-24.04.
+- [ ] System billing, data to settle (read 2026-11-04, nothing changed):
+  - H01 (Anthropic, RM634.26 in Oct, status to_confirm, no system): six RM158 top-ups on Card 6402 from 24 Sep to
+    19 Oct. Its notes list Houzs ERP AI features, migration 010 calls it Wei Siang's own account. Owner to decide
+    the system; until then Houzs ERP shows RM0 paid.
+  - S08 (Anthropic credit, split by usage): invoice AFUJNPXZ-0001 of 2026-10-23 (USD 108) has no statement line.
+    The imported lines end before it, so match it when the next card statement is imported.
+  - Four Sep Anthropic lines (RM89.48, RM88.95, RM22.24, RM889.55) are unmatched to any charge.
 - [ ] SLA in business hours (skip nights / weekends / public holidays) if calendar hours prove too harsh.
 - [ ] AI usage per system + monthly charges
 - [x] System billing by module — Lim 2026-11-03 ("by 系统、by module、by submodule"): each system's page has a
