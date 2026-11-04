@@ -153,7 +153,9 @@ export function SystemsOverview({ data, setData, canEdit }: { data: Data; setDat
       {view === "" ? (
         <>
           <AllSystems data={data} month={month} totalsFor={totalsFor} unmatched={{ now: unmatched, before: unmatchedBefore, lines: unmatchedLines }} pick={pick} />
-          <AiUsage data={data} setData={setData} month={month} canEdit={canEdit} />
+          {USAGE_VENDORS.map((v) => (
+            <VendorUsage key={v.vendor} v={v} data={data} setData={setData} month={month} canEdit={canEdit} />
+          ))}
         </>
       ) : (
         <OneSystem
@@ -529,21 +531,46 @@ function UnusedProjects({ data, code }: { data: Data; code: string }) {
   );
 }
 
-// Anthropic's cost per workspace for the month, as read from its cost report, and the
-// system each workspace is for. Charges set to "Split by usage" are shared by these.
-function AiUsage({ data, setData, month, canEdit }: { data: Data; setData: (d: Data) => void; month: string; canEdit: boolean }) {
+// The vendors whose cost per workspace splits a "Split by usage" charge. Anthropic's is read
+// by the hub from its cost report; Meta's is sent by Houzs Connect, one workspace per company.
+type UsageVendor = { vendor: string; title: string; label: string; source: string; note: string; readNow: boolean };
+const USAGE_VENDORS: UsageVendor[] = [
+  {
+    vendor: "Anthropic",
+    title: "AI usage by workspace (Anthropic)",
+    label: "Workspace",
+    source: "read every day at 10:00",
+    note: 'Anthropic credit set to "Split by usage" is shared between the systems by these amounts each month. Each system uses its own workspace.',
+    readNow: true,
+  },
+  {
+    vendor: "Meta (WhatsApp Business)",
+    title: "WhatsApp usage by company (Meta, from Houzs Connect)",
+    label: "Connect company",
+    source: "sent by Houzs Connect every day",
+    note: "The WhatsApp bill is shared between the systems by what Meta charged each company's numbers. Set each company's system once.",
+    readNow: false,
+  },
+];
+
+// A vendor's cost per workspace for the month and the system each workspace is for.
+// Charges set to "Split by usage" are shared by these.
+function VendorUsage({ v, data, setData, month, canEdit }: { v: UsageVendor; data: Data; setData: (d: Data) => void; month: string; canEdit: boolean }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const ws = data.workspaces.filter((w) => w.vendor === "Anthropic");
-  const usdOf = (id: string) => data.usage.filter((u) => u.vendor === "Anthropic" && u.month === month && u.workspaceId === id).reduce((a, u) => a + u.usd, 0);
+  const ws = data.workspaces.filter((w) => w.vendor === v.vendor);
+  const rows = data.usage.filter((u) => u.vendor === v.vendor && u.month === month);
+  const usdOf = (id: string) => rows.filter((u) => u.workspaceId === id).reduce((a, u) => a + u.usd, 0);
+  const cur = rows[0]?.currency ?? "USD";
   const total = ws.reduce((a, w) => a + usdOf(w.workspaceId), 0);
-  const used = data.charges.some((c) => c.splitByUsage);
+  const used = data.charges.some((c) => c.splitByUsage && c.vendor === v.vendor);
   if (!used && !ws.length) return null;
   const systemName = (code: string) => data.systems.find((s) => s.code === code)?.name ?? code;
+  const syncedAt = ws.reduce<string | null>((a, w) => (a && a > w.updatedAt ? a : w.updatedAt), null);
 
   // The workspace's cost shared by its system's own module estimates for the month.
   const moduleRows = (w: (typeof ws)[number]) => {
-    const est = data.moduleUsage.filter((m) => m.vendor === "Anthropic" && m.sourceSystem === w.systemCode && m.month === month);
+    const est = data.moduleUsage.filter((m) => m.vendor === v.vendor && m.sourceSystem === w.systemCode && m.month === month);
     const estTotal = est.reduce((a, m) => a + m.usd, 0);
     const cost = usdOf(w.workspaceId);
     if (!w.systemCode || estTotal <= 0) return [];
@@ -557,13 +584,13 @@ function AiUsage({ data, setData, month, canEdit }: { data: Data; setData: (d: D
             <td className="px-3 py-1.5 text-ink-subtlest">
               {systemName(m.systemCode)} · {m.calls} call(s)
             </td>
-            <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-ink-subtle">{money((cost * m.usd) / estTotal)}</td>
+            <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-ink-subtle">{money((cost * m.usd) / estTotal, cur)}</td>
             <td className="px-3 py-1.5 pr-4 text-right tabular-nums text-ink-subtlest">{pct(m.usd, estTotal)}</td>
           </tr>
         )),
       <tr key={`${w.workspaceId}|note`} className="border-b border-line-subtle last:border-0">
         <td colSpan={4} className="px-3 py-1.5 pl-10 text-[11px] text-ink-subtlest">
-          Split by {systemName(w.systemCode)}'s own log of its AI calls, last sent {fmtAgo(last)}. The total is Anthropic's real cost.
+          Split by {systemName(w.systemCode)}'s own log of its AI calls, last sent {fmtAgo(last)}. The total is {v.vendor}'s real cost.
         </td>
       </tr>,
     ];
@@ -583,24 +610,22 @@ function AiUsage({ data, setData, month, canEdit }: { data: Data; setData: (d: D
     }
   };
   const setSystem = async (workspaceId: string, systemCode: string) => {
-    await api("/billing/workspaces", json("PATCH", { vendor: "Anthropic", workspaceId, systemCode }));
+    await api("/billing/workspaces", json("PATCH", { vendor: v.vendor, workspaceId, systemCode }));
     setData(await api<Data>("/billing"));
   };
 
   return (
-    <section className="mt-6" aria-label="AI usage">
+    <section className="mt-6" aria-label={v.title}>
       <div className="flex flex-wrap items-center gap-2">
-        <h2 className="section-title">AI usage by workspace (Anthropic)</h2>
-        <span className="text-xs text-ink-subtle">{data.usageSyncedAt ? `read ${fmtAgo(data.usageSyncedAt)}` : "not read yet"} · read every day at 10:00</span>
-        {canEdit && (
+        <h2 className="section-title">{v.title}</h2>
+        <span className="text-xs text-ink-subtle">{syncedAt ? `last ${fmtAgo(syncedAt)}` : "nothing yet"} · {v.source}</span>
+        {canEdit && v.readNow && (
           <button className="btn-default ml-auto h-8 px-3" disabled={busy} onClick={() => void refresh()}>
             {busy ? "Reading..." : "Read now"}
           </button>
         )}
       </div>
-      <p className="mt-1 text-[12.5px] text-ink-subtle">
-        Anthropic credit set to "Split by usage" is shared between the systems by these amounts each month. Each system uses its own workspace.
-      </p>
+      <p className="mt-1 text-[12.5px] text-ink-subtle">{v.note}</p>
       {msg && (
         <div role="alert" className={`mt-2 rounded px-3 py-2 text-[12.5px] ${msg.ok ? "bg-loz-green text-loz-green-ink" : "bg-loz-red text-loz-red-ink"}`}>
           {msg.text}
@@ -611,7 +636,7 @@ function AiUsage({ data, setData, month, canEdit }: { data: Data; setData: (d: D
           <table className="w-full border-collapse text-[13px]">
             <thead>
               <tr>
-                {["Workspace", "System", `Cost ${monthName(month)}`, "Share"].map((h, i) => (
+                {[v.label, "System", `Cost ${monthName(month)}`, "Share"].map((h, i) => (
                   <th key={h} className={`${TH} whitespace-nowrap ${i >= 2 ? "text-right" : "text-left"}`}>
                     {h}
                   </th>
@@ -639,7 +664,7 @@ function AiUsage({ data, setData, month, canEdit }: { data: Data; setData: (d: D
                       (data.systems.find((s) => s.code === w.systemCode)?.name ?? "Not set")
                     )}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{money(usdOf(w.workspaceId))}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{money(usdOf(w.workspaceId), cur)}</td>
                   <td className="px-3 py-2 pr-4 text-right tabular-nums text-ink-subtle">{pct(usdOf(w.workspaceId), total)}</td>
                 </tr>
               )).flatMap((row, i) => [row, ...moduleRows(ws[i]!)])}

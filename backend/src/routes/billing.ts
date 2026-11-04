@@ -167,9 +167,10 @@ billing.get("/", need("billing_view", "billing_edit"), async (c) => {
         vendor: schema.usageCosts.vendor,
         workspaceId: schema.usageCosts.workspaceId,
         usd: sql<string>`sum(${schema.usageCosts.usd})`,
+        currency: schema.usageCosts.currency,
       })
       .from(schema.usageCosts)
-      .groupBy(sql`1`, schema.usageCosts.vendor, schema.usageCosts.workspaceId),
+      .groupBy(sql`1`, schema.usageCosts.vendor, schema.usageCosts.workspaceId, schema.usageCosts.currency),
     db
       .select({
         month: sql<string>`substr(${mu.day}, 1, 7)`,
@@ -195,7 +196,6 @@ billing.get("/", need("billing_view", "billing_edit"), async (c) => {
     projectRefs,
     workspaces,
     usage: usage.map((u) => ({ ...u, usd: Number(u.usd) })),
-    usageSyncedAt: workspaces.reduce<string | null>((a, w) => (a && a > w.updatedAt ? a : w.updatedAt), null),
     moduleUsage: modules.map((m) => ({ ...m, usd: Number(m.usd), calls: Number(m.calls) })),
   });
 });
