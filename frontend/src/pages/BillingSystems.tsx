@@ -440,16 +440,17 @@ function OneSystem(props: {
 // to the module each AI feature belongs to; any other charge to the module set on it, or to
 // Infrastructure when it is for the whole system (hosting, database, domains). The parts are
 // the same shares as the By system table, so the total is that table's Paid for the system.
-// `ai` is the vendor's real usage cost for the month (USD) on the same split, so AI spend by
-// module shows even before the credit top-ups are matched to card statements. A vendor can
-// have several charges split by usage (one account's top-ups, then another's): each carries
-// its own paid, but the usage is one figure, so it is counted once and their rows merge.
-type ModPart = { key: string; label: string; sub: string; paid: number; usd: number; myr: number; ai: number };
+// `useUsd` / `useMyr` are the vendor's real usage cost for the month on the same split, so spend
+// by module shows even before credit top-ups are matched to card statements. Anthropic reports in
+// USD and Meta in ringgit, so the two are never added. A vendor can have several charges split by
+// usage (one account's top-ups, then another's): each carries its own paid, but the usage is one
+// figure, so it is counted once and their rows merge.
+type ModPart = { key: string; label: string; sub: string; paid: number; usd: number; myr: number; useUsd: number; useMyr: number };
 
 export function modulesOf(data: Data, code: string, month: string, paid: (c: ChargeRow, m: string) => number) {
   const by = new Map<string, ModPart[]>();
   const put = (area: string, part: ModPart) => {
-    if (!part.paid && !part.usd && !part.myr && !part.ai) return;
+    if (!part.paid && !part.usd && !part.myr && !part.useUsd && !part.useMyr) return;
     const parts = by.get(area) ?? by.set(area, []).get(area)!;
     const same = parts.find((x) => x.key === part.key);
     if (!same) parts.push(part);
@@ -457,7 +458,8 @@ export function modulesOf(data: Data, code: string, month: string, paid: (c: Cha
       same.paid += part.paid;
       same.usd += part.usd;
       same.myr += part.myr;
-      same.ai += part.ai;
+      same.useUsd += part.useUsd;
+      same.useMyr += part.useMyr;
     }
   };
   const usageCounted = new Set<string>();
@@ -468,16 +470,18 @@ export function modulesOf(data: Data, code: string, month: string, paid: (c: Cha
     const f = fixedPerMonth(c);
     const sub = [c.vendor, c.registerId].filter(Boolean).join(" · ");
     if (!c.splitByUsage) {
-      put((c.module ?? "").trim() || INFRASTRUCTURE, { key: String(c.id), label: c.usedFor || c.vendor, sub, paid: p, usd: f.usd * part, myr: f.myr * part, ai: 0 });
+      put((c.module ?? "").trim() || INFRASTRUCTURE, { key: String(c.id), label: c.usedFor || c.vendor, sub, paid: p, usd: f.usd * part, myr: f.myr * part, useUsd: 0, useMyr: 0 });
       continue;
     }
     // moduleShares parts are of the vendor's whole cost, so cost x part is this module's usage.
-    const cost = usageCounted.has(c.vendor) ? 0 : data.usage.filter((u) => u.vendor === c.vendor && u.month === month).reduce((a, u) => a + u.usd, 0);
+    const used = data.usage.filter((u) => u.vendor === c.vendor && u.month === month);
+    const cost = usageCounted.has(c.vendor) ? 0 : used.reduce((a, u) => a + u.usd, 0); // `usd` holds the amount, in `currency`
     usageCounted.add(c.vendor);
+    const use = (v: number) => (used[0]?.currency === "MYR" ? { useUsd: 0, useMyr: v } : { useUsd: v, useMyr: 0 });
     const mine = moduleShares(data, c.vendor, month).filter((x) => x.code === code && x.part > 0);
     const whole = mine.reduce((a, x) => a + x.part, 0);
     // A system that sends no usage log keeps its AI cost whole, under Others.
-    if (!whole) put(OTHERS, { key: `${c.vendor}|`, label: `${c.vendor} usage`, sub: c.vendor, paid: p, usd: f.usd * part, myr: f.myr * part, ai: cost * part });
+    if (!whole) put(OTHERS, { key: `${c.vendor}|`, label: `${c.vendor} usage`, sub: c.vendor, paid: p, usd: f.usd * part, myr: f.myr * part, ...use(cost * part) });
     for (const x of mine) {
       const r = x.part / whole;
       put(x.module ? featureArea(x.module) : OTHERS, {
@@ -487,39 +491,43 @@ export function modulesOf(data: Data, code: string, month: string, paid: (c: Cha
         paid: p * r,
         usd: f.usd * part * r,
         myr: f.myr * part * r,
-        ai: cost * x.part,
+        ...use(cost * x.part),
       });
     }
   }
-  const sum = (parts: ModPart[], k: "paid" | "usd" | "myr" | "ai") => parts.reduce((a, x) => a + x[k], 0);
+  const sum = (parts: ModPart[], k: "paid" | "usd" | "myr" | "useUsd" | "useMyr") => parts.reduce((a, x) => a + x[k], 0);
   return [...by]
     .map(([area, parts]) => ({
       area,
-      parts: parts.sort((a, b) => b.paid - a.paid || b.ai - a.ai),
+      parts: parts.sort((a, b) => b.paid - a.paid || b.useUsd - a.useUsd),
       paid: sum(parts, "paid"),
       usd: sum(parts, "usd"),
       myr: sum(parts, "myr"),
-      ai: sum(parts, "ai"),
+      useUsd: sum(parts, "useUsd"),
+      useMyr: sum(parts, "useMyr"),
     }))
-    .sort((a, b) => areaRank(a.area) - areaRank(b.area) || b.paid - a.paid || b.ai - a.ai);
+    .sort((a, b) => areaRank(a.area) - areaRank(b.area) || b.paid - a.paid || b.useUsd - a.useUsd);
 }
 
 function ByModule({ data, code, month, total, paid }: { data: Data; code: string; month: string; total: number; paid: (c: ChargeRow, m: string) => number }) {
   const rows = modulesOf(data, code, month, paid);
   if (!rows.length) return null;
-  const all = rows.reduce((a, r) => ({ paid: a.paid + r.paid, usd: a.usd + r.usd, myr: a.myr + r.myr, ai: a.ai + r.ai }), { paid: 0, usd: 0, myr: 0, ai: 0 });
+  const all = rows.reduce(
+    (a, r) => ({ paid: a.paid + r.paid, usd: a.usd + r.usd, myr: a.myr + r.myr, useUsd: a.useUsd + r.useUsd, useMyr: a.useMyr + r.useMyr }),
+    { paid: 0, usd: 0, myr: 0, useUsd: 0, useMyr: 0 },
+  );
   return (
     <section className="mt-6" aria-label="By module">
       <h2 className="section-title">By module</h2>
       <p className="mt-1 text-[12.5px] text-ink-subtle">
         AI usage goes to the module each feature belongs to. A charge with no module set is for the whole system and counts as Infrastructure.
-        AI usage is the vendor's real cost this month, shown even when its credit top-up is not yet matched to a card statement.
+        Usage is the vendor's real cost this month (Anthropic AI, Meta WhatsApp), shown even when its top-up is not yet matched to a card statement.
       </p>
       <div className="card mt-2 overflow-x-auto">
         <table className="w-full border-collapse text-[13px]">
           <thead>
             <tr>
-              {["Module", `Paid ${monthName(month)}`, "Share of paid", "Fixed a month", `AI usage ${monthName(month)}`].map((h, i) => (
+              {["Module", `Paid ${monthName(month)}`, "Share of paid", "Fixed a month", `Usage ${monthName(month)}`].map((h, i) => (
                 <th key={h} className={`${TH} whitespace-nowrap ${i ? "text-right" : "text-left"}`}>
                   {h}
                 </th>
@@ -536,7 +544,9 @@ function ByModule({ data, code, month, total, paid }: { data: Data; code: string
                   <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
                     <Fixed usd={r.usd} myr={r.myr} />
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2 pr-4 text-right font-semibold tabular-nums">{r.ai ? money(r.ai) : "-"}</td>
+                  <td className="whitespace-nowrap px-3 py-2 pr-4 text-right font-semibold tabular-nums">
+                    <Fixed usd={r.useUsd} myr={r.useMyr} />
+                  </td>
                 </tr>
                 {r.parts.map((x) => (
                   <tr key={x.key} className="border-b border-line-subtle text-[12.5px]">
@@ -549,7 +559,9 @@ function ByModule({ data, code, month, total, paid }: { data: Data; code: string
                     <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-ink-subtle">
                       <Fixed usd={x.usd} myr={x.myr} />
                     </td>
-                    <td className="whitespace-nowrap px-3 py-1.5 pr-4 text-right tabular-nums text-ink-subtle">{x.ai ? money(x.ai) : "-"}</td>
+                    <td className="whitespace-nowrap px-3 py-1.5 pr-4 text-right tabular-nums text-ink-subtle">
+                      <Fixed usd={x.useUsd} myr={x.useMyr} />
+                    </td>
                   </tr>
                 ))}
               </Fragment>
@@ -561,7 +573,9 @@ function ByModule({ data, code, month, total, paid }: { data: Data; code: string
               <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
                 <Fixed usd={all.usd} myr={all.myr} />
               </td>
-              <td className="whitespace-nowrap px-3 py-2 pr-4 text-right tabular-nums">{all.ai ? money(all.ai) : "-"}</td>
+              <td className="whitespace-nowrap px-3 py-2 pr-4 text-right tabular-nums">
+                <Fixed usd={all.useUsd} myr={all.useMyr} />
+              </td>
             </tr>
           </tbody>
         </table>
