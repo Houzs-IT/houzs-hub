@@ -68,36 +68,49 @@ export function moduleShares(data: Data, vendor: string, month?: string): { code
   });
 }
 
-// Plain names for the module (feature) names systems send; unknown ones are shown as sent.
-const MODULE_NAMES: Record<string, string> = {
-  scan_so: "Sales order scan",
-  scan_so_distill: "Sales order scan: learning",
-  cache_warm: "Sales order scan: warm-up",
-  scan_payment: "Payment slip scan",
-  scan_lorry_invoice: "Lorry invoice scan",
-  scan_gr: "Goods received scan",
-  scan_pi: "Purchase invoice scan",
-  bill_extract: "Bill reading",
-  credit_note_extract: "Credit note scan",
-  schedule_reconcile: "Schedule reconcile",
-  setup_invoice_extract: "Setup invoice reading",
-  threepl_bill_read: "3PL bill reading",
-  floorplan_size: "Floor plan measuring",
-  announcement_translate: "Announcement translation",
-  assistant: "Assistant",
+// What each AI feature (the module name a system sends with its usage) is called, and the part
+// of that system it belongs to, named as the system's own menu names it (the same names its IT
+// Support tickets carry), so AI cost reads by module like the rest of the bill. Features that
+// serve the whole system (the assistant, agents) and unknown ones go under Others.
+export const INFRASTRUCTURE = "Infrastructure";
+export const OTHERS = "Others";
+const SO = "Supply Chain · Sales Order";
+const PROCUREMENT = "Supply Chain · Procurement";
+const TRANSPORT = "Supply Chain · Transportation";
+const FEATURES: Record<string, { name: string; area: string }> = {
+  // Houzs ERP (also 2990s, which it serves)
+  scan_so: { name: "Sales order scan", area: SO },
+  scan_so_distill: { name: "Sales order scan: learning", area: SO },
+  cache_warm: { name: "Sales order scan: warm-up", area: SO },
+  scan_payment: { name: "Payment slip scan", area: SO },
+  scan_gr: { name: "Goods received scan", area: PROCUREMENT },
+  scan_pi: { name: "Purchase invoice scan", area: PROCUREMENT },
+  scan_lorry_invoice: { name: "Lorry invoice scan", area: TRANSPORT },
+  threepl_bill_read: { name: "3PL bill reading", area: TRANSPORT },
+  bill_extract: { name: "Bill reading", area: "Finance · Money out" },
+  credit_note_extract: { name: "Credit note scan", area: "Finance · Money in" },
+  schedule_reconcile: { name: "Schedule reconcile", area: "Projects" },
+  setup_invoice_extract: { name: "Setup invoice reading", area: "Projects" },
+  floorplan_size: { name: "Floor plan measuring", area: "Projects" },
+  announcement_translate: { name: "Announcement translation", area: "Announcements" },
+  assistant: { name: "Assistant", area: OTHERS },
   // Hookka
-  scan_po: "Customer PO scan",
-  scan_supplier_do: "Supplier document scan",
-  scan_doc_boundary: "Supplier PDF splitting",
-  scan_distill_customer: "Customer PO scan: learning",
-  scan_distill_supplier: "Supplier scan: learning",
-  agent_brain: "Agents",
+  scan_po: { name: "Customer PO scan", area: "Sales & Customers" },
+  scan_distill_customer: { name: "Customer PO scan: learning", area: "Sales & Customers" },
+  scan_supplier_do: { name: "Supplier document scan", area: "Procurement" },
+  scan_doc_boundary: { name: "Supplier PDF splitting", area: "Procurement" },
+  scan_distill_supplier: { name: "Supplier scan: learning", area: "Procurement" },
+  agent_brain: { name: "Agents", area: OTHERS },
 };
 export function moduleLabel(module: string) {
   if (!module) return "Whole system";
   if (module.startsWith("agent:")) return `Agent: ${module.slice(6).replace(/^\w/, (ch) => ch.toUpperCase())}`;
-  return MODULE_NAMES[module] ?? module;
+  return FEATURES[module]?.name ?? module;
 }
+/** The part of its system an AI feature belongs to. */
+export const featureArea = (module: string) => FEATURES[module]?.area ?? OTHERS;
+/** Infrastructure and Others go last; the rest by amount. */
+export const areaRank = (area: string) => (area === INFRASTRUCTURE ? 2 : area === OTHERS ? 1 : 0);
 
 // Which systems a charge counts towards, and what part of it each one carries.
 export function sharesOf(c: ChargeRow, data: Data, month?: string): { code: string; part: number }[] {
@@ -206,7 +219,15 @@ export function useChargeEditor(data: Data, setData: (d: Data) => void) {
   const splitTotal = draft.splits.reduce((a, s) => a + (Number(s.percent) || 0), 0);
   const unused = data.systems.filter((s) => !draft.splits.some((x) => x.systemCode === s.code));
   const codeOf = draft.systemCode || draft.splits[0]?.systemCode || "";
-  const modules = [...new Set(data.charges.filter((c) => codeOf && partIn(c, codeOf, data) > 0).map((c) => c.module).filter(Boolean))].sort();
+  // The modules this system already uses: on its charges, and those its AI features belong to.
+  const modules = [
+    ...new Set([
+      ...data.charges.filter((c) => codeOf && partIn(c, codeOf, data) > 0).map((c) => c.module),
+      ...data.moduleUsage.filter((m) => m.systemCode === codeOf).map((m) => featureArea(m.module)),
+    ]),
+  ]
+    .filter((m) => m && m !== OTHERS)
+    .sort();
 
   const editor = (
     <EditDialog
@@ -303,7 +324,9 @@ export function useChargeEditor(data: Data, setData: (d: Data) => void) {
                 <option key={m} value={m} />
               ))}
             </datalist>
-            <span className="mt-1 block text-[11px] font-normal text-ink-subtlest">Leave empty when the bill is for the whole system</span>
+            <span className="mt-1 block text-[11px] font-normal text-ink-subtlest">
+              Name it as the system's menu does. Leave empty when the bill is for the whole system: it counts as Infrastructure.
+            </span>
           </label>
           <Field label="Project / API ID" value={draft.projectRef} onChange={set("projectRef")} hint="Project ref, account or key name. Never a secret" />
           <Field label="Service type" value={draft.serviceType} onChange={set("serviceType")} hint="Hosting, Database, Email, AI..." />

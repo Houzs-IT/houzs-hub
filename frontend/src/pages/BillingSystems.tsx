@@ -3,7 +3,7 @@ import { Fragment, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, json, type BillingData as Data, type ChargeRow } from "../api/client";
 import { fmtAgo, money } from "../lib/format";
-import { BILLED, moduleLabel, moduleShares, NONE, partIn, Pill, sharesOf, useChargeEditor } from "./BillingCharge";
+import { areaRank, BILLED, featureArea, INFRASTRUCTURE, moduleLabel, moduleShares, NONE, OTHERS, partIn, Pill, sharesOf, useChargeEditor } from "./BillingCharge";
 import { monthName, monthOf, pct, rm, TH } from "./BillingStatements";
 
 // The Overview tab of System billing: every system side by side, then one sub-tab per
@@ -324,6 +324,8 @@ function OneSystem(props: {
         <Tile label="Services" value={String(t.services)} note={t.open ? `${t.open} still to confirm` : "all confirmed or closed"} />
       </div>
 
+      {code !== NONE && <ByModule data={data} code={code} month={month} total={t.paid} paid={paid} />}
+
       <div className="mt-6 flex items-center">
         <h2 className="section-title">{code === NONE ? "Charges with no system yet" : "What it pays for"}</h2>
         {canEdit && code !== NONE && (
@@ -431,6 +433,132 @@ function OneSystem(props: {
         </div>
       )}
     </>
+  );
+}
+
+// One system's month by module, named as its menu names them. AI credit split by usage goes
+// to the module each AI feature belongs to; any other charge to the module set on it, or to
+// Infrastructure when it is for the whole system (hosting, database, domains). The parts are
+// the same shares as the By system table, so the total is that table's Paid for the system.
+// `ai` is the vendor's real usage cost for the month (USD) on the same split, so AI spend by
+// module shows even before the credit top-ups are matched to card statements.
+type ModPart = { key: string; label: string; sub: string; paid: number; usd: number; myr: number; ai: number };
+
+export function modulesOf(data: Data, code: string, month: string, paid: (c: ChargeRow, m: string) => number) {
+  const by = new Map<string, ModPart[]>();
+  const put = (area: string, part: ModPart) => {
+    if (part.paid || part.usd || part.myr || part.ai) (by.get(area) ?? by.set(area, []).get(area)!).push(part);
+  };
+  for (const c of data.charges) {
+    const part = partIn(c, code, data, month);
+    if (part <= 0) continue;
+    const p = paid(c, month) * part;
+    const f = fixedPerMonth(c);
+    const sub = [c.vendor, c.registerId].filter(Boolean).join(" · ");
+    if (!c.splitByUsage) {
+      put((c.module ?? "").trim() || INFRASTRUCTURE, { key: String(c.id), label: c.usedFor || c.vendor, sub, paid: p, usd: f.usd * part, myr: f.myr * part, ai: 0 });
+      continue;
+    }
+    // moduleShares parts are of the vendor's whole cost, so cost x part is this module's usage.
+    const cost = data.usage.filter((u) => u.vendor === c.vendor && u.month === month).reduce((a, u) => a + u.usd, 0);
+    const mine = moduleShares(data, c.vendor, month).filter((x) => x.code === code && x.part > 0);
+    const whole = mine.reduce((a, x) => a + x.part, 0);
+    // A system that sends no usage log keeps its AI cost whole, under Others.
+    if (!whole) put(OTHERS, { key: String(c.id), label: `${c.vendor} usage`, sub, paid: p, usd: f.usd * part, myr: f.myr * part, ai: cost * part });
+    for (const x of mine) {
+      const r = x.part / whole;
+      put(x.module ? featureArea(x.module) : OTHERS, {
+        key: `${c.id}|${x.module}`,
+        label: x.module ? moduleLabel(x.module) : `${c.vendor} usage`,
+        sub: `${sub} · split by usage`,
+        paid: p * r,
+        usd: f.usd * part * r,
+        myr: f.myr * part * r,
+        ai: cost * x.part,
+      });
+    }
+  }
+  const sum = (parts: ModPart[], k: "paid" | "usd" | "myr" | "ai") => parts.reduce((a, x) => a + x[k], 0);
+  return [...by]
+    .map(([area, parts]) => ({
+      area,
+      parts: parts.sort((a, b) => b.paid - a.paid || b.ai - a.ai),
+      paid: sum(parts, "paid"),
+      usd: sum(parts, "usd"),
+      myr: sum(parts, "myr"),
+      ai: sum(parts, "ai"),
+    }))
+    .sort((a, b) => areaRank(a.area) - areaRank(b.area) || b.paid - a.paid || b.ai - a.ai);
+}
+
+function ByModule({ data, code, month, total, paid }: { data: Data; code: string; month: string; total: number; paid: (c: ChargeRow, m: string) => number }) {
+  const rows = modulesOf(data, code, month, paid);
+  if (!rows.length) return null;
+  const all = rows.reduce((a, r) => ({ paid: a.paid + r.paid, usd: a.usd + r.usd, myr: a.myr + r.myr, ai: a.ai + r.ai }), { paid: 0, usd: 0, myr: 0, ai: 0 });
+  return (
+    <section className="mt-6" aria-label="By module">
+      <h2 className="section-title">By module</h2>
+      <p className="mt-1 text-[12.5px] text-ink-subtle">
+        AI usage goes to the module each feature belongs to. A charge with no module set is for the whole system and counts as Infrastructure.
+        AI usage is the vendor's real cost this month, shown even when its credit top-up is not yet matched to a card statement.
+      </p>
+      <div className="card mt-2 overflow-x-auto">
+        <table className="w-full border-collapse text-[13px]">
+          <thead>
+            <tr>
+              {["Module", `Paid ${monthName(month)}`, "Share of paid", "Fixed a month", `AI usage ${monthName(month)}`].map((h, i) => (
+                <th key={h} className={`${TH} whitespace-nowrap ${i ? "text-right" : "text-left"}`}>
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <Fragment key={r.area}>
+                <tr className="border-b border-line-subtle">
+                  <td className={`px-3 py-2 pl-4 font-semibold ${areaRank(r.area) ? "text-ink-subtle" : "text-ink"}`}>{r.area}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right font-semibold tabular-nums">{rm(r.paid)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-ink-subtle">{pct(r.paid, all.paid)}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
+                    <Fixed usd={r.usd} myr={r.myr} />
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 pr-4 text-right font-semibold tabular-nums">{r.ai ? money(r.ai) : "-"}</td>
+                </tr>
+                {r.parts.map((x) => (
+                  <tr key={x.key} className="border-b border-line-subtle text-[12.5px]">
+                    <td className="px-3 py-1.5 pl-9">
+                      <div className="text-ink-subtle">{x.label}</div>
+                      <div className="text-[11px] text-ink-subtlest">{x.sub}</div>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-ink-subtle">{x.paid ? rm(x.paid) : "-"}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums text-ink-subtlest">{pct(x.paid, all.paid)}</td>
+                    <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-ink-subtle">
+                      <Fixed usd={x.usd} myr={x.myr} />
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-1.5 pr-4 text-right tabular-nums text-ink-subtle">{x.ai ? money(x.ai) : "-"}</td>
+                  </tr>
+                ))}
+              </Fragment>
+            ))}
+            <tr className="bg-surface-dim font-bold">
+              <td className="px-3 py-2 pl-4 text-ink">Total</td>
+              <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{rm(all.paid)}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{pct(all.paid, all.paid)}</td>
+              <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
+                <Fixed usd={all.usd} myr={all.myr} />
+              </td>
+              <td className="whitespace-nowrap px-3 py-2 pr-4 text-right tabular-nums">{all.ai ? money(all.ai) : "-"}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      {Math.abs(all.paid - total) > 0.01 && (
+        <p className="mt-1 text-[12px] text-loz-orange-ink">
+          Adds up to {rm(all.paid)}, not the {rm(total)} paid in the By system table. A charge has a share this table could not place.
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -575,19 +703,38 @@ function VendorUsage({ v, data, setData, month, canEdit }: { v: UsageVendor; dat
     const cost = usdOf(w.workspaceId);
     if (!w.systemCode || estTotal <= 0) return [];
     const last = est.reduce((a, m) => (a > m.receivedAt ? a : m.receivedAt), "");
+    // Grouped by module, as the system's menu names it, then by feature.
+    const groups = new Map<string, typeof est>();
+    for (const m of est) {
+      const k = `${m.systemCode}|${featureArea(m.module)}`;
+      groups.set(k, [...(groups.get(k) ?? []), m]);
+    }
+    const ranked = [...groups].sort(
+      ([a, x], [b, y]) => areaRank(a.split("|")[1]!) - areaRank(b.split("|")[1]!) || y.reduce((s, m) => s + m.usd, 0) - x.reduce((s, m) => s + m.usd, 0),
+    );
     return [
-      ...[...est]
-        .sort((a, b) => b.usd - a.usd)
-        .map((m) => (
-          <tr key={`${w.workspaceId}|${m.systemCode}|${m.module}`} className="border-b border-line-subtle text-[12.5px] last:border-0">
-            <td className="px-3 py-1.5 pl-10 text-ink-subtle">{moduleLabel(m.module)}</td>
-            <td className="px-3 py-1.5 text-ink-subtlest">
-              {systemName(m.systemCode)} · {m.calls} call(s)
-            </td>
-            <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-ink-subtle">{money((cost * m.usd) / estTotal, cur)}</td>
-            <td className="px-3 py-1.5 pr-4 text-right tabular-nums text-ink-subtlest">{pct(m.usd, estTotal)}</td>
-          </tr>
-        )),
+      ...ranked.flatMap(([k, items]) => {
+        const [sys, area] = k.split("|") as [string, string];
+        const usd = items.reduce((a, m) => a + m.usd, 0);
+        return [
+          <tr key={`${w.workspaceId}|${k}`} className="border-b border-line-subtle text-[12.5px]">
+            <td className="px-3 py-1.5 pl-10 font-semibold text-ink">{area}</td>
+            <td className="px-3 py-1.5 text-ink-subtlest">{systemName(sys)}</td>
+            <td className="whitespace-nowrap px-3 py-1.5 text-right font-semibold tabular-nums">{money((cost * usd) / estTotal, cur)}</td>
+            <td className="px-3 py-1.5 pr-4 text-right tabular-nums text-ink-subtle">{pct(usd, estTotal)}</td>
+          </tr>,
+          ...[...items]
+            .sort((a, b) => b.usd - a.usd)
+            .map((m) => (
+              <tr key={`${w.workspaceId}|${m.systemCode}|${m.module}`} className="border-b border-line-subtle text-[12.5px] last:border-0">
+                <td className="px-3 py-1.5 pl-16 text-ink-subtle">{moduleLabel(m.module)}</td>
+                <td className="px-3 py-1.5 text-ink-subtlest">{m.calls} call(s)</td>
+                <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-ink-subtle">{money((cost * m.usd) / estTotal, cur)}</td>
+                <td className="px-3 py-1.5 pr-4 text-right tabular-nums text-ink-subtlest">{pct(m.usd, estTotal)}</td>
+              </tr>
+            )),
+        ];
+      }),
       <tr key={`${w.workspaceId}|note`} className="border-b border-line-subtle last:border-0">
         <td colSpan={4} className="px-3 py-1.5 pl-10 text-[11px] text-ink-subtlest">
           Split by {systemName(w.systemCode)}'s own log of its AI calls, last sent {fmtAgo(last)}. The total is {v.vendor}'s real cost.

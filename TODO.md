@@ -164,7 +164,28 @@ staging (`hookka-erp-staging-sg`), feature PR goes to staging first.
     Systems may send `module` with POST /sys/tickets (README); IT sets or corrects it on the ticket page
     (free text, the system's existing modules suggested; an internal timeline event). Reports → By
     module. Nothing is filled until a system sends it or IT sets it.
-- [ ] Each system's IT Support form: send `module` (Houzs ERP, Hookka, 2990s, Connect, Conts, Carres).
+- [x] Each system's IT Support form sends `module` (2026-11-03): a "Which part of the system" picker built from
+      that app's own menu, pre-picked from the page the reporter came from, "Not sure" sends nothing.
+      Houzs ERP (Houzs Century + 2990s) Houzs-Century/Houzs-ERP#5144 — sidebar top entry + group, e.g.
+      "Supply Chain · Procurement"; Connect Houzs-IT/houzs-connect#158 — rail item or "Settings · <page>", always
+      sent in English; Hookka Houzs-IT/hookka-erp-testing#1143 — sidebar group, e.g. "Sales & Customers";
+      Conts Houzs-IT/Conts-ERP#584 — "<workspace> · <group>", e.g. "The Conts · Reservations". All live; no real
+      Confirmed by real tickets on 2026-11-04 (HC-0210 Supply Chain · Transportation; Hookka HR & Operations).
+- [x] Carres sends `module` too (2026-11-04), Houzs-IT/Carres-Portal-v2#2238: stamped from the page by
+      `activeNavModule` (rail module, e.g. "Sales Order"; "Finance · Money in"), no visible field, because its modal
+      opens in place and its approved UI was not to change. #2239 pinned its Playwright CI jobs to ubuntu-24.04.
+- [ ] System billing, data to settle (read 2026-11-04, nothing changed):
+  - H01 (Anthropic, RM634.26 in Oct, status to_confirm, no system): six RM158 top-ups on Card 6402 from 24 Sep to
+    19 Oct. Its notes list Houzs ERP AI features, migration 010 calls it Wei Siang's own account. Owner to decide
+    the system; until then Houzs ERP shows RM0 paid.
+  - S08 (Anthropic credit, split by usage): invoice AFUJNPXZ-0001 of 2026-10-23 (USD 108) has no statement line.
+    The imported lines end before it, so match it when the next card statement is imported.
+  - Four Sep Anthropic lines (RM89.48, RM88.95, RM22.24, RM889.55) are unmatched to any charge.
 - [ ] SLA in business hours (skip nights / weekends / public holidays) if calendar hours prove too harsh.
 - [ ] AI usage per system + monthly charges
+- [x] System billing by module — Lim 2026-11-03 ("by 系统、by module、by submodule"): each system's page has a
+      By module table (module → charge / AI feature) that adds up to its Paid in By system. AI features map to the
+      system's menu modules in `FEATURES` (`frontend/src/pages/BillingCharge.tsx`), e.g. `scan_gr` → Supply Chain ·
+      Procurement; assistant / agents / unknown → Others; a charge with no module = Infrastructure. The AI usage by
+      workspace table groups features by the same modules. A new AI feature needs one line in `FEATURES`.
 - [ ] Email / WhatsApp notify on status change
