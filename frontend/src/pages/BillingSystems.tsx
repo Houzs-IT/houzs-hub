@@ -441,14 +441,26 @@ function OneSystem(props: {
 // Infrastructure when it is for the whole system (hosting, database, domains). The parts are
 // the same shares as the By system table, so the total is that table's Paid for the system.
 // `ai` is the vendor's real usage cost for the month (USD) on the same split, so AI spend by
-// module shows even before the credit top-ups are matched to card statements.
+// module shows even before the credit top-ups are matched to card statements. A vendor can
+// have several charges split by usage (one account's top-ups, then another's): each carries
+// its own paid, but the usage is one figure, so it is counted once and their rows merge.
 type ModPart = { key: string; label: string; sub: string; paid: number; usd: number; myr: number; ai: number };
 
 export function modulesOf(data: Data, code: string, month: string, paid: (c: ChargeRow, m: string) => number) {
   const by = new Map<string, ModPart[]>();
   const put = (area: string, part: ModPart) => {
-    if (part.paid || part.usd || part.myr || part.ai) (by.get(area) ?? by.set(area, []).get(area)!).push(part);
+    if (!part.paid && !part.usd && !part.myr && !part.ai) return;
+    const parts = by.get(area) ?? by.set(area, []).get(area)!;
+    const same = parts.find((x) => x.key === part.key);
+    if (!same) parts.push(part);
+    else {
+      same.paid += part.paid;
+      same.usd += part.usd;
+      same.myr += part.myr;
+      same.ai += part.ai;
+    }
   };
+  const usageCounted = new Set<string>();
   for (const c of data.charges) {
     const part = partIn(c, code, data, month);
     if (part <= 0) continue;
@@ -460,17 +472,18 @@ export function modulesOf(data: Data, code: string, month: string, paid: (c: Cha
       continue;
     }
     // moduleShares parts are of the vendor's whole cost, so cost x part is this module's usage.
-    const cost = data.usage.filter((u) => u.vendor === c.vendor && u.month === month).reduce((a, u) => a + u.usd, 0);
+    const cost = usageCounted.has(c.vendor) ? 0 : data.usage.filter((u) => u.vendor === c.vendor && u.month === month).reduce((a, u) => a + u.usd, 0);
+    usageCounted.add(c.vendor);
     const mine = moduleShares(data, c.vendor, month).filter((x) => x.code === code && x.part > 0);
     const whole = mine.reduce((a, x) => a + x.part, 0);
     // A system that sends no usage log keeps its AI cost whole, under Others.
-    if (!whole) put(OTHERS, { key: String(c.id), label: `${c.vendor} usage`, sub, paid: p, usd: f.usd * part, myr: f.myr * part, ai: cost * part });
+    if (!whole) put(OTHERS, { key: `${c.vendor}|`, label: `${c.vendor} usage`, sub: c.vendor, paid: p, usd: f.usd * part, myr: f.myr * part, ai: cost * part });
     for (const x of mine) {
       const r = x.part / whole;
       put(x.module ? featureArea(x.module) : OTHERS, {
-        key: `${c.id}|${x.module}`,
+        key: `${c.vendor}|${x.module}`,
         label: x.module ? moduleLabel(x.module) : `${c.vendor} usage`,
-        sub: `${sub} · split by usage`,
+        sub: `${c.vendor} · split by usage`,
         paid: p * r,
         usd: f.usd * part * r,
         myr: f.myr * part * r,
