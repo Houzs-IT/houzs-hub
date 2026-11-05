@@ -84,6 +84,7 @@ export type InvoiceRow = {
   fileKey: string | null;
   fileName: string;
   notes: string;
+  createdAt: string;
   updatedAt: string;
   updatedBy: string | null;
 };
