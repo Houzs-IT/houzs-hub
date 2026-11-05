@@ -4,7 +4,7 @@ import { api, invoiceFileUrl, json, type BillingData as Data, type ChargeRow, ty
 import { EditDialog, Field, Select } from "../components/EditForm";
 import { readInvoiceText, type ReadInvoice, type ReadLine } from "../lib/invoiceRead";
 import { pdfText } from "../lib/pdfText";
-import { fmtDate, fmtDateTime, money } from "../lib/format";
+import { fmtDateTime, money } from "../lib/format";
 import { systemLabel } from "./BillingCharge";
 import { monthName, monthOf, rm, TH } from "./BillingStatements";
 
@@ -285,7 +285,7 @@ export function Invoices({ data, setData, canEdit }: { data: Data; setData: (d: 
           <table className="w-full border-collapse text-[13px]">
             <thead>
               <tr>
-                {["Date", "Vendor", "Invoice", "Charge", "Paid by", "Total", ""].map((h, i) => (
+                {["Invoice date", "Added", "Vendor", "Invoice", "Charge", "Paid by", "Total", ""].map((h, i) => (
                   <th key={i} className={`${TH} ${STICKY} whitespace-nowrap ${h === "Total" ? "text-right" : "text-left"}`}>
                     {h}
                   </th>
@@ -304,11 +304,9 @@ export function Invoices({ data, setData, canEdit }: { data: Data; setData: (d: 
                     title={i.fileKey ? "Open the invoice PDF" : undefined}
                     className={`border-b border-line-subtle align-top last:border-0 ${i.fileKey ? "cursor-pointer hover:bg-surface-dim" : ""}`}
                   >
-                    <td className="w-28 whitespace-nowrap px-3 py-2.5 pl-4 text-ink-subtle">
-                      <div>{i.invoiceDate}</div>
-                      <div className="text-xs text-ink-subtlest" title={`Added to the hub ${fmtDateTime(i.createdAt)}`}>
-                        Added {fmtDate(i.createdAt)}
-                      </div>
+                    <td className="w-28 whitespace-nowrap px-3 py-2.5 pl-4 text-ink-subtle">{i.invoiceDate}</td>
+                    <td className="w-28 whitespace-nowrap px-3 py-2.5 text-ink-subtle" title={fmtDateTime(i.createdAt)}>
+                      {new Date(i.createdAt).toLocaleDateString("en-CA", { timeZone: "Asia/Kuala_Lumpur" })}
                     </td>
                     <td className="px-3 py-2.5">
                       <div className="font-medium text-ink">{i.vendor}</div>
