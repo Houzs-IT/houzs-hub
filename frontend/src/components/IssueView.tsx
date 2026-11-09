@@ -57,6 +57,44 @@ function Attachments({ items }: { items: Attachment[] }) {
   );
 }
 
+function PendingFile({ file, onRemove }: { file: File; onRemove: () => void }) {
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isViewing, setIsViewing] = useState(false);
+
+  useEffect(() => {
+    const objectUrl = URL.createObjectURL(file);
+    setPreviewUrl(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [file]);
+
+  if (!previewUrl) return null;
+  return (
+    <div className="relative w-28 overflow-hidden rounded border border-line bg-surface">
+      {isViewing && <ImageLightbox src={previewUrl} alt={file.name} onClose={() => setIsViewing(false)} />}
+      {file.type.startsWith("image/") ? (
+        <button type="button" className="block w-full" aria-label={`Preview ${file.name}`} onClick={() => setIsViewing(true)}>
+          <img src={previewUrl} alt="" className="h-20 w-full object-cover hover:opacity-90" />
+        </button>
+      ) : (
+        <a href={previewUrl} target="_blank" rel="noreferrer" aria-label={`Open ${file.name}`} className="grid h-20 place-items-center hover:bg-hover">
+          <FileText className="h-6 w-6 text-ink-subtle" />
+        </a>
+      )}
+      <div className="truncate border-t border-line px-2 py-1 text-xs text-ink-subtle" title={file.name}>
+        {file.name}
+      </div>
+      <button
+        type="button"
+        className="tap absolute right-1 top-1 grid h-6 w-6 place-items-center rounded-full bg-black/60 text-white hover:bg-black/80"
+        aria-label={`Remove ${file.name}`}
+        onClick={onRemove}
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
 function StatusButton({ status, disabled, onChange }: { status: Status; disabled: boolean; onChange: (s: Status) => void }) {
   const [open, setOpen] = useState(false);
   const ref = useOutside<HTMLDivElement>(open, () => setOpen(false));
@@ -394,14 +432,9 @@ function Composer({ code, status, onDone }: { code: string; status: Status; onDo
             onPaste={pasteFiles}
           />
           {files.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 px-3 pb-2">
-              {files.map((f, i) => (
-                <span key={i} className="inline-flex max-w-full items-center gap-1 rounded bg-neutral px-2 py-0.5 text-xs">
-                  <span className="truncate">{f.name}</span>
-                  <button className="tap grid place-items-center" aria-label={`Remove ${f.name}`} onClick={() => setFiles(files.filter((_, j) => j !== i))}>
-                    <X className="h-3 w-3" />
-                  </button>
-                </span>
+            <div className="flex flex-wrap gap-2 px-3 pb-2">
+              {files.map((file, i) => (
+                <PendingFile key={i} file={file} onRemove={() => setFiles(files.filter((_, j) => j !== i))} />
               ))}
             </div>
           )}
