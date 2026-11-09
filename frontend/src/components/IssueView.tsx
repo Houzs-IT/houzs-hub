@@ -7,8 +7,10 @@ import { ACTIVE, PRIORITIES, PRIORITY_LABEL, STATUSES, STATUS_LABEL, STATUS_STYL
 import { usePoll } from "../lib/usePoll";
 import { Avatar, Lozenge, PriorityIcon, SystemTag, TypeIcon } from "./Bits";
 import { useOutside } from "./FilterButton";
+import FormattedTextarea from "./FormattedTextarea";
 import ImageLightbox from "./ImageLightbox";
 import { useHub } from "./Layout";
+import RichText from "./RichText";
 
 type Detail = { ticket: TicketFull; events: TicketEvent[]; modules?: string[] };
 
@@ -249,13 +251,15 @@ function CommentEditor({ code, e, onClose, onDone }: { code: string; e: TicketEv
 
   return (
     <div className="mt-1">
-      <textarea
-        autoFocus
-        value={body}
-        onChange={(ev) => setBody(ev.target.value)}
-        aria-label="Edit comment"
-        className="block h-28 w-full resize-y rounded border-2 border-primary bg-surface px-3 py-2 text-sm outline-none"
-      />
+      <div className="rounded border-2 border-primary bg-surface">
+        <FormattedTextarea
+          autoFocus
+          value={body}
+          onChange={setBody}
+          aria-label="Edit comment"
+          className="block h-28 w-full resize-y bg-transparent px-3 py-2 text-sm outline-none"
+        />
+      </div>
       {error && <div className="mt-1 text-xs text-loz-red-ink">{error}</div>}
       <div className="mt-2 flex gap-2">
         <button className="btn-primary" disabled={busy || body.trim() === (e.body ?? "")} onClick={save}>
@@ -309,7 +313,7 @@ function ActivityItem({ code, e, onChanged }: { code: string; e: TicketEvent; on
             <CommentEditor code={code} e={e} onClose={() => setIsEditing(false)} onDone={onChanged} />
           ) : (
             <div className={`mt-1 rounded ${internal ? "border-l-4 border-note-line bg-note px-3 py-2" : ""}`}>
-              {e.body && <div className="whitespace-pre-wrap break-words text-sm leading-6">{e.body}</div>}
+              {e.body && <RichText text={e.body} />}
               <Attachments items={e.attachments} />
             </div>
           )}
@@ -422,13 +426,13 @@ function Composer({ code, status, onDone }: { code: string; status: Status; onDo
           ))}
         </div>
         <div className={`rounded border-2 ${internal ? "border-note-line bg-note" : "border-primary bg-surface"}`}>
-          <textarea
+          <FormattedTextarea
             autoFocus
             aria-label={internal ? "Internal note" : "Reply to reporter"}
             className="block h-28 w-full resize-y bg-transparent px-3 py-2 text-sm outline-none"
             placeholder={internal ? "Only developers can see internal notes" : "The reporter will see this in their system"}
             value={body}
-            onChange={(e) => setBody(e.target.value)}
+            onChange={setBody}
             onPaste={pasteFiles}
           />
           {files.length > 0 && (
@@ -760,7 +764,7 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
     <div className="space-y-6">
       <div>
         <div className="section-title mb-2">Description</div>
-        <div className="whitespace-pre-wrap break-words text-sm leading-6">{t.description || <span className="text-ink-subtlest">No description</span>}</div>
+        {t.description ? <RichText text={t.description} /> : <div className="text-sm leading-6 text-ink-subtlest">No description</div>}
       </div>
 
       {created && created.attachments.length > 0 && (

@@ -165,6 +165,12 @@ replies.
 Statuses: `open`, `in_progress` (On Going), `on_hold`, `testing`, `waiting_reporter`,
 `resolved` (Done), `closed`, `rejected`. Done tickets close themselves after 7 days.
 
+Reply bodies and descriptions are plain text that may use a small Markdown subset:
+`**bold**`, `_italic_`, lines starting with `- ` as bullet points, and `[text](url)`
+links. The hub shows these formatted and turns bare `http(s)://` addresses into links.
+A reporter system can show the text as it is, or render the same subset; only allow
+`http`, `https` and `mailto` links when it does.
+
 ### Health report (`POST /api/v1/sys/health`)
 
 A system sends its own health report every 5 minutes with the same key, and **no**
