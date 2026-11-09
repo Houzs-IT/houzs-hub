@@ -1,5 +1,5 @@
 import { ArrowRight, ChevronDown, ExternalLink, FileText, Lock, Maximize2, MessageSquare, Paperclip, Trash2, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, attachmentUrl, json, type Attachment, type Status, type TicketEvent, type TicketFull } from "../api/client";
 import { fmtAgo, fmtDateTime, fmtSize } from "../lib/format";
@@ -306,6 +306,24 @@ function Composer({ code, status, onDone }: { code: string; status: Status; onDo
     reset();
   }
 
+  function addFiles(picked: File[]) {
+    // Same limits as the server, told up front instead of after a long upload.
+    const tooBig = picked.filter((f) => f.size > MAX_FILE_BYTES);
+    const next = [...files, ...picked.filter((f) => f.size <= MAX_FILE_BYTES)];
+    if (tooBig.length) setError(`${tooBig.map((f) => f.name).join(", ")}: over 10 MB, not attached`);
+    else if (next.length > MAX_FILES) setError(`Up to ${MAX_FILES} files per message; the rest were not attached`);
+    else setError(null);
+    setFiles(next.slice(0, MAX_FILES));
+  }
+
+  function pasteFiles(e: ClipboardEvent<HTMLTextAreaElement>) {
+    const pasted = Array.from(e.clipboardData.files);
+    // Excel and Word also put a picture of copied text on the clipboard; paste that as text.
+    if (!pasted.length || e.clipboardData.types.includes("text/plain")) return;
+    e.preventDefault();
+    addFiles(pasted);
+  }
+
   function reset() {
     setMode(null);
     setBody("");
@@ -373,6 +391,7 @@ function Composer({ code, status, onDone }: { code: string; status: Status; onDo
             placeholder={internal ? "Only developers can see internal notes" : "The reporter will see this in their system"}
             value={body}
             onChange={(e) => setBody(e.target.value)}
+            onPaste={pasteFiles}
           />
           {files.length > 0 && (
             <div className="flex flex-wrap gap-1.5 px-3 pb-2">
@@ -401,14 +420,7 @@ function Composer({ code, status, onDone }: { code: string; status: Status; onDo
             multiple
             className="hidden"
             onChange={(e) => {
-              // Same limits as the server, told up front instead of after a long upload.
-              const picked = Array.from(e.target.files ?? []);
-              const tooBig = picked.filter((f) => f.size > MAX_FILE_BYTES);
-              const next = [...files, ...picked.filter((f) => f.size <= MAX_FILE_BYTES)];
-              if (tooBig.length) setError(`${tooBig.map((f) => f.name).join(", ")}: over 10 MB, not attached`);
-              else if (next.length > MAX_FILES) setError(`Up to ${MAX_FILES} files per message; the rest were not attached`);
-              else setError(null);
-              setFiles(next.slice(0, MAX_FILES));
+              addFiles(Array.from(e.target.files ?? []));
               e.target.value = "";
             }}
           />
