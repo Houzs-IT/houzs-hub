@@ -1,7 +1,7 @@
 import { Paperclip } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, type Priority, type SystemRow, type TicketType } from "../api/client";
-import { mergePickedFiles, takePastedFiles } from "../lib/attachments";
+import { isFileDrag, mergePickedFiles, takePastedFiles } from "../lib/attachments";
 import { PRIORITIES, PRIORITY_LABEL, TYPES, TYPE_LABEL } from "../lib/labels";
 import { Field, Select } from "./EditForm";
 import PendingFile from "./PendingFile";
@@ -26,6 +26,7 @@ export default function NewTicketDialog({ systems, defaultSystemCode, onCreated,
   const dialogRef = useRef<HTMLDialogElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>([]);
+  const [isDraggingFiles, setIsDraggingFiles] = useState(false);
   const [form, setForm] = useState<NewTicketForm>({
     systemCode: defaultSystemCode,
     title: "",
@@ -82,7 +83,27 @@ export default function NewTicketDialog({ systems, defaultSystemCode, onCreated,
       aria-labelledby="new-ticket-title"
       className="card w-[640px] max-w-[calc(100vw-32px)] p-0 text-ink backdrop:bg-black/40 max-sm:mb-0 max-sm:mt-auto max-sm:w-full max-sm:max-w-none max-sm:rounded-b-none"
     >
-      <form onSubmit={submit} onPaste={(event) => addFiles(takePastedFiles(event))} className="flex max-h-[90dvh] flex-col">
+      <form
+        onSubmit={submit}
+        onPaste={(event) => addFiles(takePastedFiles(event))}
+        onDragOver={(event) => {
+          if (!isFileDrag(event)) return;
+          // Without this the browser opens the dropped file in the tab and the typed form is lost.
+          event.preventDefault();
+          setIsDraggingFiles(true);
+        }}
+        onDragLeave={(event) => {
+          if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return;
+          setIsDraggingFiles(false);
+        }}
+        onDrop={(event) => {
+          if (!isFileDrag(event)) return;
+          event.preventDefault();
+          setIsDraggingFiles(false);
+          addFiles(Array.from(event.dataTransfer.files));
+        }}
+        className="flex max-h-[90dvh] flex-col"
+      >
         <div className="border-b border-line px-5 py-3">
           <h2 id="new-ticket-title" className="text-[15px] font-bold">
             New ticket
@@ -114,7 +135,11 @@ export default function NewTicketDialog({ systems, defaultSystemCode, onCreated,
           />
           <div className="sm:col-span-2">
             <div className="text-[12px] font-semibold text-ink-subtle">Attachments</div>
-            <div className="mt-1 flex flex-wrap gap-2">
+            <div
+              className={`mt-1 flex flex-wrap gap-2 rounded-md border-2 border-dashed p-2 transition-colors ${
+                isDraggingFiles ? "border-primary bg-primary-soft" : "border-line"
+              }`}
+            >
               {files.map((file, index) => (
                 <PendingFile key={`${file.name}-${index}`} file={file} onRemove={() => setFiles(files.filter((_, otherIndex) => otherIndex !== index))} />
               ))}
@@ -122,7 +147,7 @@ export default function NewTicketDialog({ systems, defaultSystemCode, onCreated,
                 <Paperclip className="h-4 w-4" /> Attach files
               </button>
             </div>
-            <span className="mt-1 block text-[11px] text-ink-subtlest">Up to 5 files, 10 MB each. You can also paste screenshots.</span>
+            <span className="mt-1 block text-[11px] text-ink-subtlest">{isDraggingFiles ? "Drop to attach" : "Up to 5 files, 10 MB each. Drop files here or paste screenshots."}</span>
             <input
               ref={fileInputRef}
               type="file"

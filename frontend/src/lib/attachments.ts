@@ -1,4 +1,4 @@
-import type { ClipboardEvent } from "react";
+import type { ClipboardEvent, DragEvent } from "react";
 
 export const MAX_FILES = 5;
 export const MAX_FILE_BYTES = 10 * 1024 * 1024;
@@ -18,6 +18,10 @@ export function mergePickedFiles(current: File[], picked: File[]): PickedFiles {
       ? `Up to ${MAX_FILES} files at a time; the rest were not attached`
       : null;
   return { files: merged.slice(0, MAX_FILES), error };
+}
+
+export function isFileDrag(event: DragEvent): boolean {
+  return event.dataTransfer.types.includes("Files");
 }
 
 export function takePastedFiles(event: ClipboardEvent): File[] {
