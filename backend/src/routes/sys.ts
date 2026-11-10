@@ -358,7 +358,7 @@ sys.get("/attachments/:id", async (c) => {
     )
     .limit(1);
   if (!att) return c.json({ error: "Not found" }, 404);
-  return streamAttachment(c.env, att);
+  return streamAttachment(c.env, att, c.req.raw.headers);
 });
 
 export default sys;

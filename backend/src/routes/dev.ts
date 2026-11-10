@@ -599,7 +599,7 @@ dev.get("/attachments/:id", async (c) => {
   if (!Number.isInteger(id)) return c.json({ error: "Not found" }, 404);
   const [att] = await db.select().from(schema.ticketAttachments).where(eq(schema.ticketAttachments.id, id)).limit(1);
   if (!att) return c.json({ error: "Not found" }, 404);
-  return streamAttachment(c.env, att);
+  return streamAttachment(c.env, att, c.req.raw.headers);
 });
 
 export default dev;

@@ -120,17 +120,33 @@ export async function saveAttachments(env: Env, db: DB, ticket: Ticket, eventId:
   await db.insert(schema.ticketAttachments).values(rows);
 }
 
-export async function streamAttachment(env: Env, att: { r2Key: string; mime: string; filename: string }) {
-  const obj = await env.FILES.get(att.r2Key);
+function byteSpan(range: R2Range, size: number): { start: number; end: number } {
+  if ("suffix" in range) return { start: Math.max(0, size - range.suffix), end: size - 1 };
+  const start = range.offset ?? 0;
+  const end = range.length === undefined ? size - 1 : Math.min(size - 1, start + range.length - 1);
+  return { start, end };
+}
+
+// The video player seeks with Range requests; without a 206 reply browsers cannot jump ahead.
+export async function streamAttachment(env: Env, att: { r2Key: string; mime: string; filename: string }, requestHeaders: Headers) {
+  const isRangeRequest = requestHeaders.has("Range");
+  const obj = await env.FILES.get(att.r2Key, isRangeRequest ? { range: requestHeaders } : undefined);
   if (!obj) return new Response("Not found", { status: 404 });
-  return new Response(obj.body, {
-    headers: {
-      "Content-Type": att.mime,
-      "Content-Disposition": `${INLINE_MIME.test(att.mime) ? "inline" : "attachment"}; filename="${att.filename.replace(/"/g, "")}"`,
-      "X-Content-Type-Options": "nosniff",
-      "Cache-Control": "private, max-age=3600",
-    },
+  const headers = new Headers({
+    "Content-Type": att.mime,
+    "Content-Disposition": `${INLINE_MIME.test(att.mime) ? "inline" : "attachment"}; filename="${att.filename.replace(/"/g, "")}"`,
+    "X-Content-Type-Options": "nosniff",
+    "Cache-Control": "private, max-age=3600",
+    "Accept-Ranges": "bytes",
   });
+  if (!isRangeRequest || !obj.range) {
+    headers.set("Content-Length", String(obj.size));
+    return new Response(obj.body, { headers });
+  }
+  const { start, end } = byteSpan(obj.range, obj.size);
+  headers.set("Content-Range", `bytes ${start}-${end}/${obj.size}`);
+  headers.set("Content-Length", String(end - start + 1));
+  return new Response(obj.body, { status: 206, headers });
 }
 
 export const ACTIVE_STATUSES = ["open", "in_progress", "on_hold", "testing", "waiting_reporter"] as const;
