@@ -1,15 +1,15 @@
 import { and, asc, count, desc, eq, inArray, isNull, or, gt, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { getDb, schema } from "../db/client";
-import { TICKET_PRIORITIES, TICKET_STATUSES, TICKET_TYPES, type Ticket } from "../db/schema";
-import { broadcastTicketChanges, getLiveRoom } from "../live";
+import { TICKET_STATUSES, type Ticket } from "../db/schema";
+import { broadcastTicketChanges } from "../live";
 import { systemAuth } from "../middleware/systemAuth";
 import {
   InputError,
   addEvent,
-  nextTicketCode,
+  announceNewTicket,
+  createTicket,
   nowIso,
-  oneOf,
   readInput,
   saveAttachments,
   str,
@@ -77,77 +77,19 @@ async function ownTicket(c: { get: (k: "systemCode" | "reporterId") => string },
 sys.post("/tickets", async (c) => {
   const db = getDb(c.env);
   const { fields, files } = await readInput(c);
-  validateFiles(files);
-
-  const title = str(fields.title, 200);
-  const reporterName = str(fields.reporter_name, 120);
-  if (!title) throw new InputError("title is required");
-  if (!reporterName) throw new InputError("reporter_name is required");
-
-  const now = nowIso();
   const systemCode = c.get("systemCode");
-  const code = await nextTicketCode(db, systemCode);
-  const [ticket] = await db
-    .insert(t)
-    .values({
-      code,
-      systemCode,
-      type: oneOf(fields.type, TICKET_TYPES, "bug"),
-      // Urgent was dropped; a system still on an older build may send it.
-      priority: oneOf(fields.priority === "urgent" ? "high" : fields.priority, TICKET_PRIORITIES, "medium"),
-      status: "open",
-      title,
-      description: str(fields.description, 10000) ?? "",
-      // Reporters rarely say when it happened; submission time is the best guess.
-      occurredAt: str(fields.occurred_at, 40) ?? now,
-      reporterExternalId: c.get("reporterId"),
-      reporterName,
-      reporterEmail: str(fields.reporter_email, 200),
-      reporterPhone: str(fields.reporter_phone, 40),
-      reporterDepartment: str(fields.reporter_department, 120),
-      pageUrl: str(fields.page_url, 1000),
-      module: str(fields.module, 60),
-      userAgent: str(fields.user_agent, 500),
-      appVersion: str(fields.app_version, 60),
-      lastPublicActivityAt: now,
-      lastPublicActor: "reporter",
-      reporterSeenAt: now,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .returning();
-
-  const ev = await addEvent(db, ticket.id, {
-    kind: "created",
-    visibility: "public",
-    authorKind: "reporter",
-    authorName: reporterName,
-    at: now,
+  const ticket = await createTicket(c.env, db, {
+    systemCode,
+    reporterExternalId: c.get("reporterId"),
+    createdBy: { authorKind: "reporter", authorName: str(fields.reporter_name, 120) ?? "", userId: null },
+    fields,
+    files,
   });
-  await saveAttachments(c.env, db, ticket, ev.id, files);
   await db
     .update(schema.systems)
     .set({ lastSendError: null, lastSendErrorAt: null })
     .where(eq(schema.systems.code, systemCode));
-
-  // Same shape as a row of GET /dev/tickets.
-  const ticketRow = {
-    code: ticket.code,
-    legacy_code: ticket.legacyCode,
-    system_code: ticket.systemCode,
-    type: ticket.type,
-    priority: ticket.priority,
-    status: ticket.status,
-    title: ticket.title,
-    reporter_name: ticket.reporterName,
-    reporter_department: ticket.reporterDepartment,
-    assignee_id: null,
-    assignee_name: null,
-    last_public_actor: ticket.lastPublicActor,
-    created_at: ticket.createdAt,
-    updated_at: ticket.updatedAt,
-  };
-  c.executionCtx.waitUntil(getLiveRoom(c.env.LIVE).broadcast(JSON.stringify({ type: "ticket.created", ticket: ticketRow })));
+  c.executionCtx.waitUntil(announceNewTicket(c.env, ticket));
 
   return c.json({ code: ticket.code, status: ticket.status, created_at: ticket.createdAt }, 201);
 });

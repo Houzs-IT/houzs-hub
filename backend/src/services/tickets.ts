@@ -1,7 +1,8 @@
 import { eq, sql } from "drizzle-orm";
 import type { Context } from "hono";
 import { schema, type DB } from "../db/client";
-import type { AuthorKind, EventKind, Ticket, Visibility } from "../db/schema";
+import { TICKET_PRIORITIES, TICKET_TYPES, type AuthorKind, type EventKind, type Ticket, type Visibility } from "../db/schema";
+import { getLiveRoom } from "../live";
 import type { Env } from "../types";
 
 export const MAX_FILES = 5;
@@ -149,4 +150,84 @@ export async function streamAttachment(env: Env, att: { r2Key: string; mime: str
   return new Response(obj.body, { status: 206, headers });
 }
 
-export const ACTIVE_STATUSES = ["open", "in_progress", "on_hold", "testing", "waiting_reporter"] as const;
+export interface TicketCreator {
+  authorKind: AuthorKind;
+  authorName: string;
+  userId: number | null;
+}
+
+export interface NewTicketInput {
+  systemCode: string;
+  reporterExternalId: string;
+  createdBy: TicketCreator;
+  fields: Record<string, string>;
+  files: File[];
+}
+
+export async function createTicket(env: Env, db: DB, input: NewTicketInput): Promise<Ticket> {
+  const { systemCode, reporterExternalId, createdBy, fields, files } = input;
+  validateFiles(files);
+  const title = str(fields.title, 200);
+  const reporterName = str(fields.reporter_name, 120);
+  if (!title) throw new InputError("title is required");
+  if (!reporterName) throw new InputError("reporter_name is required");
+
+  const now = nowIso();
+  const code = await nextTicketCode(db, systemCode);
+  const [ticket] = await db
+    .insert(schema.tickets)
+    .values({
+      code,
+      systemCode,
+      type: oneOf(fields.type, TICKET_TYPES, "bug"),
+      // Urgent was dropped; a system still on an older build may send it.
+      priority: oneOf(fields.priority === "urgent" ? "high" : fields.priority, TICKET_PRIORITIES, "medium"),
+      status: "open",
+      title,
+      description: str(fields.description, 10000) ?? "",
+      // Reporters rarely say when it happened; submission time is the best guess.
+      occurredAt: str(fields.occurred_at, 40) ?? now,
+      reporterExternalId,
+      reporterName,
+      reporterEmail: str(fields.reporter_email, 200),
+      reporterPhone: str(fields.reporter_phone, 40),
+      reporterDepartment: str(fields.reporter_department, 120),
+      pageUrl: str(fields.page_url, 1000),
+      module: str(fields.module, 60),
+      userAgent: str(fields.user_agent, 500),
+      appVersion: str(fields.app_version, 60),
+      lastPublicActivityAt: now,
+      lastPublicActor: createdBy.authorKind,
+      reporterSeenAt: now,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .returning();
+
+  const createdEvent = await addEvent(db, ticket.id, { kind: "created", visibility: "public", ...createdBy, at: now });
+  await saveAttachments(env, db, ticket, createdEvent.id, files);
+  return ticket;
+}
+
+export async function announceNewTicket(env: Env, ticket: Ticket): Promise<void> {
+  // Same shape as a row of GET /dev/tickets.
+  const ticketRow = {
+    code: ticket.code,
+    legacy_code: ticket.legacyCode,
+    system_code: ticket.systemCode,
+    type: ticket.type,
+    priority: ticket.priority,
+    status: ticket.status,
+    title: ticket.title,
+    reporter_name: ticket.reporterName,
+    reporter_department: ticket.reporterDepartment,
+    assignee_id: null,
+    assignee_name: null,
+    last_public_actor: ticket.lastPublicActor,
+    created_at: ticket.createdAt,
+    updated_at: ticket.updatedAt,
+  };
+  await getLiveRoom(env.LIVE).broadcast(JSON.stringify({ type: "ticket.created", ticket: ticketRow }));
+}
+
+export const ACTIVE_STATUSES =["open", "in_progress", "on_hold", "testing", "waiting_reporter"] as const;

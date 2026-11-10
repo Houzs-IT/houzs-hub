@@ -15,6 +15,8 @@ import {
   ACTIVE_STATUSES,
   InputError,
   addEvent,
+  announceNewTicket,
+  createTicket,
   nowIso,
   oneOf,
   readInput,
@@ -309,6 +311,34 @@ dev.get("/tickets/reporters", async (c) => {
   const db = c.get("db");
   const rows = await db.selectDistinct({ name: t.reporterName }).from(t).orderBy(asc(t.reporterName));
   return c.json({ reporters: rows.map((r) => r.name) });
+});
+
+// Staff log a request someone made in person. The reporter's own app never lists it:
+// sys routes match on reporter_external_id, and this id belongs to no reporter.
+const WALK_IN_REPORTER_ID = "hub:walk-in";
+
+dev.post("/tickets", async (c) => {
+  const db = c.get("db");
+  const me = c.get("user");
+  const { fields, files } = await readInput(c);
+  const systemCode = str(fields.system_code, 20);
+  if (!systemCode) throw new InputError("system_code is required");
+  const [system] = await db
+    .select({ code: schema.systems.code })
+    .from(schema.systems)
+    .where(and(eq(schema.systems.code, systemCode), eq(schema.systems.active, 1)))
+    .limit(1);
+  if (!system) throw new InputError(`No active system ${systemCode}`);
+
+  const ticket = await createTicket(c.env, db, {
+    systemCode,
+    reporterExternalId: WALK_IN_REPORTER_ID,
+    createdBy: { authorKind: "developer", authorName: me.name, userId: me.id },
+    fields,
+    files,
+  });
+  c.executionCtx.waitUntil(announceNewTicket(c.env, ticket));
+  return c.json({ code: ticket.code }, 201);
 });
 
 // Reports dashboard: backlog, speed, and per-system / reporter breakdowns for one window.
