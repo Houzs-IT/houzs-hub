@@ -100,7 +100,7 @@ export default function ImageLightbox({ src, alt, onClose }: { src: string; alt:
       role="dialog"
       aria-modal="true"
       aria-label={alt}
-      className="fixed inset-0 z-[60] grid place-items-center overflow-hidden bg-black/80 backdrop-blur-sm"
+      className="fixed inset-0 z-[60] grid place-content-center place-items-center overflow-hidden bg-black/80 backdrop-blur-sm"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <img
