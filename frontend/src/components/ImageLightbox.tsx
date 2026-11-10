@@ -1,4 +1,4 @@
-import { RotateCcw, X, ZoomIn, ZoomOut } from "lucide-react";
+import { Maximize, RotateCw, X, ZoomIn, ZoomOut } from "lucide-react";
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
 
@@ -12,6 +12,8 @@ const FIT: View = { scale: 1, x: 0, y: 0 };
 
 export default function ImageLightbox({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
   const [view, setView] = useState<View>(FIT);
+  // Counts up without wrapping so every turn animates clockwise.
+  const [quarterTurns, setQuarterTurns] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const overlayRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -51,6 +53,7 @@ export default function ImageLightbox({ src, alt, onClose }: { src: string; alt:
       else if (e.key === "+" || e.key === "=") zoomBy(ZOOM_STEP);
       else if (e.key === "-") zoomBy(1 / ZOOM_STEP);
       else if (e.key === "0") setView(FIT);
+      else if (e.key === "r" || e.key === "R") setQuarterTurns((turns) => turns + 1);
       else if (e.key === "Tab") {
         const buttons = [...overlay.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
         const edge = e.shiftKey ? buttons[0] : buttons[buttons.length - 1];
@@ -87,6 +90,7 @@ export default function ImageLightbox({ src, alt, onClose }: { src: string; alt:
   }
 
   const isZoomed = view.scale > MIN_ZOOM;
+  const isSideways = quarterTurns % 2 === 1;
   const control =
     "grid h-10 w-10 place-items-center rounded-md text-white/85 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-40 disabled:hover:bg-transparent";
 
@@ -108,8 +112,8 @@ export default function ImageLightbox({ src, alt, onClose }: { src: string; alt:
         onPointerMove={moveDrag}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
-        style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})` }}
-        className={`max-h-[85vh] max-w-[92vw] touch-none select-none object-contain ${
+        style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale}) rotate(${quarterTurns * 90}deg)` }}
+        className={`${isSideways ? "max-h-[92vw] max-w-[85dvh]" : "max-h-[85dvh] max-w-[92vw]"} touch-none select-none object-contain ${
           isZoomed ? (isDragging ? "cursor-grabbing" : "cursor-grab") : "cursor-zoom-in"
         } ${isDragging ? "" : "transition-transform duration-150 ease-out motion-reduce:transition-none"}`}
       />
@@ -122,8 +126,11 @@ export default function ImageLightbox({ src, alt, onClose }: { src: string; alt:
         <button className={control} onClick={() => zoomBy(ZOOM_STEP)} disabled={view.scale >= MAX_ZOOM} aria-label="Zoom in" title="Zoom in (+)">
           <ZoomIn className="h-5 w-5" />
         </button>
-        <button className={control} onClick={() => setView(FIT)} disabled={!isZoomed} aria-label="Reset zoom" title="Reset (0)">
-          <RotateCcw className="h-5 w-5" />
+        <button className={control} onClick={() => setView(FIT)} disabled={!isZoomed} aria-label="Fit to screen" title="Fit to screen (0)">
+          <Maximize className="h-5 w-5" />
+        </button>
+        <button className={control} onClick={() => setQuarterTurns((turns) => turns + 1)} aria-label="Rotate" title="Rotate (R)">
+          <RotateCw className="h-5 w-5" />
         </button>
         <button ref={closeRef} className={control} onClick={onClose} aria-label="Close" title="Close (Esc)">
           <X className="h-5 w-5" />

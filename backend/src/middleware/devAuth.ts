@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import type { Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { createMiddleware } from "hono/factory";
@@ -46,18 +46,22 @@ export const devAuth = createMiddleware<DevApp>(async (c, next) => {
   if (!Number.isInteger(id)) return c.json({ error: "Not signed in" }, 401);
 
   const db = getDb(c.env);
-  const [row] = await db
+  const rows = await db
     .select({ user: schema.users, role: schema.roles })
     .from(schema.users)
-    .leftJoin(schema.roles, eq(schema.roles.key, schema.users.role))
+    .leftJoin(schema.userRoles, eq(schema.userRoles.userId, schema.users.id))
+    .leftJoin(schema.roles, eq(schema.roles.key, schema.userRoles.roleKey))
     .where(eq(schema.users.id, id))
-    .limit(1);
-  if (!row) return c.json({ error: "Not signed in" }, 401);
-  if (!row.user.active) return c.json({ error: ACCOUNT_DISABLED, code: "account_disabled" }, 401);
+    .orderBy(asc(schema.roles.name));
+  const [first] = rows;
+  if (!first) return c.json({ error: "Not signed in" }, 401);
+  if (!first.user.active) return c.json({ error: ACCOUNT_DISABLED, code: "account_disabled" }, 401);
+  const roles = rows.flatMap(({ role }) => (role ? [role] : []));
   const user = {
-    ...row.user,
-    roleName: row.role?.name ?? row.user.role,
-    perms: effective(row.role?.permissions ?? "", row.user.permAllow, row.user.permDeny),
+    ...first.user,
+    roles: roles.map(({ key }) => key),
+    roleName: roles.map(({ name }) => name).join(", "),
+    perms: effective(roles.map(({ permissions }) => permissions), first.user.permAllow, first.user.permDeny),
   };
   // With a handed-out password, the only things allowed are reading who you
   // are and setting your own password.

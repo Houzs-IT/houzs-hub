@@ -49,8 +49,6 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash"),
   failedLogins: integer("failed_logins").notNull().default(0),
   lockedUntil: text("locked_until"),
-  // A roles.key. See services/perms.ts for how permissions are worked out.
-  role: text("role").notNull().default("developer"),
   mustChangePassword: integer("must_change_password").notNull().default(0),
   viewingPage: text("viewing_page"),
   permAllow: text("perm_allow").notNull().default(""),
@@ -74,6 +72,16 @@ export const roles = pgTable("roles", {
   permissions: text("permissions").notNull().default(""),
   createdAt: text("created_at"),
 });
+
+// A user's roles. See services/perms.ts for how permissions are worked out.
+export const userRoles = pgTable(
+  "user_roles",
+  {
+    userId: integer("user_id").notNull(),
+    roleKey: text("role_key").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.roleKey] })],
+);
 
 export const tickets = pgTable("tickets", {
   id: id(),

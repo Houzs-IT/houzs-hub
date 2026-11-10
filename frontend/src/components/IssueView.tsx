@@ -1,26 +1,39 @@
-import { ArrowRight, CalendarClock, ChevronLeft, Check, ChevronDown, ExternalLink, FileText, Lock, Mail, Maximize2, MessageSquare, Paperclip, Phone, Tag, Trash2, UserPlus, Users, X, type LucideIcon } from "lucide-react";
-import { useCallback, useEffect, useId, useRef, useState, type ClipboardEvent, type ReactNode } from "react";
+import { ArrowRight, CalendarClock, ChevronLeft, Check, ChevronDown, ExternalLink, FileText, Lock, Mail, Maximize2, MessageSquare, Paperclip, Phone, Play, Tag, Trash2, UserPlus, Users, X, type LucideIcon } from "lucide-react";
+import { useCallback, useEffect, useId, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, attachmentUrl, json, type Attachment, type Status, type TicketEvent, type TicketFull, type User } from "../api/client";
+import { mergePickedFiles, takePastedFiles } from "../lib/attachments";
 import { fmtAgo, fmtDateTime, fmtSize } from "../lib/format";
 import { ACTIVE, PRIORITIES, PRIORITY_DOT_STYLE, PRIORITY_LABEL, STATUSES, STATUS_DOT_STYLE, STATUS_LABEL, STATUS_STYLE, TYPES, TYPE_LABEL, systemTagStyle } from "../lib/labels";
 import { usePoll } from "../lib/usePoll";
 import { Avatar, Lozenge, TypeIcon } from "./Bits";
 import { useOutside } from "./FilterButton";
 import ImageLightbox from "./ImageLightbox";
+import PendingFile from "./PendingFile";
 import { useHub } from "./Layout";
+import VideoLightbox, { isVideoFile } from "./VideoLightbox";
 
 type Detail = { ticket: TicketFull; events: TicketEvent[]; modules?: string[] };
-
-const MAX_FILES = 5;
-const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
 function Attachments({ items }: { items: Attachment[] }) {
   const [viewing, setViewing] = useState<Attachment | null>(null);
   if (!items.length) return null;
+
+  function openInPage(event: MouseEvent<HTMLAnchorElement>, attachment: Attachment): void {
+    // Ctrl/Cmd/Shift-click (and middle-click, which never fires onClick) still open the file in a new tab.
+    if (event.ctrlKey || event.metaKey || event.shiftKey) return;
+    event.preventDefault();
+    setViewing(attachment);
+  }
+
   return (
     <div className="mt-2 flex flex-wrap gap-2">
-      {viewing && <ImageLightbox src={attachmentUrl(viewing.id)} alt={viewing.filename} onClose={() => setViewing(null)} />}
+      {viewing &&
+        (isVideoFile(viewing.mime, viewing.filename) ? (
+          <VideoLightbox src={attachmentUrl(viewing.id)} title={viewing.filename} onClose={() => setViewing(null)} />
+        ) : (
+          <ImageLightbox src={attachmentUrl(viewing.id)} alt={viewing.filename} onClose={() => setViewing(null)} />
+        ))}
       {items.map((a) =>
         a.mime.startsWith("image/") ? (
           <a
@@ -28,16 +41,27 @@ function Attachments({ items }: { items: Attachment[] }) {
             href={attachmentUrl(a.id)}
             target="_blank"
             rel="noreferrer"
-            onClick={(e) => {
-              // Ctrl/Cmd/Shift-click (and middle-click, which never fires onClick) still open the file in a new tab.
-              if (e.ctrlKey || e.metaKey || e.shiftKey) return;
-              e.preventDefault();
-              setViewing(a);
-            }}
+            onClick={(e) => openInPage(e, a)}
             className="group block w-40 overflow-hidden rounded border border-line"
           >
             <img src={attachmentUrl(a.id)} alt={a.filename} className="h-24 w-full object-cover group-hover:opacity-90" />
             <div className="truncate border-t border-line px-2 py-1 text-xs text-ink-subtle">{a.filename}</div>
+          </a>
+        ) : isVideoFile(a.mime, a.filename) ? (
+          <a
+            key={a.id}
+            href={attachmentUrl(a.id)}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(e) => openInPage(e, a)}
+            aria-label={`Play ${a.filename}`}
+            className="group flex w-40 flex-col justify-between rounded border border-line p-2 text-xs hover:bg-hover"
+          >
+            <span className="grid h-6 w-6 place-items-center rounded-full bg-ink/80 text-surface group-hover:bg-ink">
+              <Play className="h-3 w-3 translate-x-px fill-current" />
+            </span>
+            <span className="mt-2 truncate text-ink">{a.filename}</span>
+            <span className="text-ink-subtlest">{fmtSize(a.size)}</span>
           </a>
         ) : (
           <a
@@ -53,44 +77,6 @@ function Attachments({ items }: { items: Attachment[] }) {
           </a>
         ),
       )}
-    </div>
-  );
-}
-
-function PendingFile({ file, onRemove }: { file: File; onRemove: () => void }) {
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [isViewing, setIsViewing] = useState(false);
-
-  useEffect(() => {
-    const objectUrl = URL.createObjectURL(file);
-    setPreviewUrl(objectUrl);
-    return () => URL.revokeObjectURL(objectUrl);
-  }, [file]);
-
-  if (!previewUrl) return null;
-  return (
-    <div className="relative w-28 overflow-hidden rounded border border-line bg-surface">
-      {isViewing && <ImageLightbox src={previewUrl} alt={file.name} onClose={() => setIsViewing(false)} />}
-      {file.type.startsWith("image/") ? (
-        <button type="button" className="block w-full" aria-label={`Preview ${file.name}`} onClick={() => setIsViewing(true)}>
-          <img src={previewUrl} alt="" className="h-20 w-full object-cover hover:opacity-90" />
-        </button>
-      ) : (
-        <a href={previewUrl} target="_blank" rel="noreferrer" aria-label={`Open ${file.name}`} className="grid h-20 place-items-center hover:bg-hover">
-          <FileText className="h-6 w-6 text-ink-subtle" />
-        </a>
-      )}
-      <div className="truncate border-t border-line px-2 py-1 text-xs text-ink-subtle" title={file.name}>
-        {file.name}
-      </div>
-      <button
-        type="button"
-        className="tap absolute right-1 top-1 grid h-6 w-6 place-items-center rounded-full bg-black/60 text-white hover:bg-black/80"
-        aria-label={`Remove ${file.name}`}
-        onClick={onRemove}
-      >
-        <X className="h-3.5 w-3.5" />
-      </button>
     </div>
   );
 }
@@ -348,21 +334,10 @@ function Composer({ code, status, onDone }: { code: string; status: Status; onDo
   }
 
   function addFiles(picked: File[]) {
-    // Same limits as the server, told up front instead of after a long upload.
-    const tooBig = picked.filter((f) => f.size > MAX_FILE_BYTES);
-    const next = [...files, ...picked.filter((f) => f.size <= MAX_FILE_BYTES)];
-    if (tooBig.length) setError(`${tooBig.map((f) => f.name).join(", ")}: over 10 MB, not attached`);
-    else if (next.length > MAX_FILES) setError(`Up to ${MAX_FILES} files per message; the rest were not attached`);
-    else setError(null);
-    setFiles(next.slice(0, MAX_FILES));
-  }
-
-  function pasteFiles(e: ClipboardEvent<HTMLTextAreaElement>) {
-    const pasted = Array.from(e.clipboardData.files);
-    // Excel and Word also put a picture of copied text on the clipboard; paste that as text.
-    if (!pasted.length || e.clipboardData.types.includes("text/plain")) return;
-    e.preventDefault();
-    addFiles(pasted);
+    if (!picked.length) return;
+    const { files: merged, error: limitError } = mergePickedFiles(files, picked);
+    setFiles(merged);
+    setError(limitError);
   }
 
   function reset() {
@@ -432,7 +407,7 @@ function Composer({ code, status, onDone }: { code: string; status: Status; onDo
             placeholder={internal ? "Only developers can see internal notes" : "The reporter will see this in their system"}
             value={body}
             onChange={(e) => setBody(e.target.value)}
-            onPaste={pasteFiles}
+            onPaste={(e) => addFiles(takePastedFiles(e))}
           />
           {files.length > 0 && (
             <div className="flex flex-wrap gap-2 px-3 pb-2">

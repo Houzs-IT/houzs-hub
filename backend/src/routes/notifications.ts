@@ -5,7 +5,7 @@ import { need } from "../middleware/devAuth";
 import type { DevApp, DevVars } from "../types";
 
 const notifications = new Hono<DevApp>();
-notifications.use("*", need("it"));
+notifications.use("*", need("it"), need("notifications"));
 
 const events = schema.ticketEvents;
 const tickets = schema.tickets;

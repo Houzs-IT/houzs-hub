@@ -24,6 +24,7 @@ const SOUND_CHOICES = Object.keys(SOUND_LABELS).filter((key): key is SoundChoice
 
 export default function AccountPage() {
   const { me, setMe } = useHub();
+  const hasNotifications = !!me.perms?.includes("it") && !!me.perms.includes("notifications");
   const [name, setName] = useState(me.name);
   const [email, setEmail] = useState(me.email ?? "");
   const [nameMsg, setNameMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -151,7 +152,7 @@ export default function AccountPage() {
           <dl className="mt-4 space-y-2 border-t border-line-subtle pt-4 text-[13px]">
             {[
               ["Username", me.username ?? "none"],
-              ["Role", me.roleName ?? me.role ?? ""],
+              [me.roles && me.roles.length > 1 ? "Roles" : "Role", me.roleName ?? ""],
             ].map(([k, v]) => (
               <div key={k} className="flex gap-3">
                 <dt className="w-20 shrink-0 text-ink-subtlest">{k}</dt>
@@ -171,6 +172,7 @@ export default function AccountPage() {
           <PasswordForm currentLabel="Current password" submitLabel="Change password" onDone={() => setChanged(true)} />
         </div>
 
+        {hasNotifications && (
         <div className="card p-5">
           <div className="section-title">Notification sound</div>
           <p className="mt-1 text-[11.5px] text-ink-subtle">
@@ -233,6 +235,7 @@ export default function AccountPage() {
             </p>
           )}
         </div>
+        )}
       </div>
       <SoundTrimDialog source={trimSource} volume={volume} onSave={saveTrimmedSound} onClose={() => setTrimSource(null)} />
     </div>

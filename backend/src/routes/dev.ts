@@ -15,6 +15,8 @@ import {
   ACTIVE_STATUSES,
   InputError,
   addEvent,
+  announceNewTicket,
+  createTicket,
   nowIso,
   oneOf,
   readInput,
@@ -62,8 +64,8 @@ dev.get("/live", need("it"), (c) => {
 });
 
 dev.get("/me", (c) => {
-  const { id, name, email, username, role, roleName, perms, mustChangePassword } = c.get("user");
-  return c.json({ user: { id, name, email, username, role, roleName, perms, mustChangePassword } });
+  const { id, name, email, username, roles, roleName, perms, mustChangePassword } = c.get("user");
+  return c.json({ user: { id, name, email, username, roles, roleName, perms, mustChangePassword } });
 });
 
 // Display name and/or email; send only what changes. An empty email clears it.
@@ -95,9 +97,8 @@ dev.patch("/me", async (c) => {
         name: schema.users.name,
         email: schema.users.email,
         username: schema.users.username,
-        role: schema.users.role,
       });
-    return c.json({ user: { ...user, roleName: me.roleName, perms: me.perms } });
+    return c.json({ user: { ...user, roles: me.roles, roleName: me.roleName, perms: me.perms } });
   } catch (e) {
     if (isUniqueViolation(e)) return c.json({ error: "That email is already used by another account" }, 409);
     throw e;
@@ -295,7 +296,7 @@ dev.get("/tickets/stats", async (c) => {
       .select({ n: count() })
       .from(t)
       .where(and(eq(t.assigneeId, c.get("user").id), inArray(t.status, [...ACTIVE_STATUSES]))),
-    countUnread(db, c.get("user")),
+    c.get("user").perms.includes("notifications") ? countUnread(db, c.get("user")) : 0,
   ]);
   return c.json({
     active_by_system: Object.fromEntries(bySystem.map((r) => [r.system, r.n])),
@@ -309,6 +310,34 @@ dev.get("/tickets/reporters", async (c) => {
   const db = c.get("db");
   const rows = await db.selectDistinct({ name: t.reporterName }).from(t).orderBy(asc(t.reporterName));
   return c.json({ reporters: rows.map((r) => r.name) });
+});
+
+// Staff log a request someone made in person. The reporter's own app never lists it:
+// sys routes match on reporter_external_id, and this id belongs to no reporter.
+const WALK_IN_REPORTER_ID = "hub:walk-in";
+
+dev.post("/tickets", async (c) => {
+  const db = c.get("db");
+  const me = c.get("user");
+  const { fields, files } = await readInput(c);
+  const systemCode = str(fields.system_code, 20);
+  if (!systemCode) throw new InputError("system_code is required");
+  const [system] = await db
+    .select({ code: schema.systems.code })
+    .from(schema.systems)
+    .where(and(eq(schema.systems.code, systemCode), eq(schema.systems.active, 1)))
+    .limit(1);
+  if (!system) throw new InputError(`No active system ${systemCode}`);
+
+  const ticket = await createTicket(c.env, db, {
+    systemCode,
+    reporterExternalId: WALK_IN_REPORTER_ID,
+    createdBy: { authorKind: "developer", authorName: me.name, userId: me.id },
+    fields,
+    files,
+  });
+  c.executionCtx.waitUntil(announceNewTicket(c.env, ticket));
+  return c.json({ code: ticket.code }, 201);
 });
 
 // Reports dashboard: backlog, speed, and per-system / reporter breakdowns for one window.
@@ -599,7 +628,7 @@ dev.get("/attachments/:id", async (c) => {
   if (!Number.isInteger(id)) return c.json({ error: "Not found" }, 404);
   const [att] = await db.select().from(schema.ticketAttachments).where(eq(schema.ticketAttachments.id, id)).limit(1);
   if (!att) return c.json({ error: "Not found" }, 404);
-  return streamAttachment(c.env, att);
+  return streamAttachment(c.env, att, c.req.raw.headers);
 });
 
 export default dev;
