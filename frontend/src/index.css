@@ -149,6 +149,26 @@ body {
   color: rgb(var(--accent-ink));
 }
 
+@keyframes board-lift {
+  from {
+    transform: none;
+    box-shadow: var(--shadow-stone);
+  }
+}
+
+/* No fill mode on purpose: a transform left on the drawer would trap its fixed menus and lightbox inside it. */
+@keyframes drawer-in {
+  from {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes drawer-out {
+  to {
+    transform: translateX(100%);
+  }
+}
+
 @layer components {
   /* Century Button: h-9, 13px semibold, petrol primary with border. */
   .btn {

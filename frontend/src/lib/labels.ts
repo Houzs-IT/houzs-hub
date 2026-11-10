@@ -22,10 +22,64 @@ export const STATUS_STYLE: Record<Status, string> = {
   rejected: "bg-loz-red text-loz-red-ink",
 };
 
+export const STATUS_COLUMN_STYLE: Record<Status, string> = {
+  open: "border-loz-grey-ink/25 bg-loz-grey/70",
+  in_progress: "border-loz-blue-ink/25 bg-loz-blue/70",
+  on_hold: "border-loz-yellow-ink/25 bg-loz-yellow/70",
+  testing: "border-loz-purple-ink/25 bg-loz-purple/70",
+  waiting_reporter: "border-loz-orange-ink/25 bg-loz-orange/70",
+  resolved: "border-loz-green-ink/25 bg-loz-green/70",
+  closed: "border-loz-grey-ink/25 bg-loz-grey/70",
+  rejected: "border-loz-red-ink/25 bg-loz-red/70",
+};
+
+export const STATUS_DOT_STYLE: Record<Status, string> = {
+  open: "bg-loz-grey-ink",
+  in_progress: "bg-loz-blue-ink",
+  on_hold: "bg-loz-yellow-ink",
+  testing: "bg-loz-purple-ink",
+  waiting_reporter: "bg-loz-orange-ink",
+  resolved: "bg-loz-green-ink",
+  closed: "bg-loz-grey-ink",
+  rejected: "bg-loz-red-ink",
+};
+
+export const STATUS_HINT: Record<Status, string> = {
+  open: "New, not picked up yet",
+  in_progress: "Being worked on",
+  on_hold: "Paused for now",
+  testing: "Fix ready, being checked",
+  waiting_reporter: "Needs an answer from the reporter",
+  resolved: "Fixed and finished",
+  closed: "No more work needed",
+  rejected: "Will not be done",
+};
+
+const SYSTEM_TAG_STYLES = [
+  "border-loz-blue-ink/40 bg-loz-blue text-loz-blue-ink",
+  "border-loz-green-ink/40 bg-loz-green text-loz-green-ink",
+  "border-loz-yellow-ink/40 bg-loz-yellow text-loz-yellow-ink",
+  "border-loz-orange-ink/40 bg-loz-orange text-loz-orange-ink",
+  "border-loz-purple-ink/40 bg-loz-purple text-loz-purple-ink",
+  "border-loz-red-ink/40 bg-loz-red text-loz-red-ink",
+] as const;
+
+// Same code always gets the same colour, so a system is recognisable at a glance on every page.
+export function systemTagStyle(code: string): string {
+  const codeSum = [...code].reduce((sum, character) => sum + character.charCodeAt(0), 0);
+  return SYSTEM_TAG_STYLES[codeSum % SYSTEM_TAG_STYLES.length];
+}
+
 export const PRIORITY_LABEL: Record<Priority, string> = {
   high: "High",
   medium: "Medium",
   low: "Low",
+};
+
+export const PRIORITY_DOT_STYLE: Record<Priority, string> = {
+  high: "bg-loz-red-ink",
+  medium: "bg-loz-yellow-ink",
+  low: "bg-loz-blue-ink",
 };
 
 export const TYPE_LABEL: Record<TicketType, string> = {

@@ -1,11 +1,11 @@
-import { ArrowRight, ChevronDown, ExternalLink, FileText, Lock, Maximize2, MessageSquare, Paperclip, Trash2, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type ReactNode } from "react";
+import { ArrowRight, CalendarClock, ChevronLeft, Check, ChevronDown, ExternalLink, FileText, Lock, Mail, Maximize2, MessageSquare, Paperclip, Phone, Tag, Trash2, UserPlus, Users, X, type LucideIcon } from "lucide-react";
+import { useCallback, useEffect, useId, useRef, useState, type ClipboardEvent, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api, attachmentUrl, json, type Attachment, type Status, type TicketEvent, type TicketFull } from "../api/client";
+import { api, attachmentUrl, json, type Attachment, type Status, type TicketEvent, type TicketFull, type User } from "../api/client";
 import { fmtAgo, fmtDateTime, fmtSize } from "../lib/format";
-import { ACTIVE, PRIORITIES, PRIORITY_LABEL, STATUSES, STATUS_LABEL, STATUS_STYLE, TYPES, TYPE_LABEL } from "../lib/labels";
+import { ACTIVE, PRIORITIES, PRIORITY_DOT_STYLE, PRIORITY_LABEL, STATUSES, STATUS_DOT_STYLE, STATUS_LABEL, STATUS_STYLE, TYPES, TYPE_LABEL, systemTagStyle } from "../lib/labels";
 import { usePoll } from "../lib/usePoll";
-import { Avatar, Lozenge, PriorityIcon, SystemTag, TypeIcon } from "./Bits";
+import { Avatar, Lozenge, TypeIcon } from "./Bits";
 import { useOutside } from "./FilterButton";
 import ImageLightbox from "./ImageLightbox";
 import { useHub } from "./Layout";
@@ -106,31 +106,34 @@ function StatusButton({ status, disabled, onChange }: { status: Status; disabled
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={`Status: ${STATUS_LABEL[status]}. Change status`}
-        className={`btn h-9 px-3.5 ${
-          status === "in_progress" || status === "open"
-            ? "border border-primary bg-primary text-primary-on shadow-sm hover:bg-primary-hover"
-            : `${STATUS_STYLE[status]} hover:brightness-95`
-        }`}
+        className={`btn h-9 px-3.5 ${STATUS_STYLE[status]} hover:brightness-95`}
       >
+        <span aria-hidden className={`h-2 w-2 rounded-full ${STATUS_DOT_STYLE[status]}`} />
         {STATUS_LABEL[status]}
         <ChevronDown className="h-4 w-4" />
       </button>
       {open && <div className="fixed inset-0 z-20 bg-black/30 sm:hidden" onClick={() => setOpen(false)} />}
       {open && (
         <div role="menu" className="absolute left-0 top-10 z-30 max-h-[60vh] min-w-[220px] overflow-y-auto overscroll-contain rounded-[10px] border border-transparent bg-overlay py-1.5 shadow-overlay max-sm:fixed max-sm:inset-x-4 max-sm:bottom-4 max-sm:top-auto">
-          {STATUSES.filter((s) => s !== status).map((s) => (
-            <button
-              key={s}
-              onClick={() => {
-                setOpen(false);
-                onChange(s);
-              }}
-              className="tap flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-hover"
-            >
-              <ArrowRight className="h-3.5 w-3.5 text-ink-subtlest" />
-              <Lozenge status={s} />
-            </button>
-          ))}
+          {STATUSES.map((s) => {
+            const isCurrent = s === status;
+            return (
+              <button
+                key={s}
+                role="menuitemradio"
+                aria-checked={isCurrent}
+                onClick={() => {
+                  setOpen(false);
+                  if (!isCurrent) onChange(s);
+                }}
+                className={`tap flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-sm hover:bg-hover ${isCurrent ? "font-semibold text-ink" : "text-ink-subtle hover:text-ink"}`}
+              >
+                <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT_STYLE[s]}`} />
+                <span className="flex-1">{STATUS_LABEL[s]}</span>
+                {isCurrent && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
@@ -478,43 +481,251 @@ function Composer({ code, status, onDone }: { code: string; status: Status; onDo
 }
 
 // Free text so each system can name its own modules; the ones already used are suggested.
+// A styled menu instead of <select>, whose drop-down the browser draws unstyled and at its own width.
+function AssigneeField({ value, people, disabled, onPick }: { value: number | null; people: User[]; disabled: boolean; onPick: (id: number | null) => void }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const ref = useOutside<HTMLDivElement>(isOpen, () => setIsOpen(false));
+  const picked = people.find((person) => person.id === value);
+  const choices: { id: number | null; name: string }[] = [{ id: null, name: "Unassigned" }, ...people];
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        aria-label="Assignee"
+        onClick={() => setIsOpen(!isOpen)}
+        className={`inline-select -my-1.5 flex items-center gap-1 ${picked ? "font-semibold" : "text-ink-subtlest"}`}
+      >
+        <span className="truncate">{picked?.name ?? "Unassigned"}</span>
+        <ChevronDown className="ml-auto h-4 w-4 shrink-0 text-ink-subtle" />
+      </button>
+      {isOpen && (
+        <div
+          role="listbox"
+          aria-label="Assignee"
+          className="absolute inset-x-0 top-full z-30 mt-2 max-h-60 overflow-y-auto overscroll-contain rounded-[10px] border border-line bg-overlay py-1.5 shadow-overlay"
+        >
+          {choices.map((choice) => {
+            const isPicked = choice.id === value;
+            return (
+              <button
+                key={choice.id ?? "none"}
+                type="button"
+                role="option"
+                aria-selected={isPicked}
+                onClick={() => {
+                  setIsOpen(false);
+                  if (!isPicked) onPick(choice.id);
+                }}
+                className={`tap flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm hover:bg-hover ${
+                  isPicked ? "font-semibold text-primary" : choice.id ? "text-ink" : "text-ink-subtle"
+                }`}
+              >
+                <span className="truncate">{choice.name}</span>
+                {isPicked && <Check className="h-3.5 w-3.5 shrink-0" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// A styled suggestion menu instead of <datalist>, whose popup the browser draws unstyled and at its own width.
 function ModuleField({ value, options, disabled, onSave }: { value: string | null; options: string[]; disabled: boolean; onSave: (v: string | null) => void }) {
   const [draft, setDraft] = useState(value ?? "");
-  const save = () => {
-    const next = draft.trim() || null;
-    if (next !== value) onSave(next);
-  };
+  const [isOpen, setIsOpen] = useState(false);
+  const lastSaved = useRef(value);
+  const menuId = useId();
+  const isTyping = draft !== (value ?? "");
+  const query = draft.trim().toLowerCase();
+  const suggestions = isTyping ? options.filter((option) => option.toLowerCase().includes(query)) : options;
+
+  function save(text: string) {
+    const next = text.trim() || null;
+    if (next === lastSaved.current) return;
+    lastSaved.current = next;
+    onSave(next);
+  }
+
+  function pick(option: string) {
+    setDraft(option);
+    setIsOpen(false);
+    save(option);
+  }
+
   return (
-    <>
+    <div
+      className="relative"
+      onBlur={(e) => {
+        if (e.currentTarget.contains(e.relatedTarget)) return;
+        setIsOpen(false);
+        save(draft);
+      }}
+    >
       <input
-        className="inline-select cursor-text"
-        list="ticket-modules"
+        className="inline-select -my-1.5 cursor-text"
+        role="combobox"
+        aria-label="Module"
+        aria-expanded={isOpen && suggestions.length > 0}
+        aria-controls={menuId}
+        aria-autocomplete="list"
         placeholder="Not set"
         maxLength={60}
         value={draft}
         disabled={disabled}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={save}
+        onFocus={() => setIsOpen(true)}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          setIsOpen(true);
+        }}
         onKeyDown={(e) => {
-          if (e.key === "Enter") e.currentTarget.blur();
-          if (e.key === "Escape") setDraft(value ?? "");
+          if (e.key === "Enter") {
+            setIsOpen(false);
+            save(draft);
+          }
+          if (e.key === "Escape") {
+            setDraft(value ?? "");
+            setIsOpen(false);
+          }
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            e.currentTarget.parentElement?.querySelector<HTMLElement>("[role=option]")?.focus();
+          }
         }}
       />
-      <datalist id="ticket-modules">
-        {options.map((m) => (
-          <option key={m} value={m} />
-        ))}
-      </datalist>
-    </>
+      {isOpen && suggestions.length > 0 && (
+        <div
+          id={menuId}
+          role="listbox"
+          aria-label="Modules"
+          className="absolute inset-x-0 top-full z-30 mt-2 max-h-60 overflow-y-auto overscroll-contain rounded-[10px] border border-line bg-overlay py-1.5 shadow-overlay"
+        >
+          {suggestions.map((option) => (
+            <button
+              key={option}
+              type="button"
+              role="option"
+              aria-selected={option === value}
+              onPointerDown={(e) => e.preventDefault()}
+              onClick={() => pick(option)}
+              onKeyDown={(e) => {
+                const sibling = e.key === "ArrowDown" ? e.currentTarget.nextElementSibling : e.key === "ArrowUp" ? e.currentTarget.previousElementSibling : null;
+                if (sibling instanceof HTMLElement) {
+                  e.preventDefault();
+                  sibling.focus();
+                }
+              }}
+              className={`tap flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm hover:bg-hover focus-visible:bg-hover focus-visible:outline-none ${
+                option === value ? "font-semibold text-primary" : "text-ink"
+              }`}
+            >
+              <span className="truncate">{option}</span>
+              {option === value && <Check className="h-3.5 w-3.5 shrink-0" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
-function Row({ label, children }: { label: string; children: ReactNode }) {
+const SECTION_TONES = {
+  blue: { card: "border-loz-blue-ink/25 bg-loz-blue/40", header: "border-loz-blue-ink/20 bg-loz-blue", ink: "text-loz-blue-ink" },
+  purple: { card: "border-loz-purple-ink/25 bg-loz-purple/40", header: "border-loz-purple-ink/20 bg-loz-purple", ink: "text-loz-purple-ink" },
+  green: { card: "border-loz-green-ink/25 bg-loz-green/40", header: "border-loz-green-ink/20 bg-loz-green", ink: "text-loz-green-ink" },
+  yellow: { card: "border-loz-yellow-ink/25 bg-loz-yellow/40", header: "border-loz-yellow-ink/20 bg-loz-yellow", ink: "text-loz-yellow-ink" },
+} as const;
+
+type SectionTone = keyof typeof SECTION_TONES;
+
+interface SectionProps {
+  title: string;
+  icon: LucideIcon;
+  tone: SectionTone;
+  children: ReactNode;
+}
+
+function Section({ title, icon: Icon, tone, children }: SectionProps): JSX.Element {
+  const { card, header, ink } = SECTION_TONES[tone];
   return (
-    <div className="grid grid-cols-[110px_1fr] items-center gap-3 py-1.5">
-      <div className="text-sm font-semibold text-ink-subtle">{label}</div>
-      <div className="min-w-0 text-sm">{children}</div>
+    <section className={`card ${card}`}>
+      <div className={`flex items-center gap-2.5 rounded-t-[9px] border-b px-4 py-2.5 ${header}`}>
+        <span aria-hidden className={`grid h-6 w-6 place-items-center rounded-md bg-surface/70 ${ink}`}>
+          <Icon className="h-3.5 w-3.5" strokeWidth={2.5} />
+        </span>
+        <h2 className={`text-[10px] font-bold uppercase tracking-brand ${ink}`}>{title}</h2>
+      </div>
+      <div className="p-4">{children}</div>
+    </section>
+  );
+}
+
+interface Choice<Value extends string> {
+  value: Value;
+  label: string;
+  mark: ReactNode;
+}
+
+interface ChoiceGroupProps<Value extends string> {
+  label: string;
+  choices: Choice<Value>[];
+  value: Value;
+  disabled: boolean;
+  onPick: (value: Value) => void;
+}
+
+function ChoiceGroup<Value extends string>({ label, choices, value, disabled, onPick }: ChoiceGroupProps<Value>): JSX.Element {
+  return (
+    <div role="group" aria-label={label} className="inline-flex max-w-full gap-1 rounded-lg border border-line bg-surface/80 p-1">
+      {choices.map((choice) => {
+        const isPicked = choice.value === value;
+        return (
+          <button
+            key={choice.value}
+            type="button"
+            aria-pressed={isPicked}
+            disabled={disabled}
+            onClick={() => !isPicked && onPick(choice.value)}
+            className={`tap flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-md px-3 text-[13px] font-semibold transition-colors motion-reduce:transition-none disabled:opacity-60 ${
+              isPicked ? "bg-surface text-ink shadow-stone ring-1 ring-line-strong" : "text-ink-subtle hover:bg-hover"
+            }`}
+          >
+            {choice.mark}
+            <span className="truncate">{choice.label}</span>
+          </button>
+        );
+      })}
     </div>
+  );
+}
+
+function FieldLabel({ children }: { children: ReactNode }): JSX.Element {
+  return <div className="mb-1 text-[10.5px] font-bold uppercase tracking-wider text-ink-subtlest">{children}</div>;
+}
+
+interface TimelineEntry {
+  label: string;
+  at: string | null;
+  dot: string;
+}
+
+function Timeline({ entries }: { entries: TimelineEntry[] }): JSX.Element {
+  const shownEntries = entries.filter((entry) => entry.at);
+  return (
+    <ol className="relative space-y-3 before:absolute before:bottom-1.5 before:left-[4px] before:top-1.5 before:w-px before:bg-line">
+      {shownEntries.map((entry) => (
+        <li key={entry.label} className="relative flex items-baseline gap-3 pl-5">
+          <span aria-hidden className={`absolute left-0 top-[5px] h-[9px] w-[9px] rounded-full ring-2 ring-surface ${entry.dot}`} />
+          <span className="w-24 shrink-0 text-xs font-semibold text-ink-subtle">{entry.label}</span>
+          <span className="text-sm tabular-nums text-ink">{entry.at && fmtDateTime(entry.at)}</span>
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -526,6 +737,8 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
   const [tab, setTab] = useState<"all" | "comments" | "history">("all");
   const navigate = useNavigate();
   const confirmDelete = useRef<HTMLDialogElement>(null);
+  const confirmAssign = useRef<HTMLDialogElement>(null);
+  const [pendingAssigneeId, setPendingAssigneeId] = useState<{ value: number | null } | null>(null);
   const composerRef = useRef<HTMLDivElement>(null);
 
   function jumpToReply() {
@@ -610,22 +823,48 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
   const assignee = users.find((d) => d.id === t.assigneeId);
   const canPickUp = ACTIVE.includes(t.status) && !t.assigneeId;
 
-  const details = (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <StatusButton status={t.status} disabled={saving} onChange={(st) => patch({ status: st })} />
-        {canPickUp && (
-          <button className="btn-default" disabled={saving} onClick={() => patch({}, "/pickup")}>
-            Pick up
-          </button>
-        )}
-        {me.perms?.includes("delete_tickets") && (
-          <button className="btn-subtle ml-auto text-loz-red-ink" disabled={saving} onClick={() => confirmDelete.current?.showModal()}>
-            <Trash2 className="h-4 w-4" /> Delete
-          </button>
-        )}
-      </div>
+  // Taking a ticket off a colleague is confirmed first; handing over your own or an unassigned one is not.
+  function requestAssign(nextAssigneeId: number | null): void {
+    if (nextAssigneeId === t.assigneeId) return;
+    const isSomeoneElses = t.assigneeId !== null && t.assigneeId !== me.id;
+    if (!isSomeoneElses) {
+      patch({ assignee_id: nextAssigneeId });
+      return;
+    }
+    setPendingAssigneeId({ value: nextAssigneeId });
+    confirmAssign.current?.showModal();
+  }
 
+  function closeAssignConfirm(): void {
+    confirmAssign.current?.close();
+    setPendingAssigneeId(null);
+  }
+
+  const nextAssignee = pendingAssigneeId && users.find((d) => d.id === pendingAssigneeId.value);
+  const assignAction = !pendingAssigneeId ? "" : pendingAssigneeId.value === null ? "Unassign" : pendingAssigneeId.value === me.id ? "Take ticket" : "Reassign";
+
+  const statusControls = (
+    <div className="flex flex-wrap items-center gap-2">
+      <StatusButton status={t.status} disabled={saving} onChange={(st) => patch({ status: st })} />
+      {canPickUp && (
+        <button className="btn-primary px-3.5" disabled={saving} onClick={() => patch({}, "/pickup")}>
+          <UserPlus className="h-4 w-4" /> Pick up
+        </button>
+      )}
+    </div>
+  );
+
+  const deleteButton = me.perms?.includes("delete_tickets") && (
+    <button
+      className="btn bg-loz-red px-3 text-loz-red-ink transition-colors duration-150 hover:brightness-95"
+      disabled={saving}
+      onClick={() => confirmDelete.current?.showModal()}
+    >
+      <Trash2 className="h-4 w-4" /> Delete
+    </button>
+  );
+
+  const deleteDialog = (
       <dialog
         ref={confirmDelete}
         className="card w-[400px] max-w-[calc(100vw-32px)] p-0 text-ink backdrop:bg-black/40"
@@ -643,207 +882,315 @@ export default function IssueView({ code, variant, onClose }: { code: string; va
           </button>
         </div>
       </dialog>
+  );
 
-      <div className="card">
-        <div className="section-title border-b border-line px-4 py-3">Details</div>
-        <div className="px-4 py-2">
-          <Row label="Assignee">
-            <div className="flex items-center gap-2">
-              <Avatar name={assignee?.name} size={24} />
-              <select
-                className="inline-select"
-                value={t.assigneeId ?? ""}
-                disabled={saving}
-                onChange={(e) => patch({ assignee_id: e.target.value ? Number(e.target.value) : null })}
-              >
-                <option value="">Unassigned</option>
-                {users.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            {/* Pick up already assigns you (and moves Open to On Going), so only one of them shows. */}
-            {t.assigneeId !== me.id && !canPickUp && (
-              <button
-                className="tap ml-8 inline-flex items-center text-xs font-medium text-primary hover:underline disabled:opacity-50"
-                disabled={saving}
-                onClick={() => patch({ assignee_id: me.id })}
-              >
-                Assign to me
-              </button>
-            )}
-          </Row>
-          <Row label="Reporter">
-            <div className="flex items-center gap-2">
-              <Avatar name={t.reporterName} size={24} />
-              <span className="truncate">{t.reporterName}</span>
-            </div>
-            <div className="ml-8 space-y-0.5 text-xs text-ink-subtle">
-              {t.reporterDepartment && <div>{t.reporterDepartment}</div>}
-              {t.reporterPhone && (
-                <a
-                  className="block text-primary hover:underline"
-                  href={`https://wa.me/${t.reporterPhone.replace(/\D/g, "").replace(/^0/, "60")}`}
-                  title="Open in WhatsApp"
-                  aria-label={`WhatsApp ${t.reporterPhone}`}
-                  target="_blank"
-                  rel="noreferrer"
+  const assignDialog = (
+    <dialog ref={confirmAssign} onClose={() => setPendingAssigneeId(null)} className="card w-[400px] max-w-[calc(100vw-32px)] p-0 text-ink backdrop:bg-black/40">
+      <div className="border-b border-line px-5 py-3 text-[15px] font-bold">{assignAction}</div>
+      <div className="px-5 py-4 text-sm leading-6 text-ink-subtle">
+        <p>
+          <span className="font-semibold text-ink">{t.code}</span> is assigned to <span className="font-semibold text-ink">{assignee?.name ?? "someone else"}</span>.
+        </p>
+        <p className="mt-1">
+          {pendingAssigneeId?.value === null
+            ? "Leave it unassigned?"
+            : pendingAssigneeId?.value === me.id
+              ? "Take it over?"
+              : `Hand it to ${nextAssignee?.name ?? "this person"}?`}{" "}
+          They will see the change in the ticket history.
+        </p>
+      </div>
+      <div className="flex justify-end gap-2 px-5 pb-4">
+        <button className="btn-default" autoFocus onClick={closeAssignConfirm}>
+          Cancel
+        </button>
+        <button
+          className="btn-primary"
+          onClick={() => {
+            const next = pendingAssigneeId;
+            closeAssignConfirm();
+            if (next) patch({ assignee_id: next.value });
+          }}
+        >
+          {assignAction}
+        </button>
+      </div>
+    </dialog>
+  );
+
+  const overview = (
+      <Section title="Overview" icon={Users} tone="blue">
+        <div className="space-y-3">
+          <div className="flex items-start gap-3 rounded-lg bg-surface/80 p-3">
+            <Avatar name={assignee?.name} size={32} />
+            <div className="min-w-0 flex-1">
+              <FieldLabel>Assignee</FieldLabel>
+              <AssigneeField value={t.assigneeId} people={users} disabled={saving} onPick={requestAssign} />
+              {/* Pick up already assigns you (and moves Open to On Going), so only one of them shows. */}
+              {t.assigneeId !== me.id && !canPickUp && (
+                <button
+                  className="tap inline-flex items-center text-xs font-medium text-primary hover:underline disabled:opacity-50"
+                  disabled={saving}
+                  onClick={() => requestAssign(me.id)}
                 >
-                  {t.reporterPhone}
-                </a>
-              )}
-              {t.reporterEmail && (
-                <a className="block break-all text-primary hover:underline" href={`mailto:${t.reporterEmail}`}>
-                  {t.reporterEmail}
-                </a>
+                  Assign to me
+                </button>
               )}
             </div>
-          </Row>
-          <Row label="System">
-            <div className="flex items-center gap-2">
-              <SystemTag code={t.systemCode} /> {t.system_name}
+          </div>
+          <div className="flex items-start gap-3 rounded-lg bg-surface/80 p-3">
+            <Avatar name={t.reporterName} size={32} />
+            <div className="min-w-0 flex-1">
+              <FieldLabel>Reporter</FieldLabel>
+              <div className="truncate text-sm font-semibold text-ink">{t.reporterName}</div>
+              {t.reporterDepartment && <div className="text-xs text-ink-subtle">{t.reporterDepartment}</div>}
+              {(t.reporterPhone || t.reporterEmail) && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {t.reporterPhone && (
+                    <a
+                      className="tap inline-flex items-center gap-1 rounded-md border border-line bg-surface px-2 py-0.5 text-xs font-medium text-primary hover:border-primary/50"
+                      href={`https://wa.me/${t.reporterPhone.replace(/\D/g, "").replace(/^0/, "60")}`}
+                      title="Open in WhatsApp"
+                      aria-label={`WhatsApp ${t.reporterPhone}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <Phone className="h-3 w-3" /> {t.reporterPhone}
+                    </a>
+                  )}
+                  {t.reporterEmail && (
+                    <a
+                      className="tap inline-flex min-w-0 max-w-full items-center gap-1 rounded-md border border-line bg-surface px-2 py-0.5 text-xs font-medium text-primary hover:border-primary/50"
+                      href={`mailto:${t.reporterEmail}`}
+                    >
+                      <Mail className="h-3 w-3 shrink-0" /> <span className="break-all">{t.reporterEmail}</span>
+                    </a>
+                  )}
+                </div>
+              )}
             </div>
-          </Row>
-          <Row label="Priority">
-            <div className="flex items-center gap-1.5">
-              <PriorityIcon priority={t.priority} />
-              <select className="inline-select" value={t.priority} disabled={saving} onChange={(e) => patch({ priority: e.target.value })}>
-                {PRIORITIES.map((p) => (
-                  <option key={p} value={p}>
-                    {PRIORITY_LABEL[p]}
-                  </option>
-                ))}
-              </select>
+          </div>
+          <div className="flex flex-wrap gap-x-6 gap-y-3 pt-1">
+          <div>
+            <FieldLabel>Priority</FieldLabel>
+            <ChoiceGroup
+              label="Priority"
+              value={t.priority}
+              disabled={saving}
+              onPick={(priority) => patch({ priority })}
+              choices={PRIORITIES.map((priority) => ({
+                value: priority,
+                label: PRIORITY_LABEL[priority],
+                mark: <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${PRIORITY_DOT_STYLE[priority]}`} />,
+              }))}
+            />
+          </div>
+          <div>
+            <FieldLabel>Type</FieldLabel>
+            <ChoiceGroup
+              label="Type"
+              value={t.type}
+              disabled={saving}
+              onPick={(type) => patch({ type })}
+              choices={TYPES.map((type) => ({ value: type, label: TYPE_LABEL[type], mark: <TypeIcon type={type} /> }))}
+            />
+          </div>
+          </div>
+        </div>
+      </Section>
+  );
+
+  const properties = (
+      <Section title="Properties" icon={Tag} tone="purple">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="min-w-0">
+            <FieldLabel>System</FieldLabel>
+            <div className="flex items-center gap-2 text-sm font-semibold text-ink">
+              <span className={`inline-flex h-5 items-center rounded border px-1.5 font-docno text-[10.5px] ${systemTagStyle(t.systemCode)}`}>{t.systemCode}</span>
+              <span className="truncate">{t.system_name}</span>
             </div>
-          </Row>
-          <Row label="Type">
-            <div className="flex items-center gap-1.5">
-              <TypeIcon type={t.type} />
-              <select className="inline-select" value={t.type} disabled={saving} onChange={(e) => patch({ type: e.target.value })}>
-                {TYPES.map((x) => (
-                  <option key={x} value={x}>
-                    {TYPE_LABEL[x]}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </Row>
-          <Row label="Module">
+          </div>
+          <div className="min-w-0">
+            <FieldLabel>Module</FieldLabel>
             <ModuleField key={t.module ?? ""} value={t.module} options={data.modules ?? []} disabled={saving} onSave={(module) => patch({ module })} />
-          </Row>
-          {/* Tickets from before occurred_at defaulted to submission time fall back to it here too. */}
-          <Row label="Occurred">{fmtDateTime(t.occurredAt ?? t.createdAt)}</Row>
+          </div>
           {t.pageUrl && (
-            <Row label="Page">
-              <a className="break-all text-primary hover:underline" href={t.pageUrl} target="_blank" rel="noreferrer">
+            <div className="min-w-0 sm:col-span-2">
+              <FieldLabel>Page</FieldLabel>
+              <a className="break-all text-sm text-primary hover:underline" href={t.pageUrl} target="_blank" rel="noreferrer">
                 {t.pageUrl}
                 <ExternalLink className="ml-1 inline h-3 w-3 align-[-1px]" />
               </a>
-            </Row>
+            </div>
           )}
-          {t.legacyCode && <Row label="Sheet ID">{t.legacyCode}</Row>}
+          {t.legacyCode && (
+            <div className="min-w-0">
+              <FieldLabel>Sheet ID</FieldLabel>
+              <div className="font-docno text-sm text-ink">{t.legacyCode}</div>
+            </div>
+          )}
         </div>
-      </div>
-
-      <div className="space-y-0.5 text-xs text-ink-subtlest">
-        <div>Updated {fmtDateTime(t.updatedAt)}</div>
-        {t.pickedUpAt && <div>Picked up {fmtDateTime(t.pickedUpAt)}</div>}
-        {t.resolvedAt && <div>Done {fmtDateTime(t.resolvedAt)}</div>}
-        {t.closedAt && <div>Closed {fmtDateTime(t.closedAt)}</div>}
-      </div>
-    </div>
+      </Section>
   );
 
-  const main = (
-    <div className="space-y-6">
-      <div>
-        <div className="section-title mb-2">Description</div>
+  const timeline = (
+      <Section title="Timeline" icon={CalendarClock} tone="green">
+        <Timeline
+          entries={[
+            // Tickets from before occurred_at defaulted to submission time fall back to it here too.
+            { label: "Occurred", at: t.occurredAt ?? t.createdAt, dot: STATUS_DOT_STYLE.open },
+            { label: "Picked up", at: t.pickedUpAt, dot: STATUS_DOT_STYLE.in_progress },
+            { label: "Done", at: t.resolvedAt, dot: STATUS_DOT_STYLE.resolved },
+            { label: "Closed", at: t.closedAt, dot: STATUS_DOT_STYLE.closed },
+            { label: "Last updated", at: t.updatedAt, dot: "bg-primary" },
+          ]}
+        />
+      </Section>
+  );
+
+  const description = (
+      <Section title="Description" icon={FileText} tone="yellow">
         <div className="whitespace-pre-wrap break-words text-sm leading-6">{t.description || <span className="text-ink-subtlest">No description</span>}</div>
-      </div>
+        {created && created.attachments.length > 0 && (
+          <div className="mt-4 border-t border-loz-yellow-ink/20 pt-3">
+            <FieldLabel>Attachments ({created.attachments.length})</FieldLabel>
+            <Attachments items={created.attachments} />
+          </div>
+        )}
+      </Section>
+  );
 
-      {created && created.attachments.length > 0 && (
-        <div>
-          <div className="section-title mb-1">Attachments ({created.attachments.length})</div>
-          <Attachments items={created.attachments} />
-        </div>
-      )}
+  const composer = <Composer code={code} status={t.status} onDone={refresh} />;
 
-      <div>
-        <div className="section-title mb-2">Activity</div>
-        <div className="mb-4 flex items-center gap-1 text-sm">
-          <span className="mr-1 text-ink-subtle">Show:</span>
+  const activity = (composerSlot: ReactNode): JSX.Element => (
+    <div>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="section-title">Activity</div>
+        <div role="group" aria-label="Show activity" className="inline-flex gap-0.5 rounded-lg border border-line bg-surface-2 p-0.5 text-[12.5px]">
           {(["all", "comments", "history"] as const).map((k) => (
             <button
               key={k}
+              aria-pressed={tab === k}
               onClick={() => setTab(k)}
-              className={`tap rounded px-2 py-1 font-medium ${tab === k ? "bg-primary-soft text-primary" : "text-ink-subtle hover:bg-hover"}`}
+              className={`tap rounded-md px-2.5 py-1 font-semibold ${tab === k ? "bg-surface text-ink shadow-stone" : "text-ink-subtle hover:text-ink"}`}
             >
               {k === "all" ? "All" : k === "comments" ? "Comments" : "History"}
             </button>
           ))}
         </div>
-        <div className="space-y-5">
-          <div ref={composerRef} className="scroll-mt-4">
-            <Composer code={code} status={t.status} onDone={refresh} />
-          </div>
-          {shown.map((e) => (
-            <ActivityItem key={e.id} code={code} e={e} onChanged={refresh} />
-          ))}
-        </div>
+      </div>
+      <div className="space-y-5">
+        {composerSlot}
+        {shown.map((e) => (
+          <ActivityItem key={e.id} code={code} e={e} onChanged={refresh} />
+        ))}
       </div>
     </div>
   );
 
-  return (
-    <div className={variant === "panel" ? "flex h-full flex-col" : ""}>
-      <div className={`flex items-center gap-2 ${variant === "panel" ? "border-b border-line px-4 py-3 md:px-6" : "mb-4"}`}>
-        <div className="flex min-w-0 items-center gap-1.5 text-sm text-ink-subtle">
-          <SystemTag code={t.systemCode} />
-          <span>/</span>
-          <TypeIcon type={t.type} />
-          <Link to={`/tickets/${t.code}`} className="font-docno text-[12.5px] font-semibold text-accent hover:underline">
-            {t.code}
-          </Link>
-        </div>
-        <div className="ml-auto flex items-center gap-1">
-          {/* On phones the reply box sits below every detail row; this jumps straight to it. */}
-          <button className="btn-default px-3 md:hidden" onClick={jumpToReply}>
-            <MessageSquare className="h-4 w-4" /> Reply
-          </button>
-          {variant === "panel" && (
-            <>
+  const codeChip = (
+    <div className="flex min-w-0 items-center gap-2 text-sm text-ink-subtle">
+      <TypeIcon type={t.type} />
+      <Link
+        to={`/tickets/${t.code}`}
+        title={t.system_name}
+        className={`inline-flex h-6 shrink-0 items-center rounded border px-2 font-docno text-[12px] font-semibold hover:underline ${systemTagStyle(t.systemCode)}`}
+      >
+        {t.code}
+      </Link>
+      <span className="truncate text-xs">{t.system_name}</span>
+    </div>
+  );
+
+  const errorBanner = error && (
+    <div role="alert" className="rounded bg-loz-red px-3 py-2 text-sm text-loz-red-ink">
+      {error}
+    </div>
+  );
+
+  if (variant === "panel") {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <header className="shrink-0 space-y-3 border-b border-line px-4 pb-4 pt-3 sm:px-6">
+          <div className="flex items-center gap-2">
+            {codeChip}
+            <div className="ml-auto flex shrink-0 items-center gap-1">
+              {/* The reply box sits below every detail section; this jumps straight to it. */}
+              <button className="btn-default px-3" onClick={jumpToReply}>
+                <MessageSquare className="h-4 w-4" /> Reply
+              </button>
               <Link to={`/tickets/${t.code}`} className="btn-subtle px-2" title="Open full page" aria-label="Open full page">
                 <Maximize2 className="h-4 w-4" />
               </Link>
               <button className="btn-subtle px-2" title="Close" aria-label="Close" onClick={onClose}>
                 <X className="h-4 w-4" />
               </button>
-            </>
+            </div>
+          </div>
+          <h1 className="break-words text-[18px] font-extrabold leading-snug tracking-tight text-ink">{t.title}</h1>
+          <div className="flex flex-wrap items-center gap-2">
+            {statusControls}
+            <span className="ml-auto">{deleteButton}</span>
+          </div>
+        </header>
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6">
+          {errorBanner}
+          {overview}
+          {description}
+          {properties}
+          {timeline}
+          {activity(
+            <div ref={composerRef} className="scroll-mt-4">
+              {composer}
+            </div>,
           )}
+        </div>
+        {deleteDialog}
+        {assignDialog}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="mb-5 flex flex-wrap items-center gap-2 border-b border-line pb-4">
+        <Link to="/tickets" className="tap inline-flex items-center gap-1 text-[13px] font-medium text-primary transition-colors duration-150 hover:underline">
+          <ChevronLeft className="h-4 w-4" /> All tickets
+        </Link>
+        <span className="truncate text-[13px] text-ink-subtlest">/ {t.system_name}</span>
+        <div className="ml-auto flex items-center gap-2">
+          {/* The reply box sits below the description; this jumps straight to it. */}
+          <button className="btn-default px-3 transition-colors duration-150" onClick={jumpToReply}>
+            <MessageSquare className="h-4 w-4" /> Reply
+          </button>
+          {deleteButton}
         </div>
       </div>
 
-      <div className={variant === "panel" ? "flex-1 overflow-y-auto overscroll-contain px-4 py-5 md:px-6" : ""}>
-        <h1 className={`mb-5 break-words font-extrabold tracking-tight text-ink ${variant === "panel" ? "text-[20px]" : "text-[24px]"}`}>{t.title}</h1>
-        {error && (
-          <div role="alert" className="mb-4 rounded bg-loz-red px-3 py-2 text-sm text-loz-red-ink">
-            {error}
-          </div>
-        )}
-        {variant === "panel" ? (
-          <div className="space-y-6">
-            {details}
-            {main}
-          </div>
-        ) : (
-          <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_380px]">
-            {main}
-            <div className="xl:sticky xl:top-6 xl:self-start">{details}</div>
-          </div>
-        )}
+      <div className="mb-6 max-w-4xl space-y-2">
+        {codeChip}
+        <h1 className="break-words text-[26px] font-extrabold leading-tight tracking-tight text-ink sm:text-[30px]">{t.title}</h1>
       </div>
+      {errorBanner && <div className="mb-4 max-w-4xl">{errorBanner}</div>}
+
+      <div className="flex flex-col gap-8 xl:flex-row xl:items-start">
+        <main className="min-w-0 flex-1 space-y-6 xl:max-w-4xl">
+          {description}
+          {activity(
+            <div ref={composerRef} className="scroll-mt-4">
+              {composer}
+            </div>,
+          )}
+        </main>
+        <aside className="space-y-6 xl:sticky xl:top-6 xl:w-96 xl:shrink-0">
+          {statusControls}
+          {overview}
+          {properties}
+          {timeline}
+        </aside>
+      </div>
+      {deleteDialog}
+      {assignDialog}
     </div>
   );
 }

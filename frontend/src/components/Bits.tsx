@@ -1,6 +1,6 @@
 import { Bookmark, Bug, ChevronDown, ChevronUp, Equal } from "lucide-react";
 import type { Priority, Status, TicketType } from "../api/client";
-import { PRIORITY_LABEL, STATUS_LABEL, STATUS_STYLE, TYPE_LABEL } from "../lib/labels";
+import { PRIORITY_DOT_STYLE, PRIORITY_LABEL, STATUS_LABEL, STATUS_STYLE, TYPE_LABEL, systemTagStyle } from "../lib/labels";
 
 export function Lozenge({ status }: { status: Status }) {
   return (
@@ -40,6 +40,15 @@ export function PriorityIcon({ priority }: { priority: Priority }) {
   );
 }
 
+export function PriorityPill({ priority }: { priority: Priority }): JSX.Element {
+  return (
+    <span className="inline-flex h-6 items-center gap-1.5 rounded-md border border-line bg-surface px-2 text-[11px] font-semibold text-ink">
+      <span aria-hidden className={`h-2 w-2 rounded-full ${PRIORITY_DOT_STYLE[priority]}`} />
+      {PRIORITY_LABEL[priority]}
+    </span>
+  );
+}
+
 const AVATAR_COLORS = ["#16695f", "#a16a2e", "#2f5d4f", "#1f3a8a", "#6a1b9a", "#a6471e", "#0c3f39", "#5a3a14"];
 
 export function Avatar({ name, size = 24 }: { name: string | null | undefined; size?: number }) {
@@ -72,7 +81,7 @@ export function Avatar({ name, size = 24 }: { name: string | null | undefined; s
 
 export function SystemTag({ code }: { code: string }) {
   return (
-    <span className="inline-flex h-5 items-center rounded border border-line bg-surface-2 px-1.5 font-docno text-[10.5px] font-semibold text-ink-subtle">
+    <span className={`inline-flex h-5 items-center rounded border px-1.5 font-docno text-[10.5px] font-semibold ${systemTagStyle(code)}`}>
       {code}
     </span>
   );
