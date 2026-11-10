@@ -1,4 +1,4 @@
-import { ChevronDown, Copy, KeyRound, MoreHorizontal, Plus, RotateCcw, SlidersHorizontal, X } from "lucide-react";
+import { Check, ChevronDown, Copy, KeyRound, MoreHorizontal, Plus, RotateCcw, SlidersHorizontal, X } from "lucide-react";
 import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { api, json, type Perm, type PermDef, type RoleRow } from "../api/client";
@@ -12,7 +12,7 @@ type UserRow = {
   email: string | null;
   username: string | null;
   name: string;
-  role: string;
+  roles: string[];
   permAllow: Perm[];
   permDeny: Perm[];
   active: number;
@@ -22,11 +22,51 @@ type UserRow = {
 
 type Override = "inherit" | "allow" | "deny";
 
-// One user's permissions on top of their role: Inherit follows the role,
-// Allow adds the permission, Deny takes it away even if the role has it.
-function Overrides({ u, role, defs, busy, onSave }: {
+interface RolePickerProps {
+  label: string;
+  roles: RoleRow[];
+  selected: string[];
+  isDisabled: boolean;
+  disabledReason?: string;
+  onChange: (next: string[]) => void;
+}
+
+// Every role is a chip that toggles; the last chosen role cannot be switched off.
+function RolePicker({ label, roles, selected, isDisabled, disabledReason, onChange }: RolePickerProps) {
+  function toggle(key: string): void {
+    onChange(selected.includes(key) ? selected.filter((roleKey) => roleKey !== key) : [...selected, key].sort());
+  }
+  return (
+    <div role="group" aria-label={label} title={disabledReason} className="flex flex-wrap gap-1.5">
+      {roles.map((role) => {
+        const isSelected = selected.includes(role.key);
+        const isLastSelected = isSelected && selected.length === 1;
+        return (
+          <button
+            key={role.key}
+            type="button"
+            aria-pressed={isSelected}
+            disabled={isDisabled || isLastSelected}
+            title={isLastSelected && !isDisabled ? "A user needs at least one role" : undefined}
+            onClick={() => toggle(role.key)}
+            className={`tap inline-flex items-center gap-1 rounded-md border px-2.5 text-[12.5px] font-semibold transition-colors disabled:cursor-not-allowed max-sm:min-h-10 sm:h-7 ${
+              isSelected ? "border-primary bg-primary-soft text-primary" : "border-line text-ink-subtle hover:bg-hover"
+            } ${isDisabled ? "opacity-60" : ""}`}
+          >
+            {isSelected && <Check className="h-3.5 w-3.5" strokeWidth={3} />}
+            {role.name}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// One user's permissions on top of their roles: Inherit follows the roles,
+// Allow adds the permission, Deny takes it away even if a role has it.
+function Overrides({ u, roles, defs, busy, onSave }: {
   u: UserRow;
-  role: RoleRow | undefined;
+  roles: RoleRow[];
   defs: PermDef[];
   busy: boolean;
   onSave: (body: { permAllow: Perm[]; permDeny: Perm[] }) => void;
@@ -39,7 +79,7 @@ function Overrides({ u, role, defs, busy, onSave }: {
     if (to === "deny") deny.push(p);
     onSave({ permAllow: allow, permDeny: deny });
   }
-  const roleName = role?.name ?? u.role;
+  const roleName = roles.map(({ name }) => name).join(", ") || "roles";
   const custom = u.permAllow.length + u.permDeny.length > 0;
   return (
     <div className="rounded-lg border border-line bg-surface-2 p-3 sm:p-4">
@@ -56,7 +96,7 @@ function Overrides({ u, role, defs, busy, onSave }: {
       </div>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(min(20rem,100%),1fr))] gap-2">
         {defs.map((d) => {
-          const fromRole = !!role?.permissions.includes(d.key);
+          const fromRole = roles.some(({ permissions }) => permissions.includes(d.key));
           const st = state(d.key);
           const on = st === "allow" || (st === "inherit" && fromRole);
           return (
@@ -192,7 +232,7 @@ export default function UsersPage() {
   const [users, setUsers] = useState<UserRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ email: "", username: "", name: "", role: "developer" });
+  const [form, setForm] = useState({ email: "", username: "", name: "", roles: ["developer"] });
   const [roles, setRoles] = useState<RoleRow[]>([]);
   const [defs, setDefs] = useState<PermDef[]>([]);
   const [open, setOpen] = useState<number | null>(null);
@@ -238,12 +278,12 @@ export default function UsersPage() {
     const res = await run(() => api<{ user: UserRow; password: string }>("/admin/users", json("POST", form)));
     if (!res) return;
     show(res.user.username ?? res.user.email ?? res.user.name, res.password);
-    setForm({ email: "", username: "", name: "", role: "developer" });
+    setForm({ email: "", username: "", name: "", roles: ["developer"] });
     setAdding(false);
     load();
   }
 
-  async function patch(u: UserRow, body: Partial<Pick<UserRow, "role" | "active" | "permAllow" | "permDeny">>) {
+  async function patch(u: UserRow, body: Partial<Pick<UserRow, "roles" | "active" | "permAllow" | "permDeny">>) {
     if (await run(() => api(`/admin/users/${u.id}`, json("PATCH", body)))) load();
   }
 
@@ -280,23 +320,17 @@ export default function UsersPage() {
   }
 
   // Shared by the phone/tablet cards and the wide-screen table.
-  function roleSelect(u: UserRow, className: string) {
+  function rolePicker(u: UserRow) {
     const self = u.id === me.id;
     return (
-      <select
-        className={className}
-        value={u.role}
-        disabled={self || busy || !canRoles}
-        title={self ? "You cannot change your own role" : !canRoles ? "Needs the Manage roles permission" : undefined}
-        aria-label={`Role for ${u.name}`}
-        onChange={(e) => patch(u, { role: e.target.value })}
-      >
-        {roles.map((r) => (
-          <option key={r.key} value={r.key}>
-            {r.name}
-          </option>
-        ))}
-      </select>
+      <RolePicker
+        label={`Roles for ${u.name}`}
+        roles={roles}
+        selected={u.roles}
+        isDisabled={self || busy || !canRoles}
+        disabledReason={self ? "You cannot change your own roles" : !canRoles ? "Needs the Manage roles permission" : undefined}
+        onChange={(next) => patch(u, { roles: next })}
+      />
     );
   }
 
@@ -341,7 +375,13 @@ export default function UsersPage() {
 
   function overrides(u: UserRow) {
     return (
-      <Overrides u={u} role={roles.find((r) => r.key === u.role)} defs={defs} busy={busy} onSave={(body) => patch(u, body)} />
+      <Overrides
+        u={u}
+        roles={roles.filter(({ key }) => u.roles.includes(key))}
+        defs={defs}
+        busy={busy}
+        onSave={(body) => patch(u, body)}
+      />
     );
   }
 
@@ -443,22 +483,19 @@ export default function UsersPage() {
               onChange={(e) => setForm({ ...form, name: e.target.value })}
             />
           </label>
-          <label className="block">
-            <span className="section-title">Role</span>
-            <select
-              className="input mt-1 w-full"
-              value={form.role}
-              disabled={!canRoles}
-              title={canRoles ? undefined : "Only someone who can manage roles can pick another role"}
-              onChange={(e) => setForm({ ...form, role: e.target.value })}
-            >
-              {roles.map((r) => (
-                <option key={r.key} value={r.key}>
-                  {r.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="block">
+            <span className="section-title">Roles</span>
+            <div className="mt-1.5">
+              <RolePicker
+                label="Roles for the new user"
+                roles={roles}
+                selected={form.roles}
+                isDisabled={!canRoles}
+                disabledReason={canRoles ? undefined : "Only someone who can manage roles can pick other roles"}
+                onChange={(next) => setForm({ ...form, roles: next })}
+              />
+            </div>
+          </div>
           <div className="flex gap-2 sm:col-span-2 lg:col-span-4">
             <button className="btn-primary" disabled={busy}>
               Create and show password
@@ -494,7 +531,7 @@ export default function UsersPage() {
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <div className="min-w-0 flex-1">
-                  {roleSelect(u, "input w-full")}
+                  {rolePicker(u)}
                   {overridesNote(u)}
                 </div>
                 {self ? (
@@ -515,7 +552,7 @@ export default function UsersPage() {
         <table className="w-full border-collapse text-[13px]">
           <thead>
             <tr>
-              {["User", "Email", "Role", "Status", "Last seen", ""].map((h, i) => (
+              {["User", "Email", "Roles", "Status", "Last seen", ""].map((h, i) => (
                 <th
                   key={i}
                   className="border-b-2 border-line bg-surface-dim px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-brand text-ink-subtle first:rounded-tl-[10px] first:pl-4 last:rounded-tr-[10px]"
@@ -546,7 +583,7 @@ export default function UsersPage() {
                       <div className="max-w-[16rem] break-all">{u.email || <span className="text-ink-subtlest">—</span>}</div>
                     </td>
                     <td className="w-44 px-3 py-2.5">
-                      {roleSelect(u, "inline-select")}
+                      {rolePicker(u)}
                       {overridesNote(u)}
                     </td>
                     <td className="w-24 px-3 py-2.5">

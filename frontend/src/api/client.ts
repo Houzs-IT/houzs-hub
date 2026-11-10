@@ -6,6 +6,7 @@ export type TicketType = "bug" | "development";
 // the portal checks to show or hide things.
 export type Perm =
   | "it"
+  | "notifications"
   | "delete_tickets"
   | "users"
   | "roles"
@@ -170,7 +171,7 @@ export type User = {
   name: string;
   email: string | null;
   username?: string | null;
-  role?: string;
+  roles?: string[];
   roleName?: string;
   perms?: Perm[];
   mustChangePassword?: number;

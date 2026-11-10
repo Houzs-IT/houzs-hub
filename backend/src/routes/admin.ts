@@ -1,9 +1,9 @@
-import { asc, count, eq } from "drizzle-orm";
+import { asc, count, eq, inArray, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { schema, type DB } from "../db/client";
 import { EMAIL_RE, USERNAME_RE, hashPassword, randomPassword } from "../services/crypto";
 import { need } from "../middleware/devAuth";
-import { PERMISSIONS, joinPerms, locksOut, parsePerms } from "../services/perms";
+import { PERMISSIONS, joinPerms, locksOut, parsePerms, type Account } from "../services/perms";
 import type { DevApp } from "../types";
 
 // Mounted inside routes/dev.ts, after devAuth, so c.get("user") is set.
@@ -12,12 +12,12 @@ const admin = new Hono<DevApp>();
 
 const d = schema.users;
 const r = schema.roles;
+const ur = schema.userRoles;
 const USER_COLS = {
   id: d.id,
   email: d.email,
   username: d.username,
   name: d.name,
-  role: d.role,
   permAllow: d.permAllow,
   permDeny: d.permDeny,
   active: d.active,
@@ -25,7 +25,10 @@ const USER_COLS = {
   lastSeenAt: d.lastSeenAt,
   createdAt: d.createdAt,
 };
-type AccessFields = { role: string; active: number; permAllow: string; permDeny: string };
+type AccessFields = Omit<Account, "id">;
+// JSON, not text[]: with fetch_types off the driver returns arrays as unparsed strings.
+const rolesOf = (userId: typeof d.id) =>
+  sql<string[]>`coalesce((SELECT json_agg(${ur.roleKey} ORDER BY ${ur.roleKey}) FROM ${ur} WHERE ${ur.userId} = ${userId}), '[]'::json)`;
 const userOut = <T extends { permAllow: string; permDeny: string }>(u: T) => ({
   ...u,
   permAllow: parsePerms(u.permAllow),
@@ -49,7 +52,9 @@ async function lockout(
   change: { user?: Partial<AccessFields> & { id: number }; role?: { key: string; permissions: string } },
 ) {
   const [users, roles] = await Promise.all([
-    db.select({ id: d.id, active: d.active, role: d.role, permAllow: d.permAllow, permDeny: d.permDeny }).from(d),
+    db
+      .select({ id: d.id, active: d.active, roles: rolesOf(d.id), permAllow: d.permAllow, permDeny: d.permDeny })
+      .from(d),
     db.select({ key: r.key, permissions: r.permissions }).from(r),
   ]);
   const rolePerms = Object.fromEntries(roles.map((x) => [x.key, x.permissions]));
@@ -61,11 +66,15 @@ async function lockout(
 }
 const LOCKOUT = "Someone active must still be able to manage roles";
 
-async function roleExists(db: DB, key: unknown) {
-  if (typeof key !== "string") return false;
-  const [row] = await db.select({ key: r.key }).from(r).where(eq(r.key, key)).limit(1);
-  return !!row;
+// The given role keys without repeats, or null unless there is at least one and every one exists.
+async function parseRoles(db: DB, value: unknown): Promise<string[] | null> {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  if (!value.every((key): key is string => typeof key === "string")) return null;
+  const keys = [...new Set(value)].sort();
+  const found = await db.select({ key: r.key }).from(r).where(inArray(r.key, keys));
+  return found.length === keys.length ? keys : null;
 }
+const UNKNOWN_ROLE = "Pick at least one role, and only roles that exist";
 
 // Integrations page: whether each system has a key and when it last used it.
 // ponytail: whole table on purpose; systems is bounded by the handful of integrated apps. Paginate if that stops being true.
@@ -89,7 +98,7 @@ admin.get("/systems", need("integrations"), async (c) => {
 // Inactive users too, unlike /users which feeds the assignee picker.
 // ponytail: whole table on purpose; users is bounded by IT staff headcount. Paginate if that stops being true.
 admin.get("/users", need("users", "roles"), async (c) => {
-  const users = await c.get("db").select(USER_COLS).from(d).orderBy(asc(d.name));
+  const users = await c.get("db").select({ ...USER_COLS, roles: rolesOf(d.id) }).from(d).orderBy(asc(d.name));
   return c.json({ users: users.map(userOut) });
 });
 
@@ -100,30 +109,36 @@ admin.post("/users", need("users"), async (c) => {
   const email = (typeof b.email === "string" ? b.email.trim().toLowerCase() : "") || null;
   const username = typeof b.username === "string" ? b.username.trim().toLowerCase() : "";
   const name = typeof b.name === "string" && b.name.trim() ? b.name.trim().slice(0, 60) : username;
-  const role = b.role ?? "developer";
   if (email && !EMAIL_RE.test(email)) return c.json({ error: "Enter a valid email address or leave it empty" }, 400);
   if (!USERNAME_RE.test(username)) return c.json({ error: "Username: 2 to 32 of a-z, 0-9, dot, dash, underscore" }, 400);
-  if (typeof role !== "string" || !(await roleExists(db, role))) return c.json({ error: "Unknown role" }, 400);
+  const roles = await parseRoles(db, b.roles ?? ["developer"]);
+  if (!roles) return c.json({ error: UNKNOWN_ROLE }, 400);
   // Otherwise someone who may only manage users could create an admin.
-  if (role !== "developer" && !c.get("user").perms.includes("roles")) {
+  if (roles.join() !== "developer" && !c.get("user").perms.includes("roles")) {
     return c.json({ error: "Only someone who can manage roles can give a new user a role other than Developer" }, 403);
   }
 
   const password = randomPassword();
   try {
-    const [user] = await db
-      .insert(d)
-      .values({ email, username, name, role, passwordHash: await hashPassword(password), mustChangePassword: 1 })
-      .returning(USER_COLS);
-    return c.json({ user: userOut(user!), password }, 201);
+    const passwordHash = await hashPassword(password);
+    const user = await db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(d)
+        .values({ email, username, name, passwordHash, mustChangePassword: 1 })
+        .returning(USER_COLS);
+      if (!created) throw new Error("Creating the user returned no row");
+      await tx.insert(ur).values(roles.map((roleKey) => ({ userId: created.id, roleKey })));
+      return created;
+    });
+    return c.json({ user: { ...userOut(user), roles }, password }, 201);
   } catch (e) {
     if (isUniqueViolation(e)) return c.json({ error: "That email or username is already in use" }, 409);
     throw e;
   }
 });
 
-// Name and on/off need "users"; role and overrides need "roles". Nobody can
-// change their own role, overrides or on/off, and no change may leave the hub
+// Name and on/off need "users"; roles and overrides need "roles". Nobody can
+// change their own roles, overrides or on/off, and no change may leave the hub
 // without someone who can manage roles.
 admin.patch("/users/:id", need("users", "roles"), async (c) => {
   const db = c.get("db");
@@ -131,11 +146,13 @@ admin.patch("/users/:id", need("users", "roles"), async (c) => {
   const id = Number(c.req.param("id"));
   if (!Number.isInteger(id)) return c.json({ error: "User not found" }, 404);
   const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-  const set: Partial<AccessFields> & { name?: string } = {};
+  const set: Partial<Omit<AccessFields, "roles">> & { name?: string } = {};
+  let roles: string[] | undefined;
 
-  if (b.role !== undefined) {
-    if (typeof b.role !== "string" || !(await roleExists(db, b.role))) return c.json({ error: "Unknown role" }, 400);
-    set.role = b.role;
+  if (b.roles !== undefined) {
+    const parsed = await parseRoles(db, b.roles);
+    if (!parsed) return c.json({ error: UNKNOWN_ROLE }, 400);
+    roles = parsed;
   }
   for (const k of ["permAllow", "permDeny"] as const) {
     if (b[k] === undefined) continue;
@@ -145,21 +162,31 @@ admin.patch("/users/:id", need("users", "roles"), async (c) => {
   }
   if (b.active !== undefined) set.active = b.active ? 1 : 0;
   if (typeof b.name === "string" && b.name.trim()) set.name = b.name.trim().slice(0, 60);
-  if (Object.keys(set).length === 0) return c.json({ error: "Nothing to change" }, 400);
+  const hasUserFields = Object.keys(set).length > 0;
+  if (!hasUserFields && !roles) return c.json({ error: "Nothing to change" }, 400);
 
-  const touchesAccess = set.role !== undefined || set.permAllow !== undefined || set.permDeny !== undefined;
+  const touchesAccess = roles !== undefined || set.permAllow !== undefined || set.permDeny !== undefined;
   if (touchesAccess && !me.perms.includes("roles")) return c.json({ error: "You do not have permission for this" }, 403);
   if ((set.active !== undefined || set.name !== undefined) && !me.perms.includes("users")) {
     return c.json({ error: "You do not have permission for this" }, 403);
   }
   if (id === me.id && (touchesAccess || set.active !== undefined)) {
-    return c.json({ error: "You cannot change your own role, permissions or switch yourself off" }, 400);
+    return c.json({ error: "You cannot change your own roles, permissions or switch yourself off" }, 400);
   }
-  if ((touchesAccess || set.active !== undefined) && (await lockout(db, { user: { id, ...set } }))) {
+  const change = roles ? { id, ...set, roles } : { id, ...set };
+  if ((touchesAccess || set.active !== undefined) && (await lockout(db, { user: change }))) {
     return c.json({ error: LOCKOUT }, 400);
   }
 
-  const [user] = await db.update(d).set(set).where(eq(d.id, id)).returning(USER_COLS);
+  const user = await db.transaction(async (tx) => {
+    const [updated] = hasUserFields
+      ? await tx.update(d).set(set).where(eq(d.id, id)).returning({ ...USER_COLS, roles: rolesOf(d.id) })
+      : await tx.select({ ...USER_COLS, roles: rolesOf(d.id) }).from(d).where(eq(d.id, id));
+    if (!updated || !roles) return updated;
+    await tx.delete(ur).where(eq(ur.userId, id));
+    await tx.insert(ur).values(roles.map((roleKey) => ({ userId: id, roleKey })));
+    return { ...updated, roles };
+  });
   if (!user) return c.json({ error: "User not found" }, 404);
   return c.json({ user: userOut(user) });
 });
@@ -203,7 +230,7 @@ admin.get("/roles", need("users", "roles"), async (c) => {
   const db = c.get("db");
   const [roles, counts] = await Promise.all([
     db.select().from(r).orderBy(asc(r.name)),
-    db.select({ role: d.role, n: count() }).from(d).groupBy(d.role),
+    db.select({ role: ur.roleKey, n: count() }).from(ur).groupBy(ur.roleKey),
   ]);
   const n = Object.fromEntries(counts.map((x) => [x.role, x.n]));
   return c.json({
@@ -277,7 +304,7 @@ admin.delete("/roles/:key", need("roles"), async (c) => {
   const db = c.get("db");
   const key = c.req.param("key");
   if (BUILT_IN.has(key)) return c.json({ error: "Admin and Developer are built in and cannot be deleted" }, 400);
-  const [{ n }] = await db.select({ n: count() }).from(d).where(eq(d.role, key));
+  const [{ n }] = await db.select({ n: count() }).from(ur).where(eq(ur.roleKey, key));
   if (n) return c.json({ error: `Move its ${n} user(s) to another role first` }, 400);
   const [row] = await db.delete(r).where(eq(r.key, key)).returning({ key: r.key });
   if (!row) return c.json({ error: "Role not found" }, 404);

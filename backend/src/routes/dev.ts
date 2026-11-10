@@ -64,8 +64,8 @@ dev.get("/live", need("it"), (c) => {
 });
 
 dev.get("/me", (c) => {
-  const { id, name, email, username, role, roleName, perms, mustChangePassword } = c.get("user");
-  return c.json({ user: { id, name, email, username, role, roleName, perms, mustChangePassword } });
+  const { id, name, email, username, roles, roleName, perms, mustChangePassword } = c.get("user");
+  return c.json({ user: { id, name, email, username, roles, roleName, perms, mustChangePassword } });
 });
 
 // Display name and/or email; send only what changes. An empty email clears it.
@@ -97,9 +97,8 @@ dev.patch("/me", async (c) => {
         name: schema.users.name,
         email: schema.users.email,
         username: schema.users.username,
-        role: schema.users.role,
       });
-    return c.json({ user: { ...user, roleName: me.roleName, perms: me.perms } });
+    return c.json({ user: { ...user, roles: me.roles, roleName: me.roleName, perms: me.perms } });
   } catch (e) {
     if (isUniqueViolation(e)) return c.json({ error: "That email is already used by another account" }, 409);
     throw e;
@@ -297,7 +296,7 @@ dev.get("/tickets/stats", async (c) => {
       .select({ n: count() })
       .from(t)
       .where(and(eq(t.assigneeId, c.get("user").id), inArray(t.status, [...ACTIVE_STATUSES]))),
-    countUnread(db, c.get("user")),
+    c.get("user").perms.includes("notifications") ? countUnread(db, c.get("user")) : 0,
   ]);
   return c.json({
     active_by_system: Object.fromEntries(bySystem.map((r) => [r.system, r.n])),

@@ -5,7 +5,8 @@
 //   node scripts/set-password.mjs samuel@gmail.com samuel
 //   node scripts/set-password.mjs you@gmail.com you --admin   first admin
 // The username is optional on a reset (the existing one is kept). Without
-// --admin a new account is a developer and an existing one keeps its role.
+// --admin a new account is a developer and an existing one keeps its roles;
+// --admin adds the Admin role.
 // After the first admin exists, the Users page in the hub does all of this.
 import { pbkdf2Sync, randomBytes } from "node:crypto";
 import { connect } from "./db.mjs";
@@ -33,17 +34,27 @@ const name = username ?? email.split("@")[0];
 const { sql, target } = connect();
 let row;
 try {
-  [row] = await sql`
-    INSERT INTO users (email, name, username, password_hash, role, must_change_password)
-    VALUES (${email}, ${name}, ${username}, ${stored}, ${role ?? "developer"}, 1)
-    ON CONFLICT (email) DO UPDATE SET
-      username = COALESCE(excluded.username, users.username),
-      role = COALESCE(${role}, users.role),
-      password_hash = excluded.password_hash,
-      must_change_password = 1,
-      failed_logins = 0,
-      locked_until = NULL
-    RETURNING email, username, role`;
+  row = await sql.begin(async (tx) => {
+    const [user] = await tx`
+      INSERT INTO users (email, name, username, password_hash, must_change_password)
+      VALUES (${email}, ${name}, ${username}, ${stored}, 1)
+      ON CONFLICT (email) DO UPDATE SET
+        username = COALESCE(excluded.username, users.username),
+        password_hash = excluded.password_hash,
+        must_change_password = 1,
+        failed_logins = 0,
+        locked_until = NULL
+      RETURNING id, email, username`;
+    if (role) {
+      await tx`INSERT INTO user_roles (user_id, role_key) VALUES (${user.id}, ${role}) ON CONFLICT DO NOTHING`;
+    } else {
+      await tx`
+        INSERT INTO user_roles (user_id, role_key)
+        SELECT ${user.id}, 'developer' WHERE NOT EXISTS (SELECT 1 FROM user_roles WHERE user_id = ${user.id})`;
+    }
+    const roles = await tx`SELECT role_key FROM user_roles WHERE user_id = ${user.id} ORDER BY role_key`;
+    return { ...user, role: roles.map((r) => r.role_key).join(", ") };
+  });
 } catch (e) {
   // 23505 = unique violation; the email conflict is handled above, so this is the username.
   console.error(e.code === "23505" ? `Username ${username} is taken by another user.` : e.message);

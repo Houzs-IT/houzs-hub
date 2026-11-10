@@ -26,7 +26,7 @@ export interface Env {
 
 export type SysVars = { systemCode: string; reporterId: string };
 // db: the client devAuth opened, reused by the route so a request holds one connection pool, not two.
-export type DevVars = { user: User & { roleName: string; perms: Perm[] }; db: DB };
+export type DevVars = { user: User & { roles: string[]; roleName: string; perms: Perm[] }; db: DB };
 
 export type SysApp = { Bindings: Env; Variables: SysVars };
 export type DevApp = { Bindings: Env; Variables: DevVars };

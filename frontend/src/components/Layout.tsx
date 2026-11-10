@@ -334,6 +334,7 @@ export default function Layout() {
   });
 
   const can = (...p: Perm[]) => p.some((x) => base?.me.perms?.includes(x));
+  const hasNotifications = can("it") && can("notifications");
   // Without IT, land on the first admin page they may open, else My account.
   const landing = can("users", "roles")
     ? "/users"
@@ -440,7 +441,9 @@ export default function Layout() {
                 <NavItem to="/tickets" icon={<List className="h-4 w-4" />} label="List" />
                 <NavItem to="/board" icon={<KanbanSquare className="h-4 w-4" />} label="Board" />
                 <NavItem to="/queue" icon={<UserCheck className="h-4 w-4" />} label="My queue" count={stats.my_active} />
-                <NavItem to="/notifications" icon={<Bell className="h-4 w-4" />} label="Notifications" count={stats.unread_notifications} />
+                {hasNotifications && (
+                  <NavItem to="/notifications" icon={<Bell className="h-4 w-4" />} label="Notifications" count={stats.unread_notifications} />
+                )}
                 <NavItem to="/reports" icon={<BarChart3 className="h-4 w-4" />} label="Reports" />
 
                 <div className="px-2.5 pb-1 pt-3 text-[9px] font-semibold uppercase tracking-brand text-sidebar-ink-muted">Systems</div>
@@ -497,13 +500,13 @@ export default function Layout() {
             <span className="text-[14px] font-bold text-ink lg:hidden">Houzs Hub</span>
             <div className="flex-1" />
             <TeamActivity teammates={online} canManage={can("users", "roles")} />
-            {can("it") && (
+            {hasNotifications && (
               <div className="hidden lg:block">
                 <NotificationBell />
               </div>
             )}
             {/* Phones open the full page; the popover would not fit beside the menu. */}
-            {can("it") && (
+            {hasNotifications && (
               <Link
                 to="/notifications"
                 className="tap relative grid place-items-center rounded-md text-ink-subtle lg:hidden"
@@ -520,11 +523,17 @@ export default function Layout() {
             <ProfileMenu me={base.me} onSignOut={signOut} />
           </header>
           <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
-            {!can("it") && IT_PATH.test(pathname) ? <Navigate to={landing} replace /> : <Outlet />}
+            {!can("it") && IT_PATH.test(pathname) ? (
+              <Navigate to={landing} replace />
+            ) : !hasNotifications && pathname.startsWith("/notifications") ? (
+              <Navigate to="/tickets" replace />
+            ) : (
+              <Outlet />
+            )}
           </main>
         </div>
       </div>
-      {can("it") && <NewTicketToasts />}
+      {hasNotifications && <NewTicketToasts />}
       {isCreatingTicket && defaultSystemCode && (
         <NewTicketDialog
           systems={activeSystems}
