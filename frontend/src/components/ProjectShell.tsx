@@ -1,10 +1,9 @@
-import { KanbanSquare, List, Plus } from "lucide-react";
+import { KanbanSquare, List } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { prefersReducedMotion } from "../lib/boardMotion";
 import { useFilters } from "../lib/useFilters";
 import IssueView from "./IssueView";
-import NewTicketDialog from "./NewTicketDialog";
 import { useHub } from "./Layout";
 import Toolbar from "./Toolbar";
 
@@ -27,8 +26,6 @@ export default function ProjectShell({
   // Opened from a system in the sidebar: the system names the page and the view moves to the eyebrow.
   const systemCodes = f.list("system");
   const system = view !== "My queue" && systemCodes.length === 1 ? systems.find((s) => s.code === systemCodes[0]) : undefined;
-  const activeSystems = systems.filter((candidate) => candidate.active === 1);
-  const [isCreating, setIsCreating] = useState(false);
   const { search } = useLocation();
   const selected = f.get("selected");
   const keep = new URLSearchParams(search);
@@ -109,20 +106,13 @@ export default function ProjectShell({
               <div className="eyebrow">Houzs Hub · Tickets{system && ` · ${view}`}</div>
               <h1 className="text-[20px] font-extrabold tracking-tight text-ink sm:mt-1 sm:text-[24px]">{system?.name ?? view}</h1>
             </div>
-            <div className="flex items-stretch gap-2">
-              {activeSystems.length > 0 && (
-                <button type="button" className="btn-primary h-auto" onClick={() => setIsCreating(true)}>
-                  <Plus className="h-4 w-4" /> New ticket
-                </button>
-              )}
-              <div className="inline-flex rounded-[9px] border border-line bg-surface p-1 shadow-stone">
-                <NavLink to={`/tickets${qs}`} end className={tab}>
-                  <List className="h-3.5 w-3.5" /> List
-                </NavLink>
-                <NavLink to={`/board${boardQs}`} className={tab}>
-                  <KanbanSquare className="h-3.5 w-3.5" /> Board
-                </NavLink>
-              </div>
+            <div className="inline-flex rounded-[9px] border border-line bg-surface p-1 shadow-stone">
+              <NavLink to={`/tickets${qs}`} end className={tab}>
+                <List className="h-3.5 w-3.5" /> List
+              </NavLink>
+              <NavLink to={`/board${boardQs}`} className={tab}>
+                <KanbanSquare className="h-3.5 w-3.5" /> Board
+              </NavLink>
             </div>
           </div>
           <div className="py-3 sm:py-4">
@@ -131,18 +121,6 @@ export default function ProjectShell({
         </div>
         <div className="min-h-0 flex-1 scroll-pt-10 overflow-auto px-4 pb-8 md:px-8">{children}</div>
       </div>
-
-      {isCreating && (
-        <NewTicketDialog
-          systems={activeSystems}
-          defaultSystemCode={system?.active === 1 ? system.code : activeSystems[0].code}
-          onCreated={(code) => {
-            setIsCreating(false);
-            f.set({ selected: code });
-          }}
-          onClose={() => setIsCreating(false)}
-        />
-      )}
 
       {/* No backdrop: the list or board stays clickable, so the next ticket opens in the same panel.
           From lg up the panel docks beside it; below lg it slides over the right side. */}

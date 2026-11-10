@@ -1,6 +1,6 @@
-import { Activity, BarChart3, Bell, ChevronDown, CreditCard, KanbanSquare, List, LogOut, Menu, Moon, Plug, ShieldCheck, Sun, UserCheck, UserCog, Users } from "lucide-react";
+import { Activity, BarChart3, Bell, ChevronDown, CreditCard, KanbanSquare, List, LogOut, Menu, Moon, Plug, Plus, ShieldCheck, Sun, UserCheck, UserCog, Users } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import { Link, Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
+import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { api, json, type Perm, type User, type SystemRow } from "../api/client";
 import { useTheme } from "../lib/theme";
 import { useNewVersion } from "../lib/useNewVersion";
@@ -8,6 +8,7 @@ import { usePoll } from "../lib/usePoll";
 import FirstPasswordPage from "../pages/FirstPasswordPage";
 import { Avatar } from "./Bits";
 import { useOutside } from "./FilterButton";
+import NewTicketDialog from "./NewTicketDialog";
 import NewTicketToasts from "./NewTicketToasts";
 import { NotificationBell } from "./Notifications";
 
@@ -283,6 +284,8 @@ export default function Layout() {
     document.addEventListener("keydown", closeOnEscape);
     return () => document.removeEventListener("keydown", closeOnEscape);
   }, [isMenuOpen]);
+  const [isCreatingTicket, setIsCreatingTicket] = useState(false);
+  const navigate = useNavigate();
   const [itOpen, toggleIt] = useSectionOpen("sidebar.it");
   const [financeOpen, toggleFinance] = useSectionOpen("sidebar.finance");
 
@@ -367,6 +370,18 @@ export default function Layout() {
   }
   if (!base) return <div className="p-10 text-center text-ink-subtle">Loading...</div>;
   const unread = stats.unread_notifications;
+  const activeSystems = base.systems.filter((system) => system.active === 1);
+  const viewedSystemCode = new URLSearchParams(search).get("system");
+  const defaultSystemCode = activeSystems.find((system) => system.code === viewedSystemCode)?.code ?? activeSystems[0]?.code;
+
+  function openCreatedTicket(code: string): void {
+    setIsCreatingTicket(false);
+    // On the List, Board or My queue the new ticket opens beside the current view; elsewhere the List opens.
+    const isTicketView = ["/tickets", "/board", "/queue"].includes(pathname);
+    const query = new URLSearchParams(isTicketView ? search : "");
+    query.set("selected", code);
+    navigate(`${isTicketView ? pathname : "/tickets"}?${query}`);
+  }
 
   return (
     <HubContext.Provider value={{ ...base, stats, version, changedCode, refresh, setMe }}>
@@ -409,6 +424,19 @@ export default function Layout() {
             {can("it") && itOpen && (
               <>
                 <div className="px-2.5 pb-1 pt-1.5 text-[9px] font-semibold uppercase tracking-brand text-sidebar-ink-muted">Workspace</div>
+                {defaultSystemCode && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      setIsCreatingTicket(true);
+                    }}
+                    className="tap flex h-9 w-full items-center gap-3 rounded-md px-2.5 text-left text-[13px] text-sidebar-ink-muted transition-colors hover:bg-[var(--sidebar-hover)] hover:text-sidebar-ink"
+                  >
+                    <Plus className="h-4 w-4" />
+                    <span className="flex-1 truncate">New ticket</span>
+                  </button>
+                )}
                 <NavItem to="/tickets" icon={<List className="h-4 w-4" />} label="List" />
                 <NavItem to="/board" icon={<KanbanSquare className="h-4 w-4" />} label="Board" />
                 <NavItem to="/queue" icon={<UserCheck className="h-4 w-4" />} label="My queue" count={stats.my_active} />
@@ -497,6 +525,14 @@ export default function Layout() {
         </div>
       </div>
       {can("it") && <NewTicketToasts />}
+      {isCreatingTicket && defaultSystemCode && (
+        <NewTicketDialog
+          systems={activeSystems}
+          defaultSystemCode={defaultSystemCode}
+          onCreated={openCreatedTicket}
+          onClose={() => setIsCreatingTicket(false)}
+        />
+      )}
     </HubContext.Provider>
   );
 }
