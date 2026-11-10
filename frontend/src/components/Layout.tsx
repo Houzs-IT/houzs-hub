@@ -424,7 +424,6 @@ export default function Layout() {
             )}
             {can("it") && itOpen && (
               <>
-                <div className="px-2.5 pb-1 pt-1.5 text-[9px] font-semibold uppercase tracking-brand text-sidebar-ink-muted">Workspace</div>
                 {defaultSystemCode && (
                   <button
                     type="button"
@@ -438,6 +437,7 @@ export default function Layout() {
                     <span className="flex-1 truncate">New ticket</span>
                   </button>
                 )}
+                <div className="px-2.5 pb-1 pt-1.5 text-[9px] font-semibold uppercase tracking-brand text-sidebar-ink-muted">Workspace</div>
                 <NavItem to="/tickets" icon={<List className="h-4 w-4" />} label="List" />
                 <NavItem to="/board" icon={<KanbanSquare className="h-4 w-4" />} label="Board" />
                 <NavItem to="/queue" icon={<UserCheck className="h-4 w-4" />} label="My queue" count={stats.my_active} />
