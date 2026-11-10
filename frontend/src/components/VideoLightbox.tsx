@@ -46,7 +46,7 @@ export default function VideoLightbox({ src, title, onClose }: VideoLightboxProp
     >
       {hasPlaybackError ? (
         <div className="max-w-sm rounded-lg bg-black/60 p-6 text-center text-sm text-white/85">
-          <p>This video format can't play in the browser.</p>
+          <p>This video can't play here. The file may be missing or in a format the browser doesn't support.</p>
           <a href={src} download={title} className="btn-default mt-4 inline-flex h-10 items-center gap-2 px-4">
             <Download className="h-4 w-4" /> Download it
           </a>
