@@ -1,10 +1,11 @@
 import { MessageSquare } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, json, type Status, type TicketRow } from "../api/client";
 import { Avatar, Lozenge, PriorityIcon, SystemTag, TypeIcon } from "../components/Bits";
 import { useHub } from "../components/Layout";
 import ProjectShell from "../components/ProjectShell";
+import { copyGhost, prefersReducedMotion, useCardMotion, type Landing } from "../lib/boardMotion";
 import { fmtAgo } from "../lib/format";
 import { BOARD_COLUMNS, isReporterWaiting } from "../lib/labels";
 import { useFilters } from "../lib/useFilters";
@@ -17,10 +18,64 @@ const TOUCH_HOLD_MS = 350;
 const TOUCH_SLOP_PX = 8;
 const EDGE_SCROLL_PX = 48;
 
-type Drag = { code: string; title: string; pointerId: number; startX: number; startY: number; isTouch: boolean; isActive: boolean };
-
 // Where a card lands: a column, and the card it goes above (null means the bottom).
 type DropSpot = { column: Status; before: string | null };
+
+interface Drag {
+  ticket: TicketRow;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  grabX: number;
+  grabY: number;
+  width: number;
+  height: number;
+  origin: DropSpot;
+  isTouch: boolean;
+  isActive: boolean;
+}
+
+interface Dragging {
+  code: string;
+  height: number;
+  origin: DropSpot;
+}
+
+interface Ghost {
+  ticket: TicketRow;
+  left: number;
+  top: number;
+  width: number;
+}
+
+function isSameSpot(first: DropSpot | null, second: DropSpot | null): boolean {
+  return first?.column === second?.column && first?.before === second?.before;
+}
+
+function CardBody({ ticket }: { ticket: TicketRow }): JSX.Element {
+  return (
+    <>
+      <div className="break-words text-[13px] font-medium leading-5 text-ink">{ticket.title}</div>
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <SystemTag code={ticket.system_code} />
+        {isReporterWaiting(ticket) && (
+          <span className="inline-flex items-center gap-1 text-xs font-medium text-primary">
+            <MessageSquare className="h-3.5 w-3.5" /> Replied
+          </span>
+        )}
+      </div>
+      <div className="mt-2.5 flex items-center gap-1.5">
+        <TypeIcon type={ticket.type} />
+        <span className="font-docno text-[12px] font-semibold text-accent">{ticket.code}</span>
+        <span className="text-[11px] text-ink-subtle">· {fmtAgo(ticket.created_at)}</span>
+        <span className="ml-auto flex items-center gap-1.5">
+          <PriorityIcon priority={ticket.priority} />
+          <Avatar name={ticket.assignee_name} size={24} />
+        </span>
+      </div>
+    </>
+  );
+}
 
 function dropSpotAt(x: number, y: number, draggedCode: string): DropSpot | null {
   const column = document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-column]");
@@ -42,13 +97,16 @@ export default function BoardPage() {
   const [error, setError] = useState<string | null>(null);
   // Kept apart from `error` so the reload after a refused move cannot wipe the reason.
   const [moveError, setMoveError] = useState<string | null>(null);
-  const [dragging, setDragging] = useState<string | null>(null);
+  const [dragging, setDragging] = useState<Dragging | null>(null);
   const [spot, setSpot] = useState<DropSpot | null>(null);
-  const [ghost, setGhost] = useState<{ title: string; x: number; y: number } | null>(null);
+  const [ghost, setGhost] = useState<Ghost | null>(null);
   const drag = useRef<Drag | null>(null);
   const holdTimer = useRef<ReturnType<typeof setTimeout>>();
   const justDropped = useRef(false);
   const boardRef = useRef<HTMLDivElement>(null);
+  const ghostRef = useRef<HTMLDivElement>(null);
+  const landing = useRef<Landing | null>(null);
+  useCardMotion(boardRef, landing);
 
   // ponytail: one capped page across all columns; switch to per-column pages with "show more" past ~200 open tickets.
   const query = f.apiQuery({ status: BOARD_COLUMNS.join(","), page_size: "200", sort: "board" });
@@ -93,10 +151,25 @@ export default function BoardPage() {
   const placeRef = useRef(place);
   placeRef.current = place;
 
-  function startDrag(e: ReactPointerEvent, t: TicketRow) {
+  function startDrag(e: ReactPointerEvent<HTMLDivElement>, t: TicketRow) {
     if (e.button !== 0) return;
     const isTouch = e.pointerType !== "mouse";
-    drag.current = { code: t.code, title: t.title, pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, isTouch, isActive: false };
+    const rect = e.currentTarget.getBoundingClientRect();
+    const columnCards = tickets?.filter((ticket) => ticket.status === t.status) ?? [];
+    const nextCard = columnCards[columnCards.findIndex((ticket) => ticket.code === t.code) + 1];
+    drag.current = {
+      ticket: t,
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      grabX: e.clientX - rect.left,
+      grabY: e.clientY - rect.top,
+      width: rect.width,
+      height: rect.height,
+      origin: { column: t.status, before: nextCard?.code ?? null },
+      isTouch,
+      isActive: false,
+    };
     // A finger has to hold still first, so a quick swipe still scrolls the board.
     if (isTouch) holdTimer.current = setTimeout(() => activate(e.clientX, e.clientY), TOUCH_HOLD_MS);
   }
@@ -105,9 +178,9 @@ export default function BoardPage() {
     const d = drag.current;
     if (!d) return;
     d.isActive = true;
-    setDragging(d.code);
-    setGhost({ title: d.title, x, y });
-    setSpot(dropSpotAt(x, y, d.code));
+    setDragging({ code: d.ticket.code, height: d.height, origin: d.origin });
+    setGhost({ ticket: d.ticket, left: x - d.grabX, top: y - d.grabY, width: d.width });
+    setSpot(dropSpotAt(x, y, d.ticket.code));
   }
 
   function endDrag() {
@@ -129,8 +202,9 @@ export default function BoardPage() {
         } else if (distance >= MOUSE_START_PX) activate(e.clientX, e.clientY);
         return;
       }
-      setGhost((g) => g && { ...g, x: e.clientX, y: e.clientY });
-      setSpot(dropSpotAt(e.clientX, e.clientY, d.code));
+      setGhost((g) => g && { ...g, left: e.clientX - d.grabX, top: e.clientY - d.grabY });
+      const nextSpot = dropSpotAt(e.clientX, e.clientY, d.ticket.code);
+      setSpot((current) => (isSameSpot(current, nextSpot) ? current : nextSpot));
       // Near the board's left or right edge, scroll it so off-screen columns can be reached.
       const scroller = boardRef.current?.parentElement;
       const rect = scroller?.getBoundingClientRect();
@@ -153,8 +227,10 @@ export default function BoardPage() {
         // The click that follows a drop must not also open the ticket.
         justDropped.current = true;
         setTimeout(() => (justDropped.current = false));
-        const target = dropSpotAt(e.clientX, e.clientY, d.code);
-        if (target) placeRef.current(d.code, target);
+        const ghostCopy = ghostRef.current && !prefersReducedMotion() ? copyGhost(ghostRef.current) : null;
+        if (ghostCopy) landing.current = { code: d.ticket.code, ghostCopy };
+        const target = dropSpotAt(e.clientX, e.clientY, d.ticket.code);
+        if (target) placeRef.current(d.ticket.code, target);
       }
       endDrag();
     }
@@ -202,77 +278,71 @@ export default function BoardPage() {
       <div ref={boardRef} className={`flex h-full min-h-[400px] gap-3 ${dragging ? "cursor-grabbing select-none" : ""}`}>
         {BOARD_COLUMNS.map((col) => {
           const cards = tickets?.filter((t) => t.status === col) ?? [];
-          const dropLine = dragging && spot?.column === col ? spot.before : undefined;
+          const isDropTarget = dragging !== null && spot?.column === col;
+          // While dragging, the cards part around an empty slot; off the board the slot stays where the card came from.
+          const slot = dragging && (spot ?? dragging.origin);
+          const slotBefore = slot?.column === col ? slot.before : undefined;
+          const placeholder = dragging && (
+            <div
+              aria-hidden
+              style={{ height: dragging.height }}
+              className="shrink-0 rounded-[10px] border-2 border-dashed border-primary/40 bg-primary/5"
+            />
+          );
+          const hasVisibleCard = cards.some((t) => t.code !== dragging?.code);
           return (
             <div
               key={col}
               data-column={col}
-              className={`flex min-w-[272px] max-w-[360px] flex-1 shrink-0 flex-col rounded-[10px] border transition-colors ${
-                dropLine !== undefined ? "border-primary/50 bg-primary-soft" : "border-line bg-surface-dim/60"
+              className={`flex min-w-[272px] max-w-[360px] flex-1 shrink-0 flex-col rounded-[10px] border transition-[background-color,border-color,box-shadow] motion-reduce:transition-none ${
+                isDropTarget ? "border-primary/50 bg-primary-soft shadow-[0_0_0_3px_rgb(var(--primary)/0.12)]" : "border-line bg-surface-dim/60"
               }`}
             >
               <div className="flex items-center gap-2 px-3 pb-2 pt-3">
                 <Lozenge status={col} />
                 <span className="text-[11px] font-semibold tabular-nums text-ink-subtlest">{cards.length}</span>
               </div>
-              <div data-cards className="flex-1 space-y-2 overflow-y-auto px-2 pb-3 pt-1.5">
+              <div data-cards className="relative flex flex-1 flex-col gap-2 overflow-y-auto px-2 pb-3 pt-1.5">
                 {cards.map((t, i) => {
+                  // The dragged card is flattened, not removed: a touch drag stops getting move events once its starting element leaves the page.
+                  const isDragSource = dragging?.code === t.code;
                   return (
-                    <div
-                      key={t.code}
-                      data-card={t.code}
-                      onPointerDown={(e) => startDrag(e, t)}
-                      onClick={() => !justDropped.current && f.set({ selected: t.code })}
-                      onDoubleClick={() => navigate(`/tickets/${t.code}`)}
-                      role="button"
-                      tabIndex={0}
-                      aria-label={`${t.code} ${t.title}`}
-                      aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
-                      onKeyDown={(e) => {
-                        // Alt+Up / Alt+Down moves the card one place, for keyboards and screen readers.
-                        if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+                    <Fragment key={t.code}>
+                      {slotBefore === t.code && placeholder}
+                      <div
+                        data-card={t.code}
+                        onPointerDown={(e) => startDrag(e, t)}
+                        onClick={() => !justDropped.current && f.set({ selected: t.code })}
+                        onDoubleClick={() => navigate(`/tickets/${t.code}`)}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`${t.code} ${t.title}`}
+                        aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+                        onKeyDown={(e) => {
+                          // Alt+Up / Alt+Down moves the card one place, for keyboards and screen readers.
+                          if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+                            e.preventDefault();
+                            const target = e.key === "ArrowUp" ? i - 1 : i + 2;
+                            if (target < 0 || target > cards.length) return;
+                            place(t.code, { column: col, before: cards[target]?.code ?? null });
+                            requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-card="${t.code}"]`)?.focus());
+                            return;
+                          }
+                          if (e.key !== "Enter" && e.key !== " ") return;
                           e.preventDefault();
-                          const target = e.key === "ArrowUp" ? i - 1 : i + 2;
-                          if (target < 0 || target > cards.length) return;
-                          place(t.code, { column: col, before: cards[target]?.code ?? null });
-                          requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-card="${t.code}"]`)?.focus());
-                          return;
-                        }
-                        if (e.key !== "Enter" && e.key !== " ") return;
-                        e.preventDefault();
-                        f.set({ selected: t.code });
-                      }}
-                      className={`relative cursor-pointer select-none rounded-[10px] border bg-surface p-3 shadow-stone outline-none [-webkit-touch-callout:none] transition-colors hover:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary ${
-                        selected === t.code ? "border-primary ring-2 ring-primary/25" : "border-line"
-                      } ${dragging === t.code ? "opacity-50" : ""}`}
-                    >
-                      {/* Drawn in the gap between cards, so showing it never shifts the card under the pointer. */}
-                      {dropLine === t.code && <span aria-hidden className="absolute inset-x-0 -top-[5px] h-0.5 rounded bg-primary" />}
-                      {dropLine === null && i === cards.length - 1 && (
-                        <span aria-hidden className="absolute inset-x-0 -bottom-[5px] h-0.5 rounded bg-primary" />
-                      )}
-                      <div className="break-words text-[13px] font-medium leading-5 text-ink">{t.title}</div>
-                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                        <SystemTag code={t.system_code} />
-                        {isReporterWaiting(t) && (
-                          <span className="inline-flex items-center gap-1 text-xs font-medium text-primary">
-                            <MessageSquare className="h-3.5 w-3.5" /> Replied
-                          </span>
-                        )}
+                          f.set({ selected: t.code });
+                        }}
+                        className={`cursor-pointer select-none rounded-[10px] border bg-surface shadow-stone outline-none [-webkit-touch-callout:none] transition-colors hover:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary ${
+                          selected === t.code ? "border-primary ring-2 ring-primary/25" : "border-line"
+                        } ${isDragSource ? "-mb-2 h-0 overflow-hidden !border-0 p-0 opacity-0" : "p-3"}`}
+                      >
+                        <CardBody ticket={t} />
                       </div>
-                      <div className="mt-2.5 flex items-center gap-1.5">
-                        <TypeIcon type={t.type} />
-                        <span className="font-docno text-[12px] font-semibold text-accent">{t.code}</span>
-                        <span className="text-[11px] text-ink-subtle">· {fmtAgo(t.created_at)}</span>
-                        <span className="ml-auto flex items-center gap-1.5">
-                          <PriorityIcon priority={t.priority} />
-                          <Avatar name={t.assignee_name} size={24} />
-                        </span>
-                      </div>
-                    </div>
+                    </Fragment>
                   );
                 })}
-                {tickets && cards.length === 0 && (
+                {slotBefore === null && placeholder}
+                {tickets && !hasVisibleCard && slotBefore === undefined && (
                   <div className="rounded-[10px] border-2 border-dashed border-line py-6 text-center text-xs text-ink-subtle">Drop here</div>
                 )}
               </div>
@@ -282,11 +352,12 @@ export default function BoardPage() {
       </div>
       {ghost && (
         <div
+          ref={ghostRef}
           aria-hidden
-          style={{ left: ghost.x, top: ghost.y }}
-          className="pointer-events-none fixed z-50 w-[240px] -translate-x-1/2 -translate-y-1/2 rotate-2 rounded-[10px] border border-primary bg-surface p-3 text-[13px] font-medium leading-5 text-ink shadow-overlay"
+          style={{ left: ghost.left, top: ghost.top, width: ghost.width }}
+          className="pointer-events-none fixed z-50 rotate-2 scale-[1.03] rounded-[10px] border border-primary bg-surface p-3 shadow-overlay animate-[board-lift_160ms_ease-out] motion-reduce:animate-none"
         >
-          <span className="line-clamp-2">{ghost.title}</span>
+          <CardBody ticket={ghost.ticket} />
         </div>
       )}
     </ProjectShell>

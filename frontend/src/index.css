@@ -149,6 +149,13 @@ body {
   color: rgb(var(--accent-ink));
 }
 
+@keyframes board-lift {
+  from {
+    transform: none;
+    box-shadow: var(--shadow-stone);
+  }
+}
+
 @layer components {
   /* Century Button: h-9, 13px semibold, petrol primary with border. */
   .btn {
