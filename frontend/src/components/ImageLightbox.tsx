@@ -115,7 +115,7 @@ export default function ImageLightbox({ src, alt, onClose }: { src: string; alt:
         style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale}) rotate(${quarterTurns * 90}deg)` }}
         className={`${isSideways ? "max-h-[92vw] max-w-[85dvh]" : "max-h-[85dvh] max-w-[92vw]"} touch-none select-none object-contain ${
           isZoomed ? (isDragging ? "cursor-grabbing" : "cursor-grab") : "cursor-zoom-in"
-        } ${isDragging ? "" : "transition-transform duration-150 ease-out motion-reduce:transition-none"}`}
+        } ${isDragging ? "" : "transition-[transform,max-width,max-height] duration-150 ease-out motion-reduce:transition-none"}`}
       />
 
       <div className="absolute right-4 top-4 flex items-center gap-1 rounded-[10px] bg-black/60 p-1">
