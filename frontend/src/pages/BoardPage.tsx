@@ -1,13 +1,13 @@
-import { MessageSquare } from "lucide-react";
+import { Clock, MessageSquare } from "lucide-react";
 import { Fragment, useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, json, type Status, type TicketRow } from "../api/client";
-import { Avatar, Lozenge, PriorityIcon, SystemTag, TypeIcon } from "../components/Bits";
+import { Avatar, PriorityPill, TypeIcon } from "../components/Bits";
 import { useHub } from "../components/Layout";
 import ProjectShell from "../components/ProjectShell";
 import { copyGhost, prefersReducedMotion, useCardMotion, type Landing } from "../lib/boardMotion";
 import { fmtAgo } from "../lib/format";
-import { BOARD_COLUMNS, isReporterWaiting } from "../lib/labels";
+import { BOARD_COLUMNS, STATUS_COLUMN_STYLE, STATUS_DOT_STYLE, STATUS_HINT, STATUS_LABEL, isReporterWaiting, systemTagStyle } from "../lib/labels";
 import { useFilters } from "../lib/useFilters";
 import { usePoll } from "../lib/usePoll";
 
@@ -55,22 +55,35 @@ function isSameSpot(first: DropSpot | null, second: DropSpot | null): boolean {
 function CardBody({ ticket }: { ticket: TicketRow }): JSX.Element {
   return (
     <>
-      <div className="break-words text-[13px] font-medium leading-5 text-ink">{ticket.title}</div>
-      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        <SystemTag code={ticket.system_code} />
-        {isReporterWaiting(ticket) && (
-          <span className="inline-flex items-center gap-1 text-xs font-medium text-primary">
-            <MessageSquare className="h-3.5 w-3.5" /> Replied
-          </span>
-        )}
-      </div>
-      <div className="mt-2.5 flex items-center gap-1.5">
+      <div className="flex items-center gap-1.5">
         <TypeIcon type={ticket.type} />
-        <span className="font-docno text-[12px] font-semibold text-accent">{ticket.code}</span>
-        <span className="text-[11px] text-ink-subtle">· {fmtAgo(ticket.created_at)}</span>
-        <span className="ml-auto flex items-center gap-1.5">
-          <PriorityIcon priority={ticket.priority} />
-          <Avatar name={ticket.assignee_name} size={24} />
+        <span
+          className={`inline-flex h-5 items-center rounded border px-1.5 font-docno text-[11px] font-semibold ${systemTagStyle(ticket.system_code)}`}
+        >
+          {ticket.code}
+        </span>
+        <span className="ml-auto">
+          <PriorityPill priority={ticket.priority} />
+        </span>
+      </div>
+      <div className="mt-2 break-words text-[14px] font-bold leading-5 text-ink">{ticket.title}</div>
+      <div className="mt-3 flex items-center gap-2">
+        <Avatar name={ticket.assignee_name} size={24} />
+        <span className={`min-w-0 truncate text-[12px] font-semibold ${ticket.assignee_name ? "text-ink" : "text-ink-subtlest"}`}>
+          {ticket.assignee_name ?? "Unassigned"}
+        </span>
+        <span className="ml-auto flex shrink-0 items-center gap-1.5">
+          {isReporterWaiting(ticket) && (
+            <span title="The reporter replied" className="inline-flex items-center gap-1 text-xs font-medium text-primary">
+              <MessageSquare className="h-3.5 w-3.5" /> Replied
+            </span>
+          )}
+          <span
+            title="Time since it was submitted"
+            className="inline-flex h-6 items-center gap-1 rounded-md border border-line px-1.5 text-[11px] font-semibold text-ink-subtle"
+          >
+            <Clock className="h-3.5 w-3.5" /> {fmtAgo(ticket.created_at)}
+          </span>
         </span>
       </div>
     </>
@@ -295,12 +308,20 @@ export default function BoardPage() {
               key={col}
               data-column={col}
               className={`flex min-w-[272px] max-w-[360px] flex-1 shrink-0 flex-col rounded-[10px] border transition-[background-color,border-color,box-shadow] motion-reduce:transition-none ${
-                isDropTarget ? "border-primary/50 bg-primary-soft shadow-[0_0_0_3px_rgb(var(--primary)/0.12)]" : "border-line bg-surface-dim/60"
+                isDropTarget ? "border-primary/50 bg-primary-soft shadow-[0_0_0_3px_rgb(var(--primary)/0.12)]" : STATUS_COLUMN_STYLE[col]
               }`}
             >
-              <div className="flex items-center gap-2 px-3 pb-2 pt-3">
-                <Lozenge status={col} />
-                <span className="text-[11px] font-semibold tabular-nums text-ink-subtlest">{cards.length}</span>
+              <div className="flex items-start gap-2.5 px-3 pb-2 pt-3">
+                <span aria-hidden className={`mt-[5px] h-2.5 w-2.5 shrink-0 rounded-full ${STATUS_DOT_STYLE[col]}`} />
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h2 className="truncate text-[13px] font-bold text-ink">{STATUS_LABEL[col]}</h2>
+                    <span className="rounded-md border border-line bg-surface px-1.5 text-[11px] font-semibold tabular-nums leading-[18px] text-ink-subtle">
+                      {cards.length}
+                    </span>
+                  </div>
+                  <p className="truncate text-[12px] text-ink-subtle">{STATUS_HINT[col]}</p>
+                </div>
               </div>
               <div data-cards className="relative flex flex-1 flex-col gap-2 overflow-y-auto px-2 pb-3 pt-1.5">
                 {cards.map((t, i) => {
@@ -355,7 +376,7 @@ export default function BoardPage() {
           ref={ghostRef}
           aria-hidden
           style={{ left: ghost.left, top: ghost.top, width: ghost.width }}
-          className="pointer-events-none fixed z-50 rotate-2 scale-[1.03] rounded-[10px] border border-primary bg-surface p-3 shadow-overlay animate-[board-lift_160ms_ease-out] motion-reduce:animate-none"
+          className="pointer-events-none fixed z-[60] rotate-2 scale-[1.03] rounded-[10px] border border-primary bg-surface p-3 shadow-overlay animate-[board-lift_160ms_ease-out] motion-reduce:animate-none"
         >
           <CardBody ticket={ghost.ticket} />
         </div>
