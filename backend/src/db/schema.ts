@@ -181,7 +181,7 @@ export const CHARGE_STATUSES = ["confirmed", "to_confirm", "to_fill_in", "not_ac
 export type ChargeStatus = (typeof CHARGE_STATUSES)[number];
 export const CHARGE_BILLED = ["", "monthly", "yearly", "credit", "usage"] as const;
 export const CURRENCIES = ["USD", "MYR"] as const;
-// The systems a bill can belong to. Same list as the CHECKs in 008_billing_systems.sql.
+// The systems a bill can belong to. Same list as the CHECKs in 017_carres_billing.sql.
 export const BILLING_SYSTEMS = [
   ["CONTS", "Conts ERP"],
   ["HC", "Houzs ERP"],
@@ -189,6 +189,7 @@ export const BILLING_SYSTEMS = [
   ["CONNECT", "Houzs Connect"],
   ["2990", "2990s"],
   ["HUB", "IT Hub"],
+  ["CARRES", "Carres"],
 ] as const;
 export const BILLING_SYSTEM_CODES: readonly string[] = BILLING_SYSTEMS.map(([code]) => code);
 
