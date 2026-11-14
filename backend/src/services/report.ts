@@ -101,10 +101,11 @@ export async function buildReport(db: DB, range: ReportRange) {
     ),
     // One row per ticket done in this or the previous window; hours is null for imported ones.
     // it_hours leaves out the time spent waiting on the reporter (what the SLA counts).
-    // assignee is whoever held the ticket when it was done.
+    // assignee is whoever held the ticket when it was done; k is the day / month it was done,
+    // so the IT team panel can show each person's done tickets per day.
     rows<Row>(
       db,
-      sql`SELECT t.system_code AS sys, t.type, t.priority, t.module, ${period(DONE_AT)} AS period, ${HOLDER_AT(DONE_AT)} AS assignee,
+      sql`SELECT t.code, t.title, ${key(DONE_AT)} AS k, t.system_code AS sys, t.type, t.priority, t.module, ${period(DONE_AT)} AS period, ${HOLDER_AT(DONE_AT)} AS assignee,
         CASE WHEN t.legacy_code IS NULL THEN round((EXTRACT(EPOCH FROM ${DONE_AT} - ${CREATED}) / 3600)::numeric, 2)::float8 END AS hours,
         CASE WHEN t.legacy_code IS NULL THEN round((EXTRACT(EPOCH FROM ${DONE_AT} - ${CREATED}) / 3600 - ${WAITING_H})::numeric, 2)::float8 END AS it_hours
       FROM tickets t LEFT JOIN users u ON u.id = t.assignee_id WHERE ${inBoth(DONE_AT)}`,
