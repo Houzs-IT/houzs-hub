@@ -840,6 +840,7 @@ function Team({ r, mine, prevLabel }: { r: Report; mine: Mine; prevLabel: string
         overdue: o.filter(pastSla).length,
         sla: slaRate(d.filter((x) => x.period === "now")),
         done: d.filter((x) => x.period === "now").length,
+        doneRows: d.filter((x) => x.period === "now"),
         donePrev: d.filter((x) => x.period === "prev").length,
         median: percentile(hours("now"), 0.5),
         p90: percentile(hours("now"), 0.9),
@@ -859,7 +860,7 @@ function Team({ r, mine, prevLabel }: { r: Report; mine: Mine; prevLabel: string
   return (
     <Section
       title="IT team"
-      note={`Open tickets per person right now, and what each finished in this period ("Before" = ${prevLabel}). Click a person to see their tickets by stage.`}
+      note={`Open tickets per person right now, and what each finished in this period ("Before" = ${prevLabel}). Click a person to see what they finished each day and their open tickets by stage.`}
     >
       {people.length === 0 ? (
         <Empty>No open or finished tickets.</Empty>
@@ -930,7 +931,12 @@ function Team({ r, mine, prevLabel }: { r: Report; mine: Mine; prevLabel: string
             Time to done is coloured against the person's own typical time before. A finished ticket counts for whoever held it when it was
             done; first response for whoever picked it up. {SLA_NOTE}
           </p>
-          {selected && <Queue name={selected.name} id={selected.id} tickets={selected.open} />}
+          {selected && (
+            <>
+              {selected.name !== null && <DonePerDay key={key(selected.name)} r={r} name={selected.name} rows={selected.doneRows} />}
+              <Queue name={selected.name} id={selected.id} tickets={selected.open} />
+            </>
+          )}
         </>
       )}
     </Section>
@@ -1026,6 +1032,153 @@ function Queue({ name, id, tickets }: { name: string | null; id: number | null; 
             );
           })}
         </div>
+      )}
+    </div>
+  );
+}
+
+// One person's finished tickets per day (per month on the 6 / 12 month views); click a bar to list them.
+function DonePerDay({ r, name, rows }: { r: Report; name: string; rows: Report["done"] }) {
+  const [hovered, setHovered] = useState<number | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
+  const series = r.keys.map((k) => ({ key: k, list: rows.filter((x) => x.k === k) }));
+  const ticks = axisTicks(Math.max(0, ...series.map((s) => s.list.length)));
+  const top = ticks.at(-1)!;
+  const todayAt = r.keys.indexOf(r.today);
+  const label = r.daily ? longDay : longMonth;
+  const unit = r.daily ? "day" : "month";
+  // Average over the days / months so far, the current one included.
+  const elapsed = todayAt >= 0 ? todayAt + 1 : r.keys.length;
+  const best = series.reduce<(typeof series)[number] | null>((b, s) => (s.list.length > (b?.list.length ?? 0) ? s : b), null);
+  const pickedList = series.find((s) => s.key === picked)?.list ?? [];
+
+  return (
+    <div className="mt-4 border-t border-line-subtle pt-4">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <h3 className="flex items-center gap-2 self-center text-[14px] font-bold text-ink">
+          <Avatar name={name} size={24} />
+          {name}: done per {unit}
+        </h3>
+        <span className="text-[12px] text-ink-subtle">
+          <b className="tabular-nums text-ink">{rows.length}</b> done · <b className="tabular-nums text-ink">{(rows.length / elapsed).toFixed(1)}</b> a {unit} on
+          average
+          {best && (
+            <>
+              {" "}
+              · most on {label(best.key)} (<b className="tabular-nums text-ink">{best.list.length}</b>)
+            </>
+          )}
+        </span>
+        {!r.daily && <span className="text-[12px] text-ink-subtlest">Pick This month or Last month to see it per day.</span>}
+      </div>
+      {rows.length === 0 ? (
+        <Empty>Nothing finished in this period.</Empty>
+      ) : (
+        <>
+          <div className="mt-3 flex">
+            <div className="relative w-7 shrink-0 text-right text-[11px] tabular-nums text-ink-subtlest" style={{ height: 140 }}>
+              {ticks.map((v) => (
+                <span key={v} className="absolute right-1.5" style={{ bottom: `${(v / top) * 100}%`, transform: "translateY(50%)" }}>
+                  {v}
+                </span>
+              ))}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="relative" style={{ height: 140 }}>
+                {ticks.map((v) => (
+                  <div
+                    key={v}
+                    className={`absolute inset-x-0 border-t ${v === 0 ? "border-line-strong" : "border-line-subtle"}`}
+                    style={{ bottom: `${(v / top) * 100}%` }}
+                  />
+                ))}
+                <div className="absolute inset-0 flex">
+                  {series.map((s, i) => {
+                    const n = s.list.length;
+                    const h = `${(n / top) * 100}%`;
+                    return (
+                      <button
+                        type="button"
+                        key={s.key}
+                        aria-label={`${label(s.key)}: ${n} done`}
+                        aria-pressed={picked === s.key}
+                        disabled={!n}
+                        onMouseEnter={() => setHovered(i)}
+                        onMouseLeave={() => setHovered(null)}
+                        onFocus={() => setHovered(i)}
+                        onBlur={() => setHovered(null)}
+                        onClick={() => setPicked(picked === s.key ? null : s.key)}
+                        className={`relative flex flex-1 items-end justify-center rounded-sm outline-none ${n ? "cursor-pointer" : "cursor-default"} ${
+                          picked === s.key ? "bg-primary-soft" : hovered === i && n ? "bg-surface-2" : ""
+                        }`}
+                      >
+                        {n > 0 && <div className="w-full max-w-[18px] rounded-t-[4px]" style={{ height: h, background: BAR.done }} />}
+                        {n > 0 && (
+                          <span
+                            className="pointer-events-none absolute text-[10px] font-semibold tabular-nums text-ink-subtle max-sm:hidden"
+                            style={{ bottom: `calc(${h} + 2px)` }}
+                          >
+                            {n}
+                          </span>
+                        )}
+                        {hovered === i && n > 0 && (
+                          <div
+                            className={`pointer-events-none absolute bottom-full z-10 mb-1 w-max rounded-md border border-line bg-overlay px-2.5 py-1.5 text-left text-[12px] shadow-overlay ${
+                              i < series.length / 2 ? "left-0" : "right-0"
+                            }`}
+                          >
+                            <div className="font-semibold text-ink">{label(s.key)}</div>
+                            <div className="text-ink-subtle">{n} done · click to list them</div>
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="flex pt-1.5">
+                {series.map((s, i) => (
+                  <div key={s.key} className="flex-1 text-center text-[10.5px] leading-tight text-ink-subtlest">
+                    {r.daily ? (
+                      <span
+                        className={`${i === todayAt || ((i === 0 || (i + 1) % 5 === 0) && Math.abs(i - todayAt) > 1) ? "" : "hidden sm:inline"} ${
+                          i === todayAt ? "font-bold text-ink" : todayAt >= 0 && i > todayAt ? "opacity-50" : ""
+                        }`}
+                      >
+                        {i + 1}
+                      </span>
+                    ) : (
+                      shortMonth(s.key)
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          {picked && (
+            <div className="mt-3 rounded-lg bg-surface-2 p-2">
+              <div className="mb-2 flex items-center px-1 text-[11px] font-semibold uppercase tracking-wider text-ink-subtle">
+                Done on {label(picked)}
+                <span className="ml-auto tabular-nums">{pickedList.length}</span>
+              </div>
+              <div className="space-y-1.5">
+                {pickedList.map((t) => (
+                  <Link
+                    key={t.code}
+                    to={`/tickets/${encodeURIComponent(t.code)}`}
+                    className="flex items-center gap-2 rounded-md border border-line-subtle bg-surface px-2.5 py-2 transition-colors hover:border-primary"
+                  >
+                    <TypeIcon type={t.type} size={14} />
+                    <span className="shrink-0 font-docno text-[11.5px] font-semibold text-ink-subtle">{t.code}</span>
+                    <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink">{t.title}</span>
+                    <SystemTag code={t.sys} />
+                    <PriorityIcon priority={t.priority} />
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

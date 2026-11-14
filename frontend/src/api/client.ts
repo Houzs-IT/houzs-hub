@@ -300,7 +300,11 @@ export type Report = {
     stage_since: string;
   }[];
   // assignee = who held the ticket when it was done (response: who picked it up).
+  // k = the day (this / last month) or month it was done, Malaysia time.
   done: {
+    code: string;
+    title: string;
+    k: string;
     sys: string;
     type: TicketType;
     priority: Priority;
