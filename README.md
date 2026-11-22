@@ -313,3 +313,19 @@ In `backend/scripts`, against `DATABASE_URL`, dry run unless `--apply`:
   Finance pages).
 
 Each script's usage is at the top of its file.
+
+## Meeting rooms
+
+Rooms, meetings, guest booking links and a staff directory shared by every ERP live here;
+each ERP shows them on its own Meetings page and calls `/api/v1/sys/meetings/*` server to
+server with its hub key. The ERP vouches for the person with `X-Reporter-Id` plus
+`X-Person-Name`, `X-Person-Email`, `X-Person-Company`, `X-Person-Department`, and for the
+"Manage meeting rooms" permission with `X-Can-Manage-Rooms: 1`. A person is one key across
+systems (their email, else `<system>:<id>`). Guest pages are proxied with
+`X-Reporter-Id: guest` and may only use `/public/*`.
+
+Every rule lives in `backend/src/services/meetings.ts`: a person or room already booked,
+the room's gap between meetings, closed dates, longest booking and how far ahead. A save
+holds the room's row (`SELECT ... FOR UPDATE`), so two people taking the same slot at the
+same moment get one booking and one refusal. `PUT /directory` takes the ERP's whole staff
+list. Check the whole flow locally with `node backend/scripts/meetings-e2e.mjs <HC key> <HK key>`.
