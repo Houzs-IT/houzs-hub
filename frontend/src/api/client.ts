@@ -16,7 +16,8 @@ export type Perm =
   | "billing_view"
   | "billing_edit"
   | "health_view"
-  | "health_edit";
+  | "health_edit"
+  | "meeting_rooms";
 
 export type ChargeStatus = "confirmed" | "to_confirm" | "to_fill_in" | "not_active" | "cancelled";
 export type ChargeRow = {

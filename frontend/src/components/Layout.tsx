@@ -1,4 +1,5 @@
-import { Activity, BarChart3, Bell, ChevronDown, CreditCard, KanbanSquare, List, LogOut, Menu, Moon, Plug, Plus, ShieldCheck, Sun, UserCheck, UserCog, Users } from "lucide-react";
+import { Activity, BarChart3, Bell, CalendarDays, ChevronDown, CreditCard, KanbanSquare, List, LogOut, Menu, Moon, Plug, Plus, ShieldCheck, Sun, UserCheck, UserCog, Users } from "lucide-react";
+import { useMeetingsUnread } from "../pages/meetings/kit";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { api, json, type Perm, type User, type SystemRow } from "../api/client";
@@ -266,6 +267,7 @@ export default function Layout() {
   const [base, setBase] = useState<Omit<Ctx, "stats" | "version" | "changedCode" | "refresh" | "setMe"> | null>(null);
   const [stats, setStats] = useState<Stats>({ active_by_system: {}, my_active: 0, unread_notifications: 0 });
   const [version, setVersion] = useState(0);
+  const meetingsUnread = useMeetingsUnread();
   const [error, setError] = useState<string | null>(null);
   // Set when the account still has a handed-out password; the server refuses
   // everything but /me and /me/password until it is replaced.
@@ -454,6 +456,9 @@ export default function Layout() {
                 ))}
               </>
             )}
+
+            {/* Meetings: every IT Support user books the rooms every company shares. */}
+            <NavItem to="/meetings" icon={<CalendarDays className="h-4 w-4" />} label="Meetings" count={meetingsUnread} />
 
             {/* The Finance category: outside accounts and what the systems cost. Only
                 hides the links; the server checks accounts_* and billing_* itself. */}

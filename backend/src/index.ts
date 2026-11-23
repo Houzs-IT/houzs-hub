@@ -6,6 +6,7 @@ import dev from "./routes/dev";
 import sys from "./routes/sys";
 import sysAiUsage from "./routes/sysAiUsage";
 import sysHealth from "./routes/sysHealth";
+import { portalMeetings, publicMeetings } from "./routes/portalMeetings";
 import { sysMeetings } from "./routes/sysMeetings";
 import sysUsageCosts from "./routes/sysUsageCosts";
 import { notifyTicketsChanged } from "./live";
@@ -28,6 +29,9 @@ app.route("/api/v1/sys/usage-costs", sysUsageCosts);
 app.route("/api/v1/sys/meetings", sysMeetings);
 app.route("/api/v1/sys", sys);
 app.route("/api/v1/dev", dev);
+// Meetings for IT Support's own users (session) and for guests of a link made here (no sign-in).
+app.route("/api/v1/meetings", portalMeetings);
+app.route("/api/v1/public/meetings", publicMeetings);
 app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
 
 const AUTO_CLOSE_DAYS = 7;

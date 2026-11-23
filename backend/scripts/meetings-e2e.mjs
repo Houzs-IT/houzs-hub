@@ -1,7 +1,9 @@
 // End-to-end check of /api/v1/sys/meetings against `wrangler dev --port 8799` and the throwaway
 // Postgres from the README. Issue two local keys first (npm run key:issue -- HC, then HK).
-// Usage: node scripts/meetings-e2e.mjs <HC key> <HK key>   (never against production)
-const [HC, HK] = process.argv.slice(2);
+// Optional: an IT Support login (npm run user:set -- it@example.com itname, then clear must_change_password on the
+// throwaway database) checks /api/v1/meetings with a session.
+// Usage: node scripts/meetings-e2e.mjs <HC key> <HK key> [<IT login> <IT password>]   (never against production)
+const [HC, HK, IT_LOGIN, IT_PASSWORD] = process.argv.slice(2);
 const BASE = "http://127.0.0.1:8799/api/v1/sys/meetings";
 let fails = 0;
 const ok = (cond, msg) => { console.log(`${cond ? "PASS" : "FAIL"} ${msg}`); if (!cond) fails++; };
@@ -107,6 +109,59 @@ const race = await Promise.all([
   call(HC, { ...lim }, "POST", "/meetings", { title: "Race B", start: T2(16), end: T2(17), roomId: room1, attendees: [] }),
 ]);
 ok(race.filter((x) => x.status === 201).length === 1 && race.filter((x) => x.status === 409).length === 1, `simultaneous saves: one wins (${race.map((x) => x.status)})`);
+
+// IT Support's own users: the session vouches for the person; headers from the browser are ignored.
+if (IT_LOGIN) {
+  const ROOT = "http://127.0.0.1:8799/api/v1";
+  const login = await fetch(`${ROOT}/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ login: IT_LOGIN, password: IT_PASSWORD }) });
+  const cookie = (login.headers.get("set-cookie") ?? "").split(";")[0];
+  ok(login.status === 200 && cookie.startsWith("hub_session="), `IT Support login (${login.status})`);
+  const it = async (method, path, body, extra = {}) => {
+    const res = await fetch(`${ROOT}/meetings${path}`, { method, headers: { Cookie: cookie, "Content-Type": "application/json", ...extra }, body: body ? JSON.stringify(body) : undefined });
+    let j = null; try { j = await res.json(); } catch {}
+    return { status: res.status, j };
+  };
+  let x = await fetch(`${ROOT}/meetings/bootstrap`);
+  ok(x.status === 401, "no session, no meetings");
+  // Spoofed headers: another person, another company, room rights. All must be ignored.
+  x = await it("GET", "/bootstrap", undefined, { "X-Reporter-Id": "1", "X-Person-Email": "lim@example.com", "X-Person-Company": "Hookka", "X-Can-Manage-Rooms": "1" });
+  const itKey = IT_LOGIN.includes("@") ? IT_LOGIN.toLowerCase() : null;
+  ok(x.status === 200 && x.j.rooms.length === 2 && x.j.canManage === false && (!itKey || x.j.me === itKey), `IT bootstrap as the session's user, spoofed headers ignored (me=${x.j?.me}, canManage=${x.j?.canManage})`);
+  const itPerson = x.j.people.find((p) => p.key === x.j.me);
+  ok(itPerson?.company === "Houzs IT" && itPerson?.department === "IT", `IT users are in the directory as Houzs IT / IT (${JSON.stringify(itPerson)})`);
+  x = await call(HC, lim, "GET", "/bootstrap");
+  ok(x.j.people.some((p) => p.key === itPerson?.key), "an ERP sees the IT user and can invite them");
+  x = await it("POST", "/rooms", { name: "IT room", seats: 4 });
+  ok(x.status === 403, "IT user without Manage meeting rooms cannot add a room");
+  x = await it("PUT", "/directory", { people: [] });
+  ok(x.status === 404, "the staff-list route is not open to a browser");
+  const day3 = new Date(Date.parse(day) + 2 * 86400e3).toISOString().slice(0, 10);
+  const T3 = (h, m = 0) => `${day3}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00+08:00`;
+  x = await call(HC, lim, "POST", "/meetings", { title: "With IT", start: T3(10), end: T3(11), roomId: boardroom, attendees: [itPerson.key] });
+  ok(x.status === 201, `ERP books with the IT user invited (${x.status})`);
+  x = await it("GET", "/mine");
+  ok(x.status === 200 && x.j.meetings.some((m) => m.title === "With IT") && x.j.notifications.some((n) => !n.read), "the IT user sees the invite and an unread notice");
+  x = await it("GET", "/unread");
+  ok(x.status === 200 && x.j.unread >= 1, `unread count for the IT sidebar (${x.j?.unread})`);
+  x = await it("POST", "/meetings", { title: "IT clash", start: T3(10), end: T3(11), attendees: [] });
+  ok(x.status === 409 && x.j.conflict.people.some((p) => p.key === itPerson.key), `IT user busy is blocked from IT Support too (${x.status})`);
+  x = await it("POST", "/meetings", { title: "IT stand-up", start: T3(14), end: T3(14, 30), roomId: room1, attendees: ["lim@example.com"] });
+  ok(x.status === 201, `IT user books a room and invites an ERP person (${x.status} ${JSON.stringify(x.j)})`);
+  x = await call(HC, lim, "GET", "/mine");
+  ok(x.j.meetings.some((m) => m.title === "IT stand-up"), "the ERP person sees the IT Support booking");
+  x = await it("POST", "/links", { name: "IT visits", rooms: [boardroom], length: 60, days: [0, 1, 2, 3, 4, 5, 6], from: 10, to: 17, hosts: [itPerson.key], until: null });
+  ok(x.status === 201, `IT user makes a guest link (${x.status})`);
+  const itCode = x.j.code;
+  const pub = async (method, path, body) => {
+    const res = await fetch(`${ROOT}/public/meetings${path}`, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+    let j = null; try { j = await res.json(); } catch {}
+    return { status: res.status, j };
+  };
+  x = await pub("GET", `/links/${itCode}/slots?day=${day3}`);
+  ok(x.status === 200 && x.j.slots.length > 0 && !x.j.slots.some((s) => s.start === new Date(T3(10)).toISOString()), `IT guest slots skip the host's busy time (${x.j?.slots?.length})`);
+  x = await pub("GET", "/bootstrap");
+  ok(x.status === 404, "the public route reaches only links and bookings");
+}
 
 console.log(fails ? `\n${fails} FAILED` : "\nALL PASSED");
 process.exit(fails ? 1 : 0);
