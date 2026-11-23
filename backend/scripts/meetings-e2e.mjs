@@ -89,6 +89,56 @@ ok(r.status === 200 && r.j.booking.room === "Boardroom", "guest sees own booking
 r = await call(HC, { id: "guest" }, "POST", `/public/bookings/${token}/cancel`);
 ok(r.status === 200, "guest cancelled");
 
+// Second link shape (2026-11-23): the guest picks the room and the time range; hosts are optional.
+r = await call(HC, lim, "POST", "/links", { name: "Visitors", rooms: [boardroom, room1], length: 120, days: [0,1,2,3,4,5,6], from: 8, to: 20, hosts: [], until: null, audience: "anyone" });
+ok(r.status === 201, `link with no hosts accepted (${r.status} ${JSON.stringify(r.j)})`); const code2 = r.j.code;
+r = await call(HC, { id: "guest" }, "GET", `/public/links/${code2}`);
+ok(r.status === 200 && r.j.link.rooms.length === 2 && r.j.link.maxMinutes === 120 && r.j.link.audience === "anyone" && r.j.companies.some((x) => x.name === "Hookka" && x.departments.includes("Purchasing")), "guest gets the rooms, the longest booking and our company / department names");
+ok(!JSON.stringify(r.j).includes("lim@example.com") && !JSON.stringify(r.j).includes("Lim"), "no person's name or email reaches the guest");
+const dayB = new Date(Date.parse(day) + 86400e3).toISOString().slice(0, 10); // room1 is open that day (closed on `day`)
+const TB = (h, m = 0) => `${dayB}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00+08:00`;
+r = await call(HC, { id: "guest" }, "GET", `/public/links/${code2}/day?day=${day}`);
+const bd = r.j?.rooms?.find((x) => x.id === boardroom), r1d = r.j?.rooms?.find((x) => x.id === room1);
+ok(r.status === 200 && r.j.open && bd.busy.length > 0 && !JSON.stringify(r.j).includes("Weekly") && r1d.closed === "repaint", `day view: busy times without titles, closed room marked (${JSON.stringify(r1d)})`);
+const g = { name: "Ms Tan", phone: "+60 11-222 3333", email: "tan@abc.example", company: "ABC Trading", department: "", title: "Supplier intro", people: 4 };
+r = await call(HC, { id: "guest" }, "POST", `/public/links/${code2}/book`, { ...g, roomId: room1, start: TB(10), end: TB(11, 30) });
+ok(r.status === 201 && r.j.token && r.j.booking.room.name === "Room 1", `guest picked room and range (${r.status} ${JSON.stringify(r.j)})`); const token2 = r.j.token;
+r = await call(HC, { id: "guest" }, "POST", `/public/links/${code2}/book`, { ...g, email: "other@abc.example", phone: "9", roomId: room1, start: TB(11), end: TB(12) });
+ok(r.status === 409 && /taken/.test(r.j.error), `overlap refused with a sentence (${r.j?.error})`);
+r = await call(HC, { id: "guest" }, "POST", `/public/links/${code2}/book`, { ...g, email: "b@abc.example", phone: "8", roomId: room1, start: TB(13), end: TB(15, 30) });
+ok(r.status === 400 && /at most 2 hours/.test(r.j.error), `longer than the link allows is refused (${r.j?.error})`);
+r = await call(HC, { id: "guest" }, "POST", `/public/links/${code2}/book`, { ...g, email: "c@abc.example", phone: "7", people: 9, roomId: room1, start: TB(13), end: TB(14) });
+ok(r.status === 400 && /seats 6/.test(r.j.error), `too many people for the room is refused (${r.j?.error})`);
+r = await call(HC, { id: "guest" }, "POST", `/public/links/${code2}/book`, { ...g, email: "d@abc.example", phone: "6", title: "", roomId: room1, start: TB(13), end: TB(14) });
+ok(r.status === 400 && /title/.test(r.j.error), "a title is required");
+r = await call(HC, { id: "guest" }, "POST", `/public/links/${code2}/book`, { ...g, email: "e@abc.example", phone: "5", roomId: room1, start: TB(7), end: TB(8) });
+ok(r.status === 400 && /open 8:00 to 20:00/.test(r.j.error), `outside the link's hours is refused (${r.j?.error})`);
+r = await call(HC, { id: "guest" }, "GET", `/public/bookings/${token2}`);
+ok(r.status === 200 && r.j.booking.title === "Supplier intro" && r.j.booking.people === 4, "guest sees their own booking with title and people");
+r = await call(HC, lim, "GET", `/calendar?from=${encodeURIComponent(TB(0))}&to=${encodeURIComponent(TB(23))}`);
+ok(r.j.meetings.some((m) => m.title === "Supplier intro" && m.guest?.company === "ABC Trading"), "staff see the guest booking with the company on the calendar");
+// Staff-only link: the company must be one of ours.
+r = await call(HC, lim, "POST", "/links", { name: "Staff without ERP", rooms: [room1], length: 60, days: [0,1,2,3,4,5,6], from: 8, to: 20, hosts: ["lim@example.com"], until: null, audience: "staff" });
+const code3 = r.j.code;
+r = await call(HC, { id: "guest" }, "POST", `/public/links/${code3}/book`, { ...g, email: "f@abc.example", phone: "4", roomId: room1, start: TB(12), end: TB(13) });
+ok(r.status === 400 && /for our staff/.test(r.j.error), "staff-only link refuses an outside company");
+r = await call(HC, { id: "guest" }, "POST", `/public/links/${code3}/book`, { ...g, email: "g@abc.example", phone: "3", company: "Hookka", department: "Purchasing", roomId: room1, start: TB(12), end: TB(13) });
+ok(r.status === 201, `staff-only link takes one of our companies (${r.status} ${JSON.stringify(r.j)})`);
+r = await call(HC, lim, "GET", "/mine");
+ok(r.j.notifications.some((n) => n.text.includes("booked Room 1 through the link Staff without ERP")), "the link's host is told");
+// A link made with nothing preset: every room, every day, each room's own hours (owner, 2026-11-23).
+r = await call(HC, lim, "POST", "/links", { until: null });
+ok(r.status === 201, `link with nothing preset accepted (${r.status} ${JSON.stringify(r.j)})`); const code4 = r.j.code;
+r = await call(HC, { id: "guest" }, "GET", `/public/links/${code4}`);
+ok(r.status === 200 && r.j.link.rooms.length === 2 && r.j.link.name.startsWith("Booking link") && r.j.link.rooms.find((x) => x.id === boardroom)?.openFrom === 9, "it offers every room with its own opening hours, and gets a default name");
+r = await call(HC, { id: "guest" }, "GET", `/public/links/${code4}/day?day=${dayB}`);
+const bdB = r.j.rooms.find((x) => x.id === boardroom);
+ok(bdB.from === 9 * 60 && bdB.to === 18 * 60 && bdB.closed === null, `day view gives the room's own window (${bdB.from}-${bdB.to})`);
+r = await call(HC, { id: "guest" }, "POST", `/public/links/${code4}/book`, { ...g, email: "h@abc.example", phone: "2", roomId: boardroom, start: TB(18), end: TB(19) });
+ok(r.status === 400 && /open 9:00 to 18:00/.test(r.j.error), `a guest cannot book outside the room's hours (${r.j?.error})`);
+r = await call(HC, { id: "guest" }, "POST", `/public/links/${code4}/book`, { ...g, email: "i@abc.example", phone: "1", roomId: boardroom, start: TB(15), end: TB(16) });
+ok(r.status === 201, `and can inside them (${r.status} ${JSON.stringify(r.j)})`);
+
 r = await call(HC, lim, "POST", `/meetings/${m1}/end`);
 ok(r.status === 200, "organiser ended it (future meeting ends at once)");
 r = await call(HC, lim, "GET", "/calendar?from=" + encodeURIComponent(T(0)) + "&to=" + encodeURIComponent(T(23)));
