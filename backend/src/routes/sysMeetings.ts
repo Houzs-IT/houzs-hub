@@ -13,6 +13,7 @@ import {
   freeRooms,
   hasConflict,
   history,
+  inHours,
   loadRooms,
   localDay,
   localIso,
@@ -583,15 +584,17 @@ app.post("/links", async (c) => {
   const db = getDb(c.env);
   const actor = await me(c, db);
   const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-  const name = String(b.name ?? "").trim().slice(0, 80);
+  const name = String(b.name ?? "").trim().slice(0, 80) || `Booking link ${localIso(Date.now())}`;
+  // No rooms, days or hours given: every room, every day, each room's own opening hours (owner, 2026-11-23).
   const roomIds = (Array.isArray(b.rooms) ? b.rooms : []).map(Number).filter(Number.isInteger);
   const hosts = (Array.isArray(b.hosts) ? b.hosts : []).map(String).filter(Boolean).slice(0, 20);
-  const days = (Array.isArray(b.days) ? b.days : []).map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6);
-  const len = Math.trunc(Number(b.length));
-  const from = Math.trunc(Number(b.from));
-  const to = Math.trunc(Number(b.to));
+  const givenDays = (Array.isArray(b.days) ? b.days : []).map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6);
+  const days = givenDays.length ? givenDays : [0, 1, 2, 3, 4, 5, 6];
+  const len = b.length === undefined ? 480 : Math.trunc(Number(b.length));
+  const from = b.from === undefined ? 0 : Math.trunc(Number(b.from));
+  const to = b.to === undefined ? 24 : Math.trunc(Number(b.to));
   // Hosts are the people told about each booking; a link may have none.
-  if (!name || !roomIds.length || !days.length) return c.json({ error: "Give the link a name, at least one room and one day." }, 400);
+
   const audience = b.audience === "staff" ? "staff" : "anyone";
   if (!(len >= 15 && len <= 480) || !(from >= 0 && from < to && to <= 24)) return c.json({ error: "Check the length and the hours." }, 400);
   const until = isoOk(b.until) ? (b.until as string) : null;
@@ -619,6 +622,9 @@ app.patch("/links/:id{[0-9]+}", async (c) => {
 
 /* ---------- public (guest) — proxied by the ERP that owns the link's address ---------- */
 
+/** The link's rooms: the ones it lists, or every room when it lists none (rooms added later included). */
+const linkHas = (l: LinkRow, roomId: number) => l.room_ids.length === 0 || l.room_ids.includes(roomId);
+
 async function openLink(db: DB, code: string): Promise<LinkRow | null> {
   const [l] = await rows<LinkRow>(db, sql`SELECT ${LINK_COLS} FROM meeting_links WHERE code = ${code}`);
   if (!l || !l.active || (l.until && l.until < localIso(Date.now()))) return null;
@@ -627,7 +633,7 @@ async function openLink(db: DB, code: string): Promise<LinkRow | null> {
 
 /** Times a guest may take on a day: a host free, a room from the link free and allowed, at least 4 hours from now. */
 async function guestSlots(db: DB, l: LinkRow, dayIso: string, now: number) {
-  const rooms = (await loadRooms(db)).filter((r) => l.room_ids.includes(r.id));
+  const rooms = (await loadRooms(db)).filter((r) => linkHas(l, r.id));
   const dayStart = atLocal(dayIso, 0);
   const busy = await busyBetween(db, dayStart - DAY, dayStart + 2 * DAY, now);
   const len = l.length_min * MIN;
@@ -647,7 +653,7 @@ app.get("/public/links/:code", async (c) => {
   const db = getDb(c.env);
   const l = await openLink(db, c.req.param("code"));
   if (!l) return c.json({ error: "This booking link is not active." }, 404);
-  const rooms = (await loadRooms(db)).filter((r) => l.room_ids.includes(r.id));
+  const rooms = (await loadRooms(db)).filter((r) => linkHas(l, r.id));
   // A guest sees the link, its rooms and our company / department names, never who else has booked.
   const orgs = await rows<{ company: string; department: string }>(
     db,
@@ -663,7 +669,10 @@ app.get("/public/links/:code", async (c) => {
     link: {
       code: l.code, name: l.name, length: l.length_min, maxMinutes: l.length_min, days: l.days, from: l.from_hour, to: l.to_hour, until: l.until,
       createdIn: l.created_in, location: rooms[0]?.location ?? "", audience: l.audience,
-      rooms: rooms.filter((r) => r.active).map((r) => ({ id: r.id, name: r.name, seats: r.seats, location: r.location, floor: r.floor, equipment: r.equipment })),
+      rooms: rooms.filter((r) => r.active).map((r) => ({
+        id: r.id, name: r.name, seats: r.seats, location: r.location, floor: r.floor, equipment: r.equipment,
+        openDays: r.open_days, openFrom: r.open_from, openTo: r.open_to, maxHours: r.max_hours,
+      })),
     },
     companies,
   });
@@ -679,7 +688,7 @@ app.get("/public/links/:code/day", async (c) => {
   const now = Date.now();
   const dayStart = atLocal(day, 0);
   const open = l.days.includes(localDay(dayStart + 12 * HOUR)) && !(l.until && day > l.until);
-  const rooms = (await loadRooms(db)).filter((r) => l.room_ids.includes(r.id) && r.active);
+  const rooms = (await loadRooms(db)).filter((r) => linkHas(l, r.id) && r.active);
   const busy = await busyBetween(db, dayStart, dayStart + DAY, now);
   const from = atLocal(day, l.from_hour);
   const to = atLocal(day, l.to_hour);
@@ -687,10 +696,16 @@ app.get("/public/links/:code/day", async (c) => {
     day,
     open,
     rooms: rooms.map((r) => {
-      const closed = r.closures.find((x) => x.from <= day && day <= x.to);
+      const closure = r.closures.find((x) => x.from <= day && day <= x.to);
+      const wd = localDay(dayStart + 12 * HOUR);
+      const winFrom = Math.max(l.from_hour, r.open_from) * 60;
+      const winTo = Math.min(l.to_hour, r.open_to) * 60;
+      const closed = closure ? closure.reason || "Closed" : !r.open_days.includes(wd) ? "Not open this day" : winFrom >= winTo ? "Not open these hours" : null;
       return {
         id: r.id,
-        closed: closed ? closed.reason || "Closed" : null,
+        closed,
+        from: winFrom,
+        to: winTo,
         busy: busy
           .filter((b) => b.room_id === r.id && b.start < to && from < b.end)
           .map((b) => ({ start: iso(Math.max(b.start, from)), end: iso(Math.min(b.end, to)) }))
@@ -738,7 +753,7 @@ app.post("/public/links/:code/book", async (c) => {
     roomId = Math.trunc(Number(b.roomId));
     const day = localIso(start);
     const why = [
-      !l.room_ids.includes(roomId) && "That room is not open through this link.",
+      !linkHas(l, roomId) && "That room is not open through this link.",
       !title && "Give the meeting a title.",
       !guest.company && "Fill in your company.",
       start <= now && "That time has passed. Pick a later one.",
@@ -770,6 +785,7 @@ app.post("/public/links/:code/book", async (c) => {
       const room = rooms.find((r) => r.id === roomId);
       if (!room || !room.active) return { error: "That room is not open for booking.", status: 409 as const };
       if (room.seats && guest.people > room.seats) return { error: `${room.name} seats ${room.seats}. Pick a bigger room or fewer people.`, status: 400 as const };
+      if (!inHours(room, start, end)) return { error: `${room.name} is open ${room.open_from}:00 to ${room.open_to}:00 on its open days. Pick a time inside those hours.`, status: 400 as const };
       const busy = await busyBetween(tx as unknown as DB, start - DAY, end + DAY, now);
       const conflict = conflictsIn(busy, rooms, { id: null, start, end, roomId, people: [] }, now);
       if (conflict.room) return { error: `${room.name} is taken ${fmtTime(conflict.room.start)} - ${fmtTime(conflict.room.end)} (with the gap the room keeps between meetings). Pick another time or room.`, status: 409 as const };
@@ -792,7 +808,7 @@ app.post("/public/links/:code/book", async (c) => {
     return c.json({ ok: true, token, booking: { ...res, code: `MTG-${String(res.id).padStart(4, "0")}` } }, 201);
   }
   const out = await db.transaction(async (tx) => {
-    for (const rid of l.room_ids) await lockRoom(tx, rid);
+    for (const rid of l.room_ids.length ? l.room_ids : (await loadRooms(tx)).map((r) => r.id)) await lockRoom(tx, rid);
     const slot = (await guestSlots(tx as unknown as DB, l, localIso(start), now)).find((s) => Date.parse(s.start) === start);
     if (!slot) return null;
     const [row] = await rows<{ id: number }>(

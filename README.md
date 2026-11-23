@@ -343,5 +343,7 @@ Guest links: the person with the link picks the day, the room and the time range
 gives the link's rooms and our company / department names; `GET /public/links/:code/day?day=` gives each
 room's taken times with no titles or people; `POST .../book` takes `roomId`, `start`, `end`, `title`,
 `people`, company and department). `length_min` is the longest booking; hosts are only the people told
-and may be empty; `audience` is `anyone` or `staff` (company must be one of ours). The older fixed-length
+and may be empty; `audience` is `anyone` or `staff` (company must be one of ours). A link created with no rooms,
+days or hours (the portals' dialog sends none) offers every room, rooms added later included, each
+within its own opening days and hours, which a guest cannot book outside. The older fixed-length
 `/slots` shape still works for pages not yet updated.
