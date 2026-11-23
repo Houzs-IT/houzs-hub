@@ -338,3 +338,10 @@ session vouching for the person: system `IT`, company `Houzs IT`, department `IT
 the `meeting_rooms` permission on the Roles page. Headers the browser sends are dropped. Opening the
 page puts every active portal user in the directory, so the ERPs can invite them. A guest link made
 here opens at `/book/:code` on the portal and books through `/api/v1/public/meetings/*`.
+
+Guest links: the person with the link picks the day, the room and the time range (`GET /public/links/:code`
+gives the link's rooms and our company / department names; `GET /public/links/:code/day?day=` gives each
+room's taken times with no titles or people; `POST .../book` takes `roomId`, `start`, `end`, `title`,
+`people`, company and department). `length_min` is the longest booking; hosts are only the people told
+and may be empty; `audience` is `anyone` or `staff` (company must be one of ours). The older fixed-length
+`/slots` shape still works for pages not yet updated.
