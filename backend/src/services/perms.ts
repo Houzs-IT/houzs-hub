@@ -12,6 +12,7 @@ export const PERMISSIONS = [
   { key: "billing_view", label: "See system billing", hint: "The System billing pages under Finance: what each service costs and which card pays" },
   { key: "billing_edit", label: "Edit system billing", hint: "Add, change and remove charges, cards and statement lines under System billing" },
   { key: "health_view", label: "See system health", hint: "The System health page: whether each system is up, how fast and which version" },
+  { key: "meeting_rooms", label: "Manage meeting rooms", hint: "Add and change the meeting rooms every company shares (seats, hours, rules, closed dates) and see the meetings change log" },
   { key: "health_edit", label: "Edit system health", hint: "Add, change and remove the systems the hub checks, and run a check now" },
 ] as const;
 

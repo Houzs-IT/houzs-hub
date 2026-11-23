@@ -37,8 +37,9 @@ import type { SysApp } from "../types";
 // granted the user "Manage meeting rooms". Guest pages are proxied by the ERP with
 // X-Reporter-Id: guest and may only use /public/*.
 
+// The routes themselves, with no sign-in of their own: sysMeetings below puts the ERP key check in front,
+// and portalMeetings.ts puts the IT Support session in front.
 const app = new Hono<SysApp>();
-app.use("*", systemAuth);
 
 type C = Context<SysApp>;
 const MIN = 60_000;
@@ -722,7 +723,9 @@ app.post("/public/bookings/:token{[0-9a-f]{64}}/cancel", async (c) => {
 });
 
 // Guests may only reach /public; everything else needs a signed-in person.
+export const meetingsCore = app;
 export const sysMeetings = new Hono<SysApp>();
+sysMeetings.use("*", systemAuth);
 sysMeetings.use("*", async (c, next) => {
   if (c.req.header("X-Reporter-Id")?.trim() === "guest" && !c.req.path.includes("/meetings/public/")) return c.json({ error: "Not allowed for guests" }, 403);
   await next();

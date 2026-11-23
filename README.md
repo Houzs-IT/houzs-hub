@@ -328,4 +328,13 @@ Every rule lives in `backend/src/services/meetings.ts`: a person or room already
 the room's gap between meetings, closed dates, longest booking and how far ahead. A save
 holds the room's row (`SELECT ... FOR UPDATE`), so two people taking the same slot at the
 same moment get one booking and one refusal. `PUT /directory` takes the ERP's whole staff
-list. Check the whole flow locally with `node backend/scripts/meetings-e2e.mjs <HC key> <HK key>`.
+list. Check the whole flow locally with `node backend/scripts/meetings-e2e.mjs <HC key> <HK key>`
+(add `<IT login> <IT password>` to check IT Support's own page too).
+
+IT Support's own users book on the portal's **Meetings** page (`frontend/src/pages/meetings/`, the
+same page files as Houzs ERP's; `kit.tsx` holds the few app pieces it needs). `/api/v1/meetings/*`
+(`backend/src/routes/portalMeetings.ts`) runs the same routes as `/api/v1/sys/meetings` with the
+session vouching for the person: system `IT`, company `Houzs IT`, department `IT`, room rights from
+the `meeting_rooms` permission on the Roles page. Headers the browser sends are dropped. Opening the
+page puts every active portal user in the directory, so the ERPs can invite them. A guest link made
+here opens at `/book/:code` on the portal and books through `/api/v1/public/meetings/*`.

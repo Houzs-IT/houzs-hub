@@ -7,6 +7,8 @@ import IssuePage from "./pages/IssuePage";
 import AccountPage from "./pages/AccountPage";
 import ListPage from "./pages/ListPage";
 import LoginPage from "./pages/LoginPage";
+import { MeetingBook } from "./pages/MeetingBook";
+import MeetingsPage from "./pages/MeetingsPage";
 import NotificationsPage from "./pages/NotificationsPage";
 import BillingPage from "./pages/BillingPage";
 import HealthPage from "./pages/HealthPage";
@@ -21,6 +23,8 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        {/* A guest of a booking link made here: no sign-in. */}
+        <Route path="/book/:code" element={<MeetingBook />} />
         <Route element={<Layout />}>
           <Route path="/" element={<Navigate to="/tickets" replace />} />
           <Route path="/tickets" element={<ListPage />} />
@@ -36,6 +40,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
           <Route path="/billing" element={<BillingPage />} />
           <Route path="/roles" element={<RolesPage />} />
           <Route path="/account" element={<AccountPage />} />
+          <Route path="/meetings" element={<MeetingsPage />} />
           <Route path="*" element={<Navigate to="/tickets" replace />} />
         </Route>
       </Routes>

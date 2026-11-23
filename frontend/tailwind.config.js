@@ -21,7 +21,13 @@ export default {
         sunken: v("surface-2"),
         hover: v("surface-2"),
         neutral: { DEFAULT: v("surface-2"), hover: v("surface-dim") },
-        ink: { DEFAULT: v("ink"), subtle: v("ink-secondary"), subtlest: v("ink-muted"), disabled: v("ink-disabled") },
+        ink: { DEFAULT: v("ink"), subtle: v("ink-secondary"), subtlest: v("ink-muted"), disabled: v("ink-disabled"), secondary: v("ink-secondary"), muted: v("ink-muted") },
+        // Names the Meetings page uses (it is shared with Houzs ERP), mapped onto this palette.
+        border: v("border"),
+        bg: v("canvas"),
+        err: { DEFAULT: v("loz-red-ink"), bg: v("loz-red") },
+        warning: { bg: v("loz-yellow"), text: v("loz-yellow-ink") },
+        synced: { DEFAULT: v("loz-green-ink"), bg: v("loz-green") },
         line: { DEFAULT: v("border"), subtle: v("border-subtle"), strong: v("border-strong") },
         // Petrol — the functional accent: buttons, active, links, selected rows.
         primary: { DEFAULT: v("primary"), hover: v("primary-hover"), soft: v("primary-soft"), "soft-hover": v("primary-soft-hover"), on: v("primary-on"), ink: v("primary-ink") },
