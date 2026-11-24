@@ -192,6 +192,18 @@ if (r.j?.meetConnected) {
   ok(r.status === 409, `without a Google key the window is told to paste a link (${r.status})`);
 }
 
+// A link with nobody to tell: whoever made it owns its bookings, can cancel them and is told (owner 2026-11-24).
+r = await call(HC, hana, "POST", "/links", { name: "No hosts", hosts: [], until: null, audience: "anyone" });
+const codeN = r.j?.code;
+const dayN = new Date(Date.parse(day) + 3 * 86400e3).toISOString().slice(0, 10);
+r = await call(HC, { id: "guest" }, "POST", `/public/links/${codeN}/book`, { name: "Mr Ong", phone: "+60 13-111 2222", email: "ong@xyz.example", company: "XYZ", department: "", title: "Visit", people: 2, roomId: boardroom, start: `${dayN}T10:00:00+08:00`, end: `${dayN}T11:00:00+08:00` });
+const nid = r.j?.booking?.id;
+ok(r.status === 201, `guest books on a host-less link (${r.status} ${r.j?.error ?? ""})`);
+r = await call(HC, hana, "GET", "/mine");
+ok(r.j?.notifications?.some((n) => /booked .* through the link No hosts/.test(n.text)), "the link maker is told");
+r = await call(HC, hana, "POST", `/meetings/${nid}/cancel`, {});
+ok(r.status === 200, `the link maker can cancel the guest booking (${r.status} ${r.j?.error ?? ""})`);
+
 // IT Support's own users: the session vouches for the person; headers from the browser are ignored.
 if (IT_LOGIN) {
   const ROOT = `http://127.0.0.1:${PORT}/api/v1`;

@@ -799,7 +799,8 @@ app.post("/public/links/:code/book", async (c) => {
   if ((recent?.n ?? 0) >= 2) return c.json({ error: "You already booked twice today. Please contact us to book more." }, 429);
   const token = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
   if (picked) {
-    const hosts = l.host_keys;
+    // Nobody to tell: the person who made the link owns the booking (can change or cancel it) and is told.
+    const hosts = l.host_keys.length ? l.host_keys : [l.created_by];
     const res = await db.transaction(async (tx) => {
       await lockRoom(tx, roomId);
       const rooms = await loadRooms(tx);
@@ -811,7 +812,7 @@ app.post("/public/links/:code/book", async (c) => {
       const conflict = conflictsIn(busy, rooms, { id: null, start, end, roomId, people: [] }, now);
       if (conflict.room) return { error: `${room.name} is taken ${fmtTime(conflict.room.start)} - ${fmtTime(conflict.room.end)} (with the gap the room keeps between meetings). Pick another time or room.`, status: 409 as const };
       if (conflict.rules.length) return { error: conflict.rules[0], status: 409 as const };
-      const organizer = hosts[0] ?? "guest";
+      const organizer = hosts[0];
       const [row] = await rows<{ id: number }>(
         tx,
         sql`INSERT INTO meetings (title, starts_at, ends_at, room_id, organizer, booked_by, created_in, link_id, guest, guest_token, reminders)
@@ -820,7 +821,7 @@ app.post("/public/links/:code/book", async (c) => {
       );
       for (const h of hosts.slice(1)) await tx.execute(sql`INSERT INTO meeting_attendees (meeting_id, person_key) VALUES (${row.id}, ${h}) ON CONFLICT DO NOTHING`);
       await history(tx, row.id, "guest", `${guest.name} (${guest.company}) booked it through the link ${l.name}`);
-      if (hosts.length) {
+      {
         await notify(tx, hosts, `${guest.name} (${guest.company}${guest.department ? `, ${guest.department}` : ""}) booked ${room.name} through the link ${l.name}: ${title}, ${fmtDay(start)} ${fmtTime(start)} - ${fmtTime(end)}, ${guest.people} people.`, row.id);
       }
       return { id: row.id, title, people: guest.people, start: iso(start), end: iso(end), room: { name: room.name, floor: room.floor, location: room.location } };
