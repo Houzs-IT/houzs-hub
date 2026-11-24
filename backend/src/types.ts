@@ -22,6 +22,13 @@ export interface Env {
   HEALTH_ALERT_FROM?: string;
   // Only for local tests against a stand-in; unset in production.
   ANTHROPIC_ADMIN_BASE_URL?: string;
+  // Google Meet links for meetings (services/googleMeet.ts): the service account's JSON key
+  // (`wrangler secret put GOOGLE_SERVICE_ACCOUNT_JSON`) and the Houzs account the spaces belong to (var).
+  GOOGLE_SERVICE_ACCOUNT_JSON?: string;
+  GOOGLE_MEET_OWNER?: string;
+  // Only for local tests against a stand-in Google; unset in production.
+  GOOGLE_TOKEN_URL?: string;
+  GOOGLE_MEET_API_BASE?: string;
 }
 
 export type SysVars = { systemCode: string; reporterId: string };
