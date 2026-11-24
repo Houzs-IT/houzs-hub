@@ -32,7 +32,7 @@ export const rows = async <T>(db: Exec, q: SQL): Promise<T[]> => {
 };
 // Same for arrays: "{1,2}" and {TV,"Video call"}.
 const INT_ARRAYS = new Set(["open_days", "room_ids", "days"]);
-const TEXT_ARRAYS = new Set(["equipment", "host_keys"]);
+const TEXT_ARRAYS = new Set(["equipment", "host_keys", "guest_emails", "to_emails"]);
 export function pgArray(s: string): string[] {
   const inner = s.replace(/^\{|\}$/g, "");
   if (!inner) return [];
@@ -68,6 +68,8 @@ export type Room = {
   id: number;
   name: string;
   location: string;
+  /** Full street address for visitors (emails show it with a map link). */
+  address: string;
   floor: string;
   seats: number;
   equipment: string[];
@@ -101,6 +103,7 @@ export type MeetingRow = {
   created_in: string;
   link_id: number | null;
   guest: { name: string; phone: string; email: string; company: string } | null;
+  guest_emails: string[];
 };
 
 export type Busy = { id: number; title: string; start: number; end: number; room_id: number | null; organizer: string; people: string[] };
@@ -121,7 +124,7 @@ export function personKey(system: string, externalId: string, email: string | nu
 export async function loadRooms(db: Exec, onlyActive = false): Promise<Room[]> {
   const rs = await rows<Omit<Room, "closures">>(
     db,
-    sql`SELECT id, name, location, floor, seats, equipment, open_days, open_from, open_to, color, buffer_min, max_hours, advance_days, active
+    sql`SELECT id, name, location, address, floor, seats, equipment, open_days, open_from, open_to, color, buffer_min, max_hours, advance_days, active
         FROM meeting_rooms ${onlyActive ? sql`WHERE active` : sql``} ORDER BY location, name`,
   );
   const cl = await rows<{ id: number; room_id: number; from_date: string | Date; to_date: string | Date; reason: string }>(

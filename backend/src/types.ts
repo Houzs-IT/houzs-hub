@@ -29,6 +29,14 @@ export interface Env {
   // Only for local tests against a stand-in Google; unset in production.
   GOOGLE_TOKEN_URL?: string;
   GOOGLE_MEET_API_BASE?: string;
+  // Meeting emails (services/meetingMail.ts), sent with RESEND_API_KEY. The sender per system the meeting was
+  // made in ({"HK": "Hookka Meetings <no-reply@hookka.com>", ...}), the fallback sender, and each ERP's address
+  // for the "Open in the ERP" button, as {"HC": "https://erp.houzscentury.com", ...} (vars).
+  MEETING_MAIL_FROM_BY_SYSTEM?: string;
+  MEETING_MAIL_FROM?: string;
+  MEETING_ERP_URLS?: string;
+  // Only for local tests against a stand-in; unset in production.
+  RESEND_BASE_URL?: string;
 }
 
 export type SysVars = { systemCode: string; reporterId: string };
