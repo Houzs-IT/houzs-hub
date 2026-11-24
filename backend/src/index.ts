@@ -8,7 +8,7 @@ import sysAiUsage from "./routes/sysAiUsage";
 import sysHealth from "./routes/sysHealth";
 import { portalMeetings, publicMeetings } from "./routes/portalMeetings";
 import { sysMeetings } from "./routes/sysMeetings";
-import { drainMail, sendDueReminders } from "./services/meetingMail";
+import { sendDueReminders } from "./services/meetingMail";
 import sysUsageCosts from "./routes/sysUsageCosts";
 import { notifyTicketsChanged } from "./live";
 import { runHealthChecks } from "./services/health";
@@ -77,10 +77,9 @@ export default {
         .then(() => sendHealthAlerts(env, db))
         .catch((e) => console.error("[health]", e)),
     );
-    // Meeting reminders that are due, then every queued meeting email.
+    // Meeting reminders that are due; each ERP's Mail Center collects and sends them.
     ctx.waitUntil(
       sendDueReminders(env, getDb(env))
-        .then(() => drainMail(env, getDb(env)))
         .catch((e) => console.error("[meeting-mail]", e)),
     );
     const at = new Date(event.scheduledTime);
