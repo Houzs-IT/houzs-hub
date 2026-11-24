@@ -4,7 +4,8 @@
 // throwaway database) checks /api/v1/meetings with a session.
 // Usage: node scripts/meetings-e2e.mjs <HC key> <HK key> [<IT login> <IT password>]   (never against production)
 const [HC, HK, IT_LOGIN, IT_PASSWORD] = process.argv.slice(2);
-const BASE = "http://127.0.0.1:8799/api/v1/sys/meetings";
+const PORT = process.env.HUB_PORT ?? "8799";
+const BASE = `http://127.0.0.1:${PORT}/api/v1/sys/meetings`;
 let fails = 0;
 const ok = (cond, msg) => { console.log(`${cond ? "PASS" : "FAIL"} ${msg}`); if (!cond) fails++; };
 const call = async (key, who, method, path, body, extra = {}) => {
@@ -160,9 +161,27 @@ const race = await Promise.all([
 ]);
 ok(race.filter((x) => x.status === 201).length === 1 && race.filter((x) => x.status === 409).length === 1, `simultaneous saves: one wins (${race.map((x) => x.status)})`);
 
+// Online meetings (no room) are private to the people in it; room bookings stay visible to all (owner 2026-11-24).
+const day3 = new Date(Date.parse(day) + 2 * 86400e3).toISOString().slice(0, 10);
+const T3 = (h) => `${day3}T${String(h).padStart(2, "0")}:00:00+08:00`;
+r = await call(HC, lim, "POST", "/meetings", { title: "Private pay talk", start: T3(19), end: T3(20), attendees: ["ivy@example.com"] });
+ok(r.status === 201, `online meeting booked (${r.status} ${JSON.stringify(r.j).slice(0, 300)})`); const priv = r.j?.ids?.[0];
+r = await call(HC, lim, "POST", "/meetings", { title: "Room talk", start: T3(14), end: T3(15), roomId: boardroom, attendees: [] });
+const pub = r.j?.ids?.[0];
+const cal = async (key, who) => (await call(key, who, "GET", `/calendar?from=${encodeURIComponent(T3(0))}&to=${encodeURIComponent(T3(23))}`)).j?.meetings?.map((m) => m.title) ?? [];
+ok((await cal(HC, lim)).includes("Private pay talk"), "the organiser sees the online meeting");
+ok((await cal(HK, ivy)).includes("Private pay talk"), "an invited person in another ERP sees it");
+const hanaSees = await cal(HC, hana);
+ok(!hanaSees.includes("Private pay talk") && hanaSees.includes("Room talk"), `others do not see it, but do see room bookings (${hanaSees})`);
+ok((await call(HC, hana, "GET", `/meetings/${priv}`)).status === 404, "others cannot open it by id");
+ok((await call(HK, ivy, "GET", `/meetings/${priv}`)).status === 200, "an invited person can open it");
+ok((await call(HC, hana, "GET", `/meetings/${pub}`)).status === 200, "a room booking opens for anyone");
+r = await call(HC, hana, "POST", "/meetings", { title: "Hana and Ivy", start: T3(19), end: T3(20), attendees: ["ivy@example.com"] });
+ok(r.status === 409, `a private meeting still makes its people busy (${r.status})`);
+
 // IT Support's own users: the session vouches for the person; headers from the browser are ignored.
 if (IT_LOGIN) {
-  const ROOT = "http://127.0.0.1:8799/api/v1";
+  const ROOT = `http://127.0.0.1:${PORT}/api/v1`;
   const login = await fetch(`${ROOT}/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ login: IT_LOGIN, password: IT_PASSWORD }) });
   const cookie = (login.headers.get("set-cookie") ?? "").split(";")[0];
   ok(login.status === 200 && cookie.startsWith("hub_session="), `IT Support login (${login.status})`);
