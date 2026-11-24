@@ -252,7 +252,14 @@ app.get("/meetings/:id{[0-9]+}", async (c) => {
     rows<{ at: Date; who: string; text: string }>(db, sql`SELECT at, who, text FROM meeting_history WHERE meeting_id = ${m.id} ORDER BY at`),
     rows<{ id: number; file_name: string; size_bytes: number; mime_type: string }>(db, sql`SELECT id, file_name, size_bytes, mime_type FROM meeting_files WHERE meeting_id = ${m.id} ORDER BY id`),
   ]);
-  return c.json({ meeting: publicMeeting(m, Date.now()), history: hist.map((h) => ({ at: h.at.toISOString(), who: h.who, text: h.text })), files });
+  // The organiser and the booker see what was emailed and whether it went (owner 2026-11-24).
+  const emails = mayChange(m, actor)
+    ? (await rows<{ kind: string; to_emails: string[]; sent_at: Date | null; attempts: number; last_error: string | null }>(
+        db,
+        sql`SELECT kind, to_emails, sent_at, attempts, last_error FROM meeting_mail WHERE meeting_id = ${m.id} ORDER BY id`,
+      )).map((e) => ({ kind: e.kind, to: e.to_emails, sentAt: e.sent_at ? new Date(e.sent_at).toISOString() : null, attempts: e.attempts, error: e.last_error }))
+    : undefined;
+  return c.json({ meeting: { ...publicMeeting(m, Date.now()), emails }, history: hist.map((h) => ({ at: h.at.toISOString(), who: h.who, text: h.text })), files });
 });
 
 app.post("/meetings", async (c) => {
