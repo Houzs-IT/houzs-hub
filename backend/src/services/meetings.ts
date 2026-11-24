@@ -15,7 +15,7 @@ export class MeetingInputError extends Error {}
 
 type Exec = Pick<DB, "execute">;
 // getDb turns fetch_types off, so timestamptz columns arrive as text ("2026-11-24 02:00:00+00").
-const DATE_COLS = new Set(["starts_at", "ends_at", "started_at", "ended_at", "created_at", "updated_at", "read_at", "at", "synced_at"]);
+const DATE_COLS = new Set(["starts_at", "ends_at", "started_at", "ended_at", "created_at", "updated_at", "read_at", "at", "synced_at", "sent_at"]);
 const pgDate = (v: string) => new Date(v.replace(" ", "T").replace(/([+-]\d{2})$/, "$1:00"));
 export const rows = async <T>(db: Exec, q: SQL): Promise<T[]> => {
   const rs = (await db.execute(q)) as unknown as Record<string, unknown>[];
