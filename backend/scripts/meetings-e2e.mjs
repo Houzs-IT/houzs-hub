@@ -225,41 +225,60 @@ ok(r.status === 200, `the link maker can cancel the guest booking (${r.status} $
   ok(bigUp.status === 413, `a file over 25 MB is refused (${bigUp.status})`);
 }
 
-// Meeting emails (owner 2026-11-24), when RESEND_BASE_URL points at the stand-in on MAIL_MOCK.
-if (process.env.MAIL_MOCK) {
-  const mails = async () => (await (await fetch(`${process.env.MAIL_MOCK}/emails`)).json());
-  const wait = (ms) => new Promise((res) => setTimeout(res, ms));
+// Meeting emails (owner 2026-11-25): the hub writes them; the ERP the meeting was made in collects them with
+// POST /mail/claim, sends them through its own Mail Center and reports back with POST /mail/results.
+{
+  const claim = async (key, who) => (await call(key, who, "POST", "/mail/claim", {})).j?.mail ?? [];
+  const report = async (key, who, results) => (await call(key, who, "POST", "/mail/results", { results })).j;
+  await claim(HC, lim); // clear anything earlier steps queued
+  await claim(HK, ivy);
   const dayM = new Date(Date.parse(day) + 4 * 86400e3).toISOString().slice(0, 10);
   r = await call(HC, lim, "POST", "/meetings", { title: "Mail check", start: `${dayM}T16:00:00+08:00`, end: `${dayM}T17:00:00+08:00`, attendees: ["hana@example.com"], reminders: [{ min: 15, ch: ["erp", "email"] }] });
   const mid = r.j?.ids?.[0];
-  await wait(1500);
-  let box = await mails();
-  const inv = box.find((m) => m.subject.startsWith("Invitation: Mail check") && m.to.includes("hana@example.com"));
-  ok(Boolean(inv) && inv.hasHtml && /no-reply@/.test(inv.from), `invitation email to the person added, formatted, from no-reply (${box.map((m) => m.subject).join(" | ")})`);
-  ok(!box.some((m) => m.subject.startsWith("Invitation: Mail check") && m.to.includes("lim@example.com")), "the organiser is not invited by email");
   r = await call(HK, ivy, "POST", "/meetings", { title: "Hookka mail", start: `${dayM}T09:00:00+08:00`, end: `${dayM}T09:30:00+08:00`, attendees: ["lim@example.com"] });
-  await wait(1500);
-  const hk = (await mails()).find((m) => m.subject.startsWith("Invitation: Hookka mail"));
-  ok(hk && hk.from === "Hookka Meetings <no-reply@hookka.com>" && /Hookka Meetings/.test(hk.html), `a meeting made in Hookka ERP is sent from Hookka (${hk?.from})`);
+  let box = await claim(HC, lim);
+  const inv = box.find((m) => m.subject.startsWith("Invitation: Mail check") && m.to.includes("hana@example.com"));
+  ok(Boolean(inv) && /<table/.test(inv.html) && inv.from === "Houzs Meetings <hello@houzscentury.com>" && inv.text.length > 0, `Houzs ERP collects the invitation, formatted, from hello@ (${box.map((m) => `${m.subject} <${m.from}>`).join(" | ")})`);
+  ok(!box.some((m) => m.subject.startsWith("Invitation: Hookka mail")), "Houzs ERP does not get the Hookka meeting's email");
+  ok(!box.some((m) => m.subject.startsWith("Invitation: Mail check") && m.to.includes("lim@example.com")), "the organiser is not invited by email");
+  ok(!/not read/i.test(inv?.html ?? ""), "the email no longer says the mailbox is not read");
+  ok((await claim(HC, lim)).length === 0, "a claimed email is not handed out twice");
+  const hkBox = await claim(HK, ivy);
+  const hk = hkBox.find((m) => m.subject.startsWith("Invitation: Hookka mail"));
+  ok(hk && hk.from === "Hookka Meetings <hello@hookka.com>" && /Hookka Meetings/.test(hk.html), `Hookka ERP collects its own meeting's email, from hello@hookka.com (${hk?.from})`);
+  let rep = await report(HK, ivy, [{ id: inv.id, error: null }]);
+  ok(rep?.updated === 0, "an ERP cannot report on another ERP's email");
+  rep = await report(HC, lim, [{ id: inv.id, error: null }]);
+  ok(rep?.updated === 1, `Houzs ERP reports it sent (${JSON.stringify(rep)})`);
+  rep = await report(HK, ivy, [{ id: hk.id, error: "Mail provider returned 403" }]);
+  const hkMid = hkBox.length ? (await call(HK, ivy, "GET", "/mine")).j.meetings.find((m) => m.title === "Hookka mail")?.id : null;
+  r = await call(HK, ivy, "GET", `/meetings/${hkMid}`);
+  const st = r.j?.meeting?.emails?.find((e) => e.kind === "invite");
+  ok(st && !st.sentAt && st.error === "Mail provider returned 403", `a failed send shows its reason in the detail (${JSON.stringify(st)})`);
+  const again = await claim(HK, ivy);
+  ok(again.some((m) => m.id === hk.id), "a failed email is offered again for another try");
+  await report(HK, ivy, again.map((m) => ({ id: m.id, error: null })));
+  r = await call(HC, lim, "GET", `/meetings/${mid}`);
+  ok(r.j?.meeting?.emails?.some((e) => e.kind === "invite" && e.sentAt), "the organiser sees it as sent");
   r = await call(HC, lim, "PATCH", `/meetings/${mid}`, { guestEmails: ["Guest@Outside.example"] });
-  await wait(1500);
-  ok((await mails()).some((m) => m.subject.startsWith("Invitation: Mail check") && m.to.includes("guest@outside.example")), "an outside guest added by email is invited");
+  box = await claim(HC, lim);
+  ok(box.some((m) => m.subject.startsWith("Invitation: Mail check") && m.to.includes("guest@outside.example")), "an outside guest added by email is invited");
   r = await call(HC, lim, "PATCH", `/meetings/${mid}`, { start: `${dayM}T17:00:00+08:00`, end: `${dayM}T18:00:00+08:00` });
-  await wait(1500);
-  box = await mails();
+  box = await claim(HC, lim);
   ok(box.some((m) => m.subject.startsWith("Moved: Mail check") && m.to.includes("hana@example.com")), "moving it emails the people in it");
   ok(box.some((m) => m.subject.startsWith("Moved: Mail check") && m.to.includes("guest@outside.example")), "and the outside guest");
   r = await call(HC, lim, "POST", `/meetings/${mid}/cancel`, {});
-  await wait(1500);
-  box = await mails();
+  box = await claim(HC, lim);
   ok(box.some((m) => m.subject.startsWith("Cancelled: Mail check") && m.to.includes("hana@example.com")), "cancelling it emails the people in it");
+  const guestCall = await call(HC, { id: "guest" }, "POST", "/mail/claim", {});
+  ok(guestCall.status === 200, `a guest booking request may collect its system's emails (${guestCall.status})`);
   // A reminder: a meeting starting in 10 minutes with a 15-minute email reminder is due at the next cron run.
   const soon = Date.now() + 10 * 60_000;
   const iso = (t) => new Date(t).toISOString();
   r = await call(HC, lim, "POST", "/meetings", { title: "Reminder check", start: iso(soon), end: iso(soon + 30 * 60_000), attendees: ["hana@example.com"], reminders: [{ min: 15, ch: ["erp", "email"] }], videoType: "meet", videoUrl: "https://meet.google.com/abc-defg-hij" });
   ok(r.status === 201, `meeting starting soon booked (${r.status} ${r.j?.error ?? ""})`);
-  // The reminder itself goes out from the 5-minute cron, which local wrangler cannot fire here:
-  // run scripts/meetings-reminders-local.mts right after this to send it and check it is sent once.
+  // The reminder is queued by the 5-minute cron, which local wrangler cannot fire here:
+  // run scripts/meetings-reminders-local.mts right after this to queue it and check it is queued once.
 }
 
 // IT Support's own users: the session vouches for the person; headers from the browser are ignored.

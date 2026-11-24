@@ -1,8 +1,8 @@
 // Meeting emails (owner 2026-11-24): invitation, change, cancellation, reminder, guest confirmation and the notice
-// to staff that a guest booked. Sent from MEETING_MAIL_FROM (no-reply@) through Resend, so every email tells the
-// reader to contact the organiser rather than reply. Emails queue in meeting_mail and are sent at once and again
-// by the 5-minute cron until Resend accepts them (5 tries). No RESEND_API_KEY = nothing is sent; ERP notices
-// (meeting_notifications) keep working regardless.
+// to staff that a guest booked. The hub writes them into meeting_mail; the ERP the meeting was made in collects
+// them (claimMail) and sends them through its own Mail Center, with its own provider and domain, then reports
+// back (reportMail) (owner 2026-11-25). IT Support meetings go out through Houzs. A claim with no report is
+// offered again after 10 minutes, at most 5 tries. ERP notices (meeting_notifications) do not depend on any of it.
 import { sql } from "drizzle-orm";
 import type { DB } from "../db/client";
 import type { Env } from "../types";
@@ -28,16 +28,16 @@ export type MailMeeting = {
   guestEmails: string[];
 };
 type Rendered = { subject: string; html: string; text: string };
-type Mail = Rendered & { from: string };
+/** via: the ERP whose Mail Center sends it. */
+type Mail = Rendered & { from: string; via: string };
 
 const TZ = "Asia/Kuala_Lumpur";
 const day = (t: number) => new Intl.DateTimeFormat("en-GB", { timeZone: TZ, weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(t);
 const shortDay = (t: number) => new Intl.DateTimeFormat("en-GB", { timeZone: TZ, weekday: "short", day: "numeric", month: "short" }).format(t);
 const time = (t: number) => new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(t);
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-const NOT_READ = "This mailbox is not read.";
 
-/** The sender for a system: its company's no-reply address, else the fallback (Houzs). */
+/** The sender for a system: its company's Mail Center address, else the fallback (Houzs). */
 export function senderFor(env: Env, system: string): string {
   try {
     const map = JSON.parse(env.MEETING_MAIL_FROM_BY_SYSTEM ?? "{}") as Record<string, string>;
@@ -47,7 +47,7 @@ export function senderFor(env: Env, system: string): string {
   }
   return env.MEETING_MAIL_FROM ?? "";
 }
-/** "Hookka Meetings <no-reply@hookka.com>" -> "Hookka Meetings", for the email's header line. */
+/** "Hookka Meetings <hello@hookka.com>" -> "Hookka Meetings", for the email's header line. */
 const brandOf = (from: string) => from.replace(/\s*<[^>]*>\s*$/, "").trim() || "Meetings";
 
 export async function peopleByKey(db: Exec, keys: string[]): Promise<Map<string, Person>> {
@@ -117,7 +117,7 @@ export function renderInvite(m: MailMeeting, by: string, organizer: Person, peop
   if (!m.room && m.videoUrl) rows.push(["Link", `<a href="${esc(m.videoUrl)}" style="color:#0f5c4c">${esc(m.videoUrl)}</a>`]);
   if (m.notes) rows.push(["Agenda", esc(m.notes).replace(/\n/g, "<br>")]);
   const heading = `${by} invited you to ${m.title}`;
-  const foot = `You are in this meeting, so you will get a reminder before it starts. Questions? Contact ${organizer.name}, the organiser. ${NOT_READ}`;
+  const foot = `You are in this meeting, so you will get a reminder before it starts. Questions? Contact ${organizer.name}, the organiser.`;
   return {
     subject: `Invitation: ${m.title}, ${shortDay(m.start)}, ${time(m.start)}`,
     html: shell({ brand, heading, rows, button: erp ? { label: "Open in the ERP", url: erp } : joinButton(m, null), foot }),
@@ -129,7 +129,7 @@ export function renderReminder(m: MailMeeting, minutes: number, organizer: Perso
   const lead = minutes < 60 ? `${minutes} minutes` : minutes % 1440 === 0 ? `${minutes / 1440} day${minutes === 1440 ? "" : "s"}` : minutes % 60 === 0 ? `${minutes / 60} hour${minutes === 60 ? "" : "s"}` : `${minutes} minutes`;
   const rows: Row[] = [whenRow(m), whereRow(m), ["Organiser", esc(organizer.name)]];
   const button = joinButton(m, erp);
-  const foot = `Sent because you are in this meeting. Cannot make it? Tell ${organizer.name}, the organiser. ${NOT_READ}`;
+  const foot = `Sent because you are in this meeting. Cannot make it? Tell ${organizer.name}, the organiser.`;
   return {
     subject: `Starts in ${lead}: ${m.title}, ${time(m.start)}`,
     html: shell({ brand, kicker: `Starts in ${lead}`, heading: m.title, rows, button, under: !m.room && m.videoUrl ? m.videoUrl.replace(/^https:\/\//, "") : undefined, foot }),
@@ -148,7 +148,7 @@ export function renderChanged(m: MailMeeting, by: string, before: { start: numbe
     : [whenRow(m), whereRow(m)];
   if (!m.room && m.videoUrl) rows.push(["Link", `<a href="${esc(m.videoUrl)}" style="color:#0f5c4c">${esc(m.videoUrl)}</a>`]);
   const heading = moved ? `${by} moved ${m.title}` : `${by} changed ${m.title}`;
-  const foot = `Your reminder moves with it. If this does not work for you, tell ${organizer.name}, the organiser. ${NOT_READ}`;
+  const foot = `Your reminder moves with it. If this does not work for you, tell ${organizer.name}, the organiser.`;
   return {
     subject: moved ? `Moved: ${m.title} is now ${shortDay(m.start)}, ${time(m.start)}` : `Changed: ${m.title}, ${shortDay(m.start)}, ${time(m.start)}`,
     html: shell({ brand, heading, rows, button: erp ? { label: "Open in the ERP", url: erp } : undefined, foot }),
@@ -162,7 +162,7 @@ export function renderCancelled(m: MailMeeting, by: string, brand: string): Rend
     ...(m.room ? ([["Where", `${esc(m.room.name)} is free again`]] as Row[]) : []),
   ];
   const heading = `${by} cancelled ${m.title}`;
-  const foot = `Nothing to do. The reminder is cancelled too. ${NOT_READ}`;
+  const foot = `Nothing to do. The reminder is cancelled too.`;
   return {
     subject: `Cancelled: ${m.title}, ${shortDay(m.start)}, ${time(m.start)}`,
     html: shell({ brand, bar: "#b42318", heading, rows, foot }),
@@ -178,7 +178,7 @@ export function renderGuestConfirm(b: { code: string; guestName: string; title: 
     ["Meeting", esc(`${b.title}, ${b.people} ${b.people === 1 ? "person" : "people"}`)],
   ];
   const heading = `You are booked, ${b.guestName}`;
-  const foot = `Need to change the time? Cancel with the button above and book again with the same link. ${NOT_READ}`;
+  const foot = `Need to change the time? Cancel with the button above and book again with the same link.`;
   return {
     subject: `Booked: ${b.room.name}, ${shortDay(b.start)}, ${time(b.start)} (${b.code})`,
     html: shell({ brand: company, heading, rows, button: viewUrl ? { label: "View or cancel your booking", url: viewUrl } : undefined, foot }),
@@ -207,39 +207,42 @@ export function renderGuestNotice(b: { guestName: string; company: string; phone
 export async function enqueue(db: Exec, meetingId: number | null, kind: string, to: string[], r: Mail): Promise<void> {
   const emails = [...new Set(to.map((e) => e.trim().toLowerCase()).filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)))];
   for (const e of emails) {
-    await db.execute(sql`INSERT INTO meeting_mail (meeting_id, kind, from_addr, to_emails, subject, html, text_body) VALUES (${meetingId}, ${kind}, ${r.from}, ARRAY[${e}]::text[], ${r.subject}, ${r.html}, ${r.text})`);
+    await db.execute(sql`INSERT INTO meeting_mail (meeting_id, kind, via, from_addr, to_emails, subject, html, text_body) VALUES (${meetingId}, ${kind}, ${r.via}, ${r.from}, ARRAY[${e}]::text[], ${r.subject}, ${r.html}, ${r.text})`);
   }
 }
 
-export const mailConfigured = (env: Env) => Boolean(env.RESEND_API_KEY);
+const CLAIM_BATCH = 20;
+const MAX_TRIES = 5;
 
-/** Send what is waiting (oldest first, 50 per run). A failure stays queued with its error, up to 5 tries. */
-export async function drainMail(env: Env, db: Exec): Promise<{ sent: number; failed: number }> {
-  if (!mailConfigured(env)) return { sent: 0, failed: 0 };
-  const due = await rows<{ id: number; from_addr: string; to_emails: string[]; subject: string; html: string; text_body: string }>(
+export type ClaimedMail = { id: number; from: string; to: string[]; subject: string; html: string; text: string };
+
+/** The ERP that sends a system's emails: its own, except IT Support, which has no mail of its own and uses Houzs. */
+export const viaFor = (system: string) => (system === "IT" || !system ? "HC" : system);
+
+/** Hand a system the emails waiting for it (oldest first) and mark them taken. Each claim counts as a try. */
+export async function claimMail(db: Exec, system: string): Promise<ClaimedMail[]> {
+  const r = await rows<{ id: number; from_addr: string; to_emails: string[]; subject: string; html: string; text_body: string }>(
     db,
-    sql`SELECT id, from_addr, to_emails, subject, html, text_body FROM meeting_mail WHERE sent_at IS NULL AND attempts < 5 ORDER BY id LIMIT 50`,
+    sql`UPDATE meeting_mail SET claimed_at = now(), attempts = attempts + 1
+        WHERE id IN (SELECT id FROM meeting_mail
+                     WHERE via = ${system} AND sent_at IS NULL AND attempts < ${MAX_TRIES}
+                       AND (claimed_at IS NULL OR claimed_at < now() - interval '10 minutes')
+                     ORDER BY id LIMIT ${CLAIM_BATCH} FOR UPDATE SKIP LOCKED)
+        RETURNING id, from_addr, to_emails, subject, html, text_body`,
   );
-  let sent = 0;
-  let failed = 0;
-  const base = (env.RESEND_BASE_URL ?? "https://api.resend.com").replace(/\/+$/, "");
-  for (const m of due) {
-    try {
-      const res = await fetch(`${base}/emails`, {
-        method: "POST",
-        headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, "content-type": "application/json" },
-        body: JSON.stringify({ from: m.from_addr || env.MEETING_MAIL_FROM, to: m.to_emails, subject: m.subject, html: m.html, text: m.text_body }),
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (!res.ok) throw new Error(`Resend answered ${res.status}: ${(await res.text()).slice(0, 200)}`);
-      await db.execute(sql`UPDATE meeting_mail SET sent_at = now(), attempts = attempts + 1, last_error = NULL WHERE id = ${m.id}`);
-      sent++;
-    } catch (e) {
-      await db.execute(sql`UPDATE meeting_mail SET attempts = attempts + 1, last_error = ${e instanceof Error ? e.message : String(e)} WHERE id = ${m.id}`);
-      failed++;
-    }
+  return r.sort((x, y) => x.id - y.id).map((m) => ({ id: Number(m.id), from: m.from_addr, to: m.to_emails, subject: m.subject, html: m.html, text: m.text_body }));
+}
+
+/** What the ERP's Mail Center did with each one: sent, or the reason it was not. Only its own claimed rows. */
+export async function reportMail(db: Exec, system: string, results: { id: number; error: string | null }[]): Promise<number> {
+  let n = 0;
+  for (const r of results) {
+    const done = r.error
+      ? await rows<{ id: number }>(db, sql`UPDATE meeting_mail SET claimed_at = NULL, last_error = ${r.error.slice(0, 300)} WHERE id = ${r.id} AND via = ${system} AND sent_at IS NULL RETURNING id`)
+      : await rows<{ id: number }>(db, sql`UPDATE meeting_mail SET sent_at = now(), claimed_at = NULL, last_error = NULL WHERE id = ${r.id} AND via = ${system} AND sent_at IS NULL RETURNING id`);
+    n += done.length;
   }
-  return { sent, failed };
+  return n;
 }
 
 // ---- reminders ------------------------------------------------------------------------------------------------
@@ -345,7 +348,7 @@ export async function mailCancelled(env: Env, db: Exec, meetingId: number, to: s
 /** Render with the brand of the system's sender, and remember that sender. */
 export function withFrom(env: Env, system: string, render: (brand: string) => Rendered): Mail {
   const from = senderFor(env, system);
-  return { ...render(brandOf(from)), from };
+  return { ...render(brandOf(from)), from, via: viaFor(system) };
 }
 
 export { erpUrl };

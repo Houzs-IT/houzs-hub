@@ -30,7 +30,7 @@ import {
 } from "../services/meetings";
 import type { SysApp } from "../types";
 import { createMeetLink, GoogleMeetError, meetConfigured } from "../services/googleMeet";
-import { drainMail, enqueue, erpUrl, mailCancelled, mailChanged, mailInvites, peopleByKey, renderGuestConfirm, renderGuestNotice, withFrom } from "../services/meetingMail";
+import { claimMail, enqueue, erpUrl, mailCancelled, mailChanged, mailInvites, peopleByKey, renderGuestConfirm, renderGuestNotice, reportMail, withFrom } from "../services/meetingMail";
 
 // /api/v1/sys/meetings — meeting rooms for every ERP.
 //
@@ -310,19 +310,21 @@ app.post("/meetings", async (c) => {
   });
   if ("clash" in result) return (await conflictReply(c, db, { id: null, start: d.start, end: d.end, roomId: d.roomId, people }, now))!;
   await mailInvites(c.env, db, result.ids[0], people.filter((p) => p !== actor), actor, d.guestEmails);
-  sendSoon(c);
   return c.json({ ok: true, ids: result.ids, created: result.ids.length, skipped: result.skipped }, 201);
 });
 
-/** Send queued meeting emails after the response; the 5-minute cron retries anything that fails. */
-function sendSoon(c: C) {
-  const run = drainMail(c.env, getDb(c.env)).catch((e) => console.error("[meeting-mail]", e));
-  try {
-    c.executionCtx.waitUntil(run);
-  } catch {
-    // No execution context (tests): the cron sends it.
-  }
-}
+// The ERP's Mail Center collects its meeting emails here, sends them, and says what happened (owner 2026-11-25).
+app.post("/mail/claim", async (c) => c.json({ mail: await claimMail(getDb(c.env), c.get("systemCode")) }));
+
+app.post("/mail/results", async (c) => {
+  const body = (await c.req.json().catch(() => null)) as { results?: unknown } | null;
+  const list = Array.isArray(body?.results) ? body.results : [];
+  const results = list
+    .filter((r): r is { id: number; error?: unknown } => typeof r === "object" && r !== null && Number.isInteger((r as { id?: unknown }).id))
+    .slice(0, 100)
+    .map((r) => ({ id: r.id, error: typeof r.error === "string" && r.error.trim() ? r.error.trim() : null }));
+  return c.json({ ok: true, updated: await reportMail(getDb(c.env), c.get("systemCode"), results) });
+});
 
 async function nameOf(db: Pick<DB, "execute">, key: string): Promise<string> {
   const [p] = await rows<{ name: string }>(db, sql`SELECT name FROM meeting_people WHERE person_key = ${key} ORDER BY synced_at DESC LIMIT 1`);
@@ -404,7 +406,6 @@ app.patch("/meetings/:id{[0-9]+}", async (c) => {
   const newGuests = d.guestEmails.filter((e) => !m.guest_emails.includes(e));
   await mailInvites(c.env, db, m.id, out.added.filter((p) => p !== actor), actor, newGuests);
   if (out.emailStay) await mailChanged(c.env, db, m.id, out.stay, actor, { start: m.starts_at.getTime(), end: m.ends_at.getTime() }, d.guestEmails.filter((e) => m.guest_emails.includes(e)));
-  sendSoon(c);
   return c.json({ ok: true, changed: out.changed, skipped: out.skipped });
 });
 
@@ -426,7 +427,6 @@ app.post("/meetings/:id{[0-9]+}/cancel", async (c) => {
     await notify(tx, [m.organizer, ...m.people].filter((p) => p !== actor), `${nm} cancelled ${m.title} (${fmtDay(m.starts_at.getTime())} ${fmtTime(m.starts_at.getTime())})${ids.length > 1 ? " and the later meetings in the series" : ""}.`, m.id);
   });
   await mailCancelled(c.env, db, m.id, [m.organizer, ...m.people].filter((p) => p !== actor), await nameOf(db, actor), m.guest?.email ?? null, m.guest_emails);
-  sendSoon(c);
   return c.json({ ok: true, cancelled: ids.length });
 });
 
@@ -871,7 +871,6 @@ app.post("/public/links/:code/book", async (c) => {
       if (h.email) await enqueue(db, res.id, "guest_notice", [h.email],
         withFrom(c.env, l.created_in, (b) => renderGuestNotice({ guestName: guest.name, company: guest.company, phone: guest.phone, email: guest.email, title: res.title, people: res.people, start, end, roomName: res.room.name, linkName: l.name }, erpUrl(c.env, h.system), b)));
     }
-    sendSoon(c);
     return c.json({ ok: true, token, booking: { ...res, code } }, 201);
   }
   const out = await db.transaction(async (tx) => {
@@ -911,16 +910,15 @@ app.post("/public/bookings/:token{[0-9a-f]{64}}/cancel", async (c) => {
   await history(db, m.id, "guest", "the guest cancelled it");
   await notify(db, [m.organizer], `Guest ${m.guest?.name ?? ""} cancelled ${fmtDay(m.starts_at.getTime())} ${fmtTime(m.starts_at.getTime())}.`, m.id);
   await mailCancelled(c.env, db, m.id, [m.organizer], `Guest ${m.guest?.name ?? ""}`.trim(), null, []);
-  sendSoon(c);
   return c.json({ ok: true });
 });
 
-// Guests may only reach /public; everything else needs a signed-in person.
+// Guests may only reach /public (and /mail, so a guest booking can send its emails); everything else needs a signed-in person.
 export const meetingsCore = app;
 export const sysMeetings = new Hono<SysApp>();
 sysMeetings.use("*", systemAuth);
 sysMeetings.use("*", async (c, next) => {
-  if (c.req.header("X-Reporter-Id")?.trim() === "guest" && !c.req.path.includes("/meetings/public/")) return c.json({ error: "Not allowed for guests" }, 403);
+  if (c.req.header("X-Reporter-Id")?.trim() === "guest" && !c.req.path.includes("/meetings/public/") && !c.req.path.includes("/meetings/mail/")) return c.json({ error: "Not allowed for guests" }, 403);
   await next();
 });
 sysMeetings.route("/", app);
