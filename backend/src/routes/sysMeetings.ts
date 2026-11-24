@@ -30,6 +30,7 @@ import {
 } from "../services/meetings";
 import type { SysApp } from "../types";
 import { createMeetLink, GoogleMeetError, meetConfigured } from "../services/googleMeet";
+import { drainMail, enqueue, erpUrl, mailCancelled, mailChanged, mailInvites, peopleByKey, renderGuestConfirm, renderGuestNotice, withFrom } from "../services/meetingMail";
 
 // /api/v1/sys/meetings — meeting rooms for every ERP.
 //
@@ -110,6 +111,7 @@ function publicMeeting(m: MeetingRow & { people?: string[] }, now: number) {
     createdIn: m.created_in,
     linkId: m.link_id,
     guest: m.guest,
+    guestEmails: m.guest_emails ?? [],
   };
 }
 
@@ -119,7 +121,7 @@ async function withPeople(db: DB, ms: MeetingRow[]) {
   return ms.map((m) => ({ ...m, people: att.filter((a) => a.meeting_id === m.id).map((a) => a.person_key) }));
 }
 
-const MEETING_COLS = sql`id, title, starts_at, ends_at, room_id, organizer, booked_by, notes, video_type, video_url, reminders, status, started_at, ended_at, series_id, created_in, link_id, guest`;
+const MEETING_COLS = sql`id, title, starts_at, ends_at, room_id, organizer, booked_by, notes, video_type, video_url, reminders, status, started_at, ended_at, series_id, created_in, link_id, guest, guest_emails`;
 
 async function getMeeting(db: DB, id: number) {
   const [m] = await rows<MeetingRow>(db, sql`SELECT ${MEETING_COLS} FROM meetings WHERE id = ${id} AND status <> 'cancelled'`);
@@ -147,7 +149,11 @@ function readDraft(body: Record<string, unknown>) {
       min: Math.max(5, Math.min(10080, Math.trunc(Number((r as { min?: unknown }).min) || 15))),
       ch: (Array.isArray((r as { ch?: unknown }).ch) ? ((r as { ch: unknown[] }).ch.map(String) as string[]) : ["erp"]).filter((x) => CHANNELS.has(x)),
     }));
-  return { title, start, end, roomId, attendees, videoType, videoUrl, notes: String(body.notes ?? "").slice(0, 5000), reminders };
+  const guestEmails = Array.isArray(body.guestEmails) ? [...new Set(body.guestEmails.map((x) => String(x).trim().toLowerCase()).filter(Boolean))] : [];
+  const badEmail = guestEmails.find((e) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+  if (badEmail) throw new MeetingInputError(`${badEmail} is not an email address.`);
+  if (guestEmails.length > 50) throw new MeetingInputError("At most 50 outside guests.");
+  return { title, start, end, roomId, attendees, videoType, videoUrl, guestEmails, notes: String(body.notes ?? "").slice(0, 5000), reminders };
 }
 
 async function conflictReply(c: C, db: DB, d: Draft, now: number) {
@@ -281,9 +287,9 @@ app.post("/meetings", async (c) => {
       }
       const [row] = await rows<{ id: number }>(
         tx,
-        sql`INSERT INTO meetings (title, starts_at, ends_at, room_id, organizer, booked_by, notes, video_type, video_url, reminders, series_id, created_in)
+        sql`INSERT INTO meetings (title, starts_at, ends_at, room_id, organizer, booked_by, notes, video_type, video_url, reminders, series_id, created_in, guest_emails)
             VALUES (${d.title}, ${iso(s)}::timestamptz, ${iso(s + len)}::timestamptz, ${d.roomId}, ${organizer}, ${actor}, ${d.notes}, ${d.videoType}, ${d.videoUrl},
-                    ${JSON.stringify(d.reminders)}::jsonb, ${seriesId}, ${c.get("systemCode")}) RETURNING id`,
+                    ${JSON.stringify(d.reminders)}::jsonb, ${seriesId}, ${c.get("systemCode")}, ${toPgTextArray(d.guestEmails)}::text[]) RETURNING id`,
       );
       for (const a of d.attendees.filter((x) => x !== organizer)) await tx.execute(sql`INSERT INTO meeting_attendees (meeting_id, person_key) VALUES (${row.id}, ${a}) ON CONFLICT DO NOTHING`);
       await history(tx, row.id, actor, organizer === actor ? "booked it" : `booked it for ${organizer}`);
@@ -296,8 +302,20 @@ app.post("/meetings", async (c) => {
     return { ids, skipped };
   });
   if ("clash" in result) return (await conflictReply(c, db, { id: null, start: d.start, end: d.end, roomId: d.roomId, people }, now))!;
+  await mailInvites(c.env, db, result.ids[0], people.filter((p) => p !== actor), actor, d.guestEmails);
+  sendSoon(c);
   return c.json({ ok: true, ids: result.ids, created: result.ids.length, skipped: result.skipped }, 201);
 });
+
+/** Send queued meeting emails after the response; the 5-minute cron retries anything that fails. */
+function sendSoon(c: C) {
+  const run = drainMail(c.env, getDb(c.env)).catch((e) => console.error("[meeting-mail]", e));
+  try {
+    c.executionCtx.waitUntil(run);
+  } catch {
+    // No execution context (tests): the cron sends it.
+  }
+}
 
 async function nameOf(db: Pick<DB, "execute">, key: string): Promise<string> {
   const [p] = await rows<{ name: string }>(db, sql`SELECT name FROM meeting_people WHERE person_key = ${key} ORDER BY synced_at DESC LIMIT 1`);
@@ -321,7 +339,7 @@ app.patch("/meetings/:id{[0-9]+}", async (c) => {
   if (effStatus(m, now) === "ended") return c.json({ error: "This meeting has ended." }, 409);
   if (m.guest && m.link_id) return c.json({ error: "A guest booking is changed by the guest, or cancelled." }, 409);
   const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-  const d = readDraft({ ...publicMeeting(m, now), roomId: m.room_id, videoType: m.video_type, videoUrl: m.video_url, attendees: m.people, ...body });
+  const d = readDraft({ ...publicMeeting(m, now), roomId: m.room_id, videoType: m.video_type, videoUrl: m.video_url, attendees: m.people, guestEmails: m.guest_emails, ...body });
   const scope = body.scope === "following" && m.series_id ? "following" : "one";
   const people = [m.organizer, ...d.attendees.filter((a) => a !== m.organizer)];
 
@@ -351,7 +369,8 @@ app.patch("/meetings/:id{[0-9]+}", async (c) => {
         continue;
       }
       await tx.execute(sql`UPDATE meetings SET title = ${d.title}, starts_at = ${iso(s)}::timestamptz, ends_at = ${iso(e)}::timestamptz, room_id = ${d.roomId},
-        notes = ${d.notes}, video_type = ${d.videoType}, video_url = ${d.videoUrl}, reminders = ${JSON.stringify(d.reminders)}::jsonb, updated_at = now() WHERE id = ${t.id}`);
+        notes = ${d.notes}, video_type = ${d.videoType}, video_url = ${d.videoUrl}, reminders = ${JSON.stringify(d.reminders)}::jsonb,
+        guest_emails = ${toPgTextArray(d.guestEmails)}::text[], updated_at = now() WHERE id = ${t.id}`);
       await tx.execute(sql`DELETE FROM meeting_attendees WHERE meeting_id = ${t.id}`);
       for (const a of d.attendees.filter((x) => x !== m.organizer)) await tx.execute(sql`INSERT INTO meeting_attendees (meeting_id, person_key) VALUES (${t.id}, ${a}) ON CONFLICT DO NOTHING`);
       const b = busy.find((x) => x.id === t.id);
@@ -372,10 +391,14 @@ app.patch("/meetings/:id{[0-9]+}", async (c) => {
     await notify(tx, added.filter((p) => p !== actor), `${actorName} invited you to ${d.title}, ${when}.`, m.id);
     await notify(tx, removed.filter((p) => p !== actor), `${actorName} removed you from ${m.title}.`, m.id);
     await notify(tx, stay, moved || roomChanged ? `${actorName} moved ${d.title} to ${when}.` : d.videoUrl !== m.video_url && d.videoUrl ? `${actorName} added a video link to ${d.title}: ${d.videoUrl}` : `${actorName} updated ${d.title} (${when}).`, m.id);
-    return { changed, skipped };
+    return { changed, skipped, added, stay, emailStay: moved || roomChanged || (d.videoUrl !== m.video_url && Boolean(d.videoUrl)) };
   });
   if ("clash" in out) return (await conflictReply(c, db, { id: m.id, start: d.start, end: d.end, roomId: d.roomId, people }, now))!;
-  return c.json({ ok: true, ...out });
+  const newGuests = d.guestEmails.filter((e) => !m.guest_emails.includes(e));
+  await mailInvites(c.env, db, m.id, out.added.filter((p) => p !== actor), actor, newGuests);
+  if (out.emailStay) await mailChanged(c.env, db, m.id, out.stay, actor, { start: m.starts_at.getTime(), end: m.ends_at.getTime() }, d.guestEmails.filter((e) => m.guest_emails.includes(e)));
+  sendSoon(c);
+  return c.json({ ok: true, changed: out.changed, skipped: out.skipped });
 });
 
 app.post("/meetings/:id{[0-9]+}/cancel", async (c) => {
@@ -395,6 +418,8 @@ app.post("/meetings/:id{[0-9]+}/cancel", async (c) => {
     const nm = await nameOf(tx, actor);
     await notify(tx, [m.organizer, ...m.people].filter((p) => p !== actor), `${nm} cancelled ${m.title} (${fmtDay(m.starts_at.getTime())} ${fmtTime(m.starts_at.getTime())})${ids.length > 1 ? " and the later meetings in the series" : ""}.`, m.id);
   });
+  await mailCancelled(c.env, db, m.id, [m.organizer, ...m.people].filter((p) => p !== actor), await nameOf(db, actor), m.guest?.email ?? null, m.guest_emails);
+  sendSoon(c);
   return c.json({ ok: true, cancelled: ids.length });
 });
 
@@ -518,6 +543,7 @@ function readRoom(b: Record<string, unknown>) {
   return {
     name,
     location: String(b.location ?? "").trim().slice(0, 80),
+    address: String(b.address ?? "").trim().slice(0, 300),
     floor: String(b.floor ?? "").trim().slice(0, 80),
     seats,
     equipment: (Array.isArray(b.equipment) ? b.equipment : []).map((e) => String(e).trim().slice(0, 40)).filter(Boolean).slice(0, 20),
@@ -546,8 +572,8 @@ app.post("/rooms", async (c) => {
   const id = await db.transaction(async (tx) => {
     const [row] = await rows<{ id: number }>(
       tx,
-      sql`INSERT INTO meeting_rooms (name, location, floor, seats, equipment, open_days, open_from, open_to, color, buffer_min, max_hours, advance_days, active, updated_by)
-          VALUES (${r.name}, ${r.location}, ${r.floor}, ${r.seats}, ${toPgTextArray(r.equipment)}, ${toPgIntArray(r.days)}, ${r.from}, ${r.to}, ${r.color}, ${r.buffer}, ${r.maxHours}, ${r.advance}, ${r.active}, ${actor}) RETURNING id`,
+      sql`INSERT INTO meeting_rooms (name, location, address, floor, seats, equipment, open_days, open_from, open_to, color, buffer_min, max_hours, advance_days, active, updated_by)
+          VALUES (${r.name}, ${r.location}, ${r.address}, ${r.floor}, ${r.seats}, ${toPgTextArray(r.equipment)}, ${toPgIntArray(r.days)}, ${r.from}, ${r.to}, ${r.color}, ${r.buffer}, ${r.maxHours}, ${r.advance}, ${r.active}, ${actor}) RETURNING id`,
     );
     await saveClosures(tx, row.id, r.closures);
     await tx.execute(sql`INSERT INTO meeting_admin_log (who, text) VALUES (${actor}, ${`Added room ${r.name} (${r.seats} seats${r.location ? `, ${r.location}` : ""}${r.floor ? `, ${r.floor}` : ""})`})`);
@@ -565,7 +591,7 @@ app.patch("/rooms/:id{[0-9]+}", async (c) => {
   const found = await db.transaction(async (tx) => {
     const res = await rows<{ id: number }>(
       tx,
-      sql`UPDATE meeting_rooms SET name = ${r.name}, location = ${r.location}, floor = ${r.floor}, seats = ${r.seats}, equipment = ${toPgTextArray(r.equipment)},
+      sql`UPDATE meeting_rooms SET name = ${r.name}, location = ${r.location}, address = ${r.address}, floor = ${r.floor}, seats = ${r.seats}, equipment = ${toPgTextArray(r.equipment)},
           open_days = ${toPgIntArray(r.days)}, open_from = ${r.from}, open_to = ${r.to}, color = ${r.color}, buffer_min = ${r.buffer}, max_hours = ${r.maxHours},
           advance_days = ${r.advance}, active = ${r.active}, updated_at = now(), updated_by = ${actor} WHERE id = ${id} RETURNING id`,
     );
@@ -824,10 +850,22 @@ app.post("/public/links/:code/book", async (c) => {
       {
         await notify(tx, hosts, `${guest.name} (${guest.company}${guest.department ? `, ${guest.department}` : ""}) booked ${room.name} through the link ${l.name}: ${title}, ${fmtDay(start)} ${fmtTime(start)} - ${fmtTime(end)}, ${guest.people} people.`, row.id);
       }
-      return { id: row.id, title, people: guest.people, start: iso(start), end: iso(end), room: { name: room.name, floor: room.floor, location: room.location } };
+      return { id: row.id, title, people: guest.people, start: iso(start), end: iso(end), room: { name: room.name, floor: room.floor, location: room.location, address: room.address } };
     });
     if ("error" in res) return c.json({ error: res.error }, res.status);
-    return c.json({ ok: true, token, booking: { ...res, code: `MTG-${String(res.id).padStart(4, "0")}` } }, 201);
+    const code = `MTG-${String(res.id).padStart(4, "0")}`;
+    const base = erpUrl(c.env, l.created_in)?.replace(/\/meetings$/, "") ?? null;
+    if (guest.email) {
+      await enqueue(db, res.id, "guest_confirm", [guest.email],
+        withFrom(c.env, l.created_in, (b) => renderGuestConfirm({ code, guestName: guest.name, title: res.title, people: res.people, start, end, room: res.room }, base ? `${base}/book/${encodeURIComponent(l.code)}?b=${token}` : null, b.replace(/ Meetings$/, ""))));
+    }
+    const hostPeople = await peopleByKey(db, hosts);
+    for (const h of hostPeople.values()) {
+      if (h.email) await enqueue(db, res.id, "guest_notice", [h.email],
+        withFrom(c.env, l.created_in, (b) => renderGuestNotice({ guestName: guest.name, company: guest.company, phone: guest.phone, email: guest.email, title: res.title, people: res.people, start, end, roomName: res.room.name, linkName: l.name }, erpUrl(c.env, h.system), b)));
+    }
+    sendSoon(c);
+    return c.json({ ok: true, token, booking: { ...res, code } }, 201);
   }
   const out = await db.transaction(async (tx) => {
     for (const rid of l.room_ids.length ? l.room_ids : (await loadRooms(tx)).map((r) => r.id)) await lockRoom(tx, rid);
@@ -865,6 +903,8 @@ app.post("/public/bookings/:token{[0-9a-f]{64}}/cancel", async (c) => {
   await db.execute(sql`UPDATE meetings SET status = 'cancelled', updated_at = now() WHERE id = ${m.id}`);
   await history(db, m.id, "guest", "the guest cancelled it");
   await notify(db, [m.organizer], `Guest ${m.guest?.name ?? ""} cancelled ${fmtDay(m.starts_at.getTime())} ${fmtTime(m.starts_at.getTime())}.`, m.id);
+  await mailCancelled(c.env, db, m.id, [m.organizer], `Guest ${m.guest?.name ?? ""}`.trim(), null, []);
+  sendSoon(c);
   return c.json({ ok: true });
 });
 
