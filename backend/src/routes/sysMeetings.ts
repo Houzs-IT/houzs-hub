@@ -215,17 +215,20 @@ app.get("/calendar", async (c) => {
   const b = new Date(to!).getTime();
   if (b <= a || b - a > 62 * DAY) return c.json({ error: "Ask for at most 62 days at a time." }, 400);
   const db = getDb(c.env);
-  await me(c, db);
-  const ms = await rows<MeetingRow>(db, sql`SELECT ${MEETING_COLS} FROM meetings WHERE status <> 'cancelled' AND starts_at < ${iso(b)}::timestamptz AND ends_at > ${iso(a)}::timestamptz ORDER BY starts_at LIMIT 3000`);
+  const key = await me(c, db);
+  const ms = await rows<MeetingRow>(
+    db,
+    sql`SELECT ${MEETING_COLS} FROM meetings m WHERE status <> 'cancelled' AND starts_at < ${iso(b)}::timestamptz AND ends_at > ${iso(a)}::timestamptz AND ${visibleTo(key)} ORDER BY starts_at LIMIT 3000`,
+  );
   const now = Date.now();
   return c.json({ meetings: (await withPeople(db, ms)).map((m) => publicMeeting(m, now)) });
 });
 
 app.get("/meetings/:id{[0-9]+}", async (c) => {
   const db = getDb(c.env);
-  await me(c, db);
+  const actor = await me(c, db);
   const m = await getMeeting(db, Number(c.req.param("id")));
-  if (!m) return c.json({ error: "That meeting is not there any more." }, 404);
+  if (!m || !maySee(m, actor)) return c.json({ error: "That meeting is not there any more." }, 404);
   const [hist, files] = await Promise.all([
     rows<{ at: Date; who: string; text: string }>(db, sql`SELECT at, who, text FROM meeting_history WHERE meeting_id = ${m.id} ORDER BY at`),
     rows<{ id: number; file_name: string; size_bytes: number; mime_type: string }>(db, sql`SELECT id, file_name, size_bytes, mime_type FROM meeting_files WHERE meeting_id = ${m.id} ORDER BY id`),
@@ -289,6 +292,11 @@ async function nameOf(db: Pick<DB, "execute">, key: string): Promise<string> {
 }
 
 const mayChange = (m: MeetingRow, actor: string) => m.organizer === actor || m.booked_by === actor;
+/** An online meeting (no room) is private to the people in it (owner 2026-11-24); a room booking stays visible to everyone. */
+const maySee = (m: MeetingRow & { people: string[] }, actor: string) => m.room_id !== null || mayChange(m, actor) || m.people.includes(actor);
+/** SQL twin of maySee for list reads. */
+const visibleTo = (key: string) =>
+  sql`(m.room_id IS NOT NULL OR m.organizer = ${key} OR m.booked_by = ${key} OR EXISTS (SELECT 1 FROM meeting_attendees a WHERE a.meeting_id = m.id AND a.person_key = ${key}))`;
 
 app.patch("/meetings/:id{[0-9]+}", async (c) => {
   const db = getDb(c.env);
@@ -427,11 +435,11 @@ app.post("/meetings/:id{[0-9]+}/files", async (c) => {
 
 app.get("/meetings/:id{[0-9]+}/files/:fid{[0-9]+}", async (c) => {
   const db = getDb(c.env);
-  await me(c, db);
+  const key = await me(c, db);
   const [f] = await rows<{ r2_key: string; file_name: string; mime_type: string }>(
     db,
     sql`SELECT f.r2_key, f.file_name, f.mime_type FROM meeting_files f JOIN meetings m ON m.id = f.meeting_id
-        WHERE f.id = ${Number(c.req.param("fid"))} AND f.meeting_id = ${Number(c.req.param("id"))} AND m.status <> 'cancelled'`,
+        WHERE f.id = ${Number(c.req.param("fid"))} AND f.meeting_id = ${Number(c.req.param("id"))} AND m.status <> 'cancelled' AND ${visibleTo(key)}`,
   );
   if (!f) return c.json({ error: "File not found" }, 404);
   const obj = await c.env.FILES.get(f.r2_key);
