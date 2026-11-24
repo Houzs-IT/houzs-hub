@@ -29,6 +29,7 @@ import {
   type MeetingRow,
 } from "../services/meetings";
 import type { SysApp } from "../types";
+import { createMeetLink, GoogleMeetError, meetConfigured } from "../services/googleMeet";
 
 // /api/v1/sys/meetings — meeting rooms for every ERP.
 //
@@ -176,7 +177,19 @@ app.get("/bootstrap", async (c) => {
     directory(db),
     rows<{ n: number }>(db, sql`SELECT count(*)::int AS n FROM meeting_notifications WHERE person_key = ${key} AND read_at IS NULL`),
   ]);
-  return c.json({ me: key, canManage: canManage(c), rooms, people, unread: unread[0]?.n ?? 0 });
+  return c.json({ me: key, canManage: canManage(c), rooms, people, unread: unread[0]?.n ?? 0, meetConnected: meetConfigured(c.env) });
+});
+
+// A new Google Meet link for the booking window (owner 2026-11-24). Staff only: guests never reach it.
+app.post("/meet-link", async (c) => {
+  const db = getDb(c.env);
+  await me(c, db);
+  if (!meetConfigured(c.env)) return c.json({ error: "Google Meet is not connected yet. Paste a link instead." }, 409);
+  try {
+    return c.json({ url: await createMeetLink(c.env) });
+  } catch (e) {
+    return c.json({ error: e instanceof GoogleMeetError ? e.message : "Google Meet did not answer. Try again, or paste a link." }, 502);
+  }
 });
 
 // The ERP's whole staff list, so people can invite colleagues from any company before

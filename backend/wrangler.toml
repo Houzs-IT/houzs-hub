@@ -33,6 +33,8 @@ localConnectionString = "postgres://postgres:postgres@127.0.0.1:54329/postgres"
 [vars]
 HEALTH_ALERT_TO = "it@houzscentury.com"
 HEALTH_ALERT_FROM = "Houzs IT Hub <no-reply@houzscentury.com>"
+# Meetings: the Houzs account every Google Meet link is created as (services/googleMeet.ts).
+GOOGLE_MEET_OWNER = "hello@houzscentury.com"
 
 [[r2_buckets]]
 binding = "FILES"

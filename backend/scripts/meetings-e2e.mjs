@@ -179,6 +179,19 @@ ok((await call(HC, hana, "GET", `/meetings/${pub}`)).status === 200, "a room boo
 r = await call(HC, hana, "POST", "/meetings", { title: "Hana and Ivy", start: T3(19), end: T3(20), attendees: ["ivy@example.com"] });
 ok(r.status === 409, `a private meeting still makes its people busy (${r.status})`);
 
+// Google Meet links (owner 2026-11-24). With GOOGLE_* pointed at a stand-in (see README), the link comes back;
+// without a key the booking window is told to paste one.
+r = await call(HC, lim, "GET", "/bootstrap");
+if (r.j?.meetConnected) {
+  r = await call(HC, lim, "POST", "/meet-link");
+  ok(r.status === 200 && /^https:\/\/meet\.google\.com\//.test(r.j?.url ?? ""), `Create Meet link returns a Meet URL (${r.status} ${r.j?.url ?? r.j?.error})`);
+  const again = await call(HC, lim, "POST", "/meet-link");
+  ok(again.j?.url && again.j.url !== r.j?.url, "each click gives a new link");
+} else {
+  r = await call(HC, lim, "POST", "/meet-link");
+  ok(r.status === 409, `without a Google key the window is told to paste a link (${r.status})`);
+}
+
 // IT Support's own users: the session vouches for the person; headers from the browser are ignored.
 if (IT_LOGIN) {
   const ROOT = `http://127.0.0.1:${PORT}/api/v1`;
