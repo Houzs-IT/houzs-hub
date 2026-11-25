@@ -111,7 +111,7 @@ function HowTo({ url }: { url: string }) {
   const [tab, setTab] = useState<"claude" | "chatgpt">("claude");
   const steps =
     tab === "claude"
-      ? ["Open Claude: Settings > Connectors > Add custom connector.", "Name: Houzs IT Hub. URL: the connector address above.", "Press Connect, sign in to the hub if asked, then press Allow.", "Ask a question in a new chat, e.g. \"How many sales orders did we get this week?\""]
+      ? ["Open Claude: Settings > Connectors > Add custom connector.", "Name: Houzs IT Hub. URL: the connector address above.", "Press Connect, sign in to the hub if asked, then press Allow.", "Ask a question in a new chat, e.g. \"How many tickets are open, by system, and is anything down?\""]
       : ["Open ChatGPT: Settings > Apps & Connectors > Advanced > turn on Developer mode.", "Create a connector: name Houzs IT Hub, URL the connector address above, authentication OAuth.", "Sign in to the hub when asked, then press Allow.", "In a new chat, choose the Houzs IT Hub connector and ask your question."];
   return (
     <Section title="How to connect" sub="Works with Claude and ChatGPT (and any app that supports remote MCP connectors).">

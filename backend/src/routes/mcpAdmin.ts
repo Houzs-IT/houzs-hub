@@ -12,9 +12,9 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import type { DevApp } from "../types";
-import { getDb } from "../db/client";
 import { devAuth, loadUser } from "../middleware/devAuth";
-import { mcpDb } from "../services/mcp-db";
+import { mcpDbOf } from "../services/mcp-db";
+import { forgetVerified } from "../services/mcp-inner";
 import { jsonKeys, leakCheckPaths, SECRET_KEY, SENSITIVE_KEY } from "../services/mcp-access";
 import {
   appLabel,
@@ -53,7 +53,7 @@ const connectorUrl = (c: Context<HonoEnv>): string => `${new URL(c.req.url).orig
 
 app.get("/me", async (c) => {
   const u = c.get("user");
-  const db = mcpDb(c.env);
+  const db = mcpDbOf(c.get("db"));
   const admin = isMcpAdmin(u);
   const allowed = await hasMcpAccess(db, u.id, admin);
   const pending = await db.prepare("SELECT id, created_at FROM mcp_access_requests WHERE user_id = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 1").bind(u.id).first<Record<string, unknown>>();
@@ -77,7 +77,7 @@ app.get("/me", async (c) => {
 
 app.post("/me/request", async (c) => {
   const u = c.get("user");
-  const db = mcpDb(c.env);
+  const db = mcpDbOf(c.get("db"));
   if (await hasMcpAccess(db, u.id, isMcpAdmin(u))) return c.json({ ok: true, alreadyAllowed: true });
   const body = (await c.req.json().catch(() => ({}))) as { reason?: unknown };
   const existing = await db.prepare("SELECT id FROM mcp_access_requests WHERE user_id = ? AND status = 'pending'").bind(u.id).first();
@@ -93,7 +93,8 @@ app.post("/me/request", async (c) => {
 app.post("/me/revoke", async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as { tokenId?: unknown };
   if (typeof body.tokenId !== "string") return c.json({ error: "tokenId required" }, 400);
-  const n = await revokeToken(mcpDb(c.env), body.tokenId, c.get("user").id);
+  const n = await revokeToken(mcpDbOf(c.get("db")), body.tokenId, c.get("user").id);
+  forgetVerified(); // this isolate's remembered door checks (routes/mcp.ts) end now, not in 15 s
   return c.json({ ok: true, revoked: n });
 });
 
@@ -106,9 +107,9 @@ function ordinarySession(c: Context<HonoEnv>): boolean {
 
 app.get("/consent/:id", async (c) => {
   if (!ordinarySession(c)) return c.json({ error: "Sign in with your own staff account to connect an AI app." }, 403);
-  const req = await getAuthRequest(mcpDb(c.env), c.req.param("id"));
+  const req = await getAuthRequest(mcpDbOf(c.get("db")), c.req.param("id"));
   if (!req) return c.json({ error: "This connect request has expired. Start again from the AI app." }, 404);
-  const cl = await getClient(mcpDb(c.env), req.clientId);
+  const cl = await getClient(mcpDbOf(c.get("db")), req.clientId);
   const u = c.get("user");
   return c.json({
     app: appLabel(cl?.clientName ?? ""),
@@ -121,7 +122,7 @@ app.get("/consent/:id", async (c) => {
       }
     })(),
     user: { name: u.name, email: u.email },
-    allowed: await hasMcpAccess(mcpDb(c.env), u.id, isMcpAdmin(u)),
+    allowed: await hasMcpAccess(mcpDbOf(c.get("db")), u.id, isMcpAdmin(u)),
   });
 });
 
@@ -130,8 +131,8 @@ app.post("/consent/:id", async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as { decision?: unknown };
   const u = c.get("user");
   const allow = body.decision === "allow";
-  if (allow && !(await hasMcpAccess(mcpDb(c.env), u.id, isMcpAdmin(u)))) return c.json({ error: "AI Connector is not turned on for your account yet." }, 403);
-  const req = await takeAuthRequest(mcpDb(c.env), c.req.param("id"));
+  if (allow && !(await hasMcpAccess(mcpDbOf(c.get("db")), u.id, isMcpAdmin(u)))) return c.json({ error: "AI Connector is not turned on for your account yet." }, 403);
+  const req = await takeAuthRequest(mcpDbOf(c.get("db")), c.req.param("id"));
   if (!req) return c.json({ error: "This connect request has expired. Start again from the AI app." }, 404);
   const back = new URL(req.redirectUri);
   if (req.state) back.searchParams.set("state", req.state);
@@ -139,9 +140,9 @@ app.post("/consent/:id", async (c) => {
     back.searchParams.set("error", "access_denied");
     return c.json({ redirect: back.toString() });
   }
-  const code = await createCode(mcpDb(c.env), { clientId: req.clientId, userId: u.id, redirectUri: req.redirectUri, codeChallenge: req.codeChallenge });
+  const code = await createCode(mcpDbOf(c.get("db")), { clientId: req.clientId, userId: u.id, redirectUri: req.redirectUri, codeChallenge: req.codeChallenge });
   back.searchParams.set("code", code);
-  const cl = await getClient(mcpDb(c.env), req.clientId);
+  const cl = await getClient(mcpDbOf(c.get("db")), req.clientId);
   return c.json({ redirect: back.toString() });
 });
 
@@ -150,7 +151,7 @@ app.post("/consent/:id", async (c) => {
 app.get("/admin/overview", async (c) => {
   const denied = denyUnlessAdmin(c);
   if (denied) return denied;
-  const db = mcpDb(c.env);
+  const db = mcpDbOf(c.get("db"));
   const nowIso = new Date().toISOString();
   const dayAgo = new Date(Date.now() - 24 * 3600_000).toISOString();
   const [requests, connected, allowed, calls, staff, stats] = await Promise.all([
@@ -214,7 +215,7 @@ app.get("/admin/overview", async (c) => {
 });
 
 async function grant(c: Context<HonoEnv>, userId: number): Promise<void> {
-  await mcpDb(c.env)
+  await mcpDbOf(c.get("db"))
     .prepare("INSERT INTO mcp_access (user_id, approved_by, approved_at) VALUES (?, ?, ?) ON CONFLICT (user_id) DO NOTHING")
     .bind(userId, c.get("user").id, new Date().toISOString())
     .run();
@@ -225,7 +226,7 @@ app.post("/admin/requests/:id/:decision", async (c) => {
   if (denied) return denied;
   const decision = c.req.param("decision");
   if (decision !== "approve" && decision !== "reject") return c.json({ error: "decision must be approve or reject" }, 400);
-  const db = mcpDb(c.env);
+  const db = mcpDbOf(c.get("db"));
   const r = await db
     .prepare("UPDATE mcp_access_requests SET status = ?, decided_by = ?, decided_at = ? WHERE id = ? AND status = 'pending' RETURNING user_id")
     .bind(decision === "approve" ? "approved" : "rejected", c.get("user").id, new Date().toISOString(), c.req.param("id"))
@@ -242,10 +243,10 @@ app.post("/admin/access", async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as { userId?: unknown };
   const userId = Number(body.userId);
   if (!Number.isInteger(userId) || userId <= 0) return c.json({ error: "userId required" }, 400);
-  const u = await loadUser(getDb(c.env), userId);
+  const u = await loadUser(c.get("db"), userId);
   if (!u || !u.active) return c.json({ error: "User not found or inactive." }, 404);
   await grant(c, userId);
-  await mcpDb(c.env).prepare("UPDATE mcp_access_requests SET status = 'approved', decided_by = ?, decided_at = ? WHERE user_id = ? AND status = 'pending'").bind(c.get("user").id, new Date().toISOString(), userId).run();
+  await mcpDbOf(c.get("db")).prepare("UPDATE mcp_access_requests SET status = 'approved', decided_by = ?, decided_at = ? WHERE user_id = ? AND status = 'pending'").bind(c.get("user").id, new Date().toISOString(), userId).run();
   return c.json({ ok: true });
 });
 
@@ -254,8 +255,10 @@ app.delete("/admin/access/:userId", async (c) => {
   if (denied) return denied;
   const userId = Number(c.req.param("userId"));
   if (!Number.isInteger(userId) || userId <= 0) return c.json({ error: "userId required" }, 400);
-  await mcpDb(c.env).prepare("DELETE FROM mcp_access WHERE user_id = ?").bind(userId).run();
-  const revoked = await revokeUserTokens(mcpDb(c.env), userId);
+  const db = mcpDbOf(c.get("db"));
+  await db.prepare("DELETE FROM mcp_access WHERE user_id = ?").bind(userId).run();
+  const revoked = await revokeUserTokens(db, userId);
+  forgetVerified();
   return c.json({ ok: true, revoked });
 });
 
@@ -264,9 +267,10 @@ app.post("/admin/revoke", async (c) => {
   if (denied) return denied;
   const body = (await c.req.json().catch(() => ({}))) as { tokenId?: unknown; userId?: unknown };
   let n = 0;
-  if (typeof body.tokenId === "string") n = await revokeToken(mcpDb(c.env), body.tokenId, null);
-  else if (Number.isInteger(Number(body.userId)) && Number(body.userId) > 0) n = await revokeUserTokens(mcpDb(c.env), Number(body.userId));
+  if (typeof body.tokenId === "string") n = await revokeToken(mcpDbOf(c.get("db")), body.tokenId, null);
+  else if (Number.isInteger(Number(body.userId)) && Number(body.userId) > 0) n = await revokeUserTokens(mcpDbOf(c.get("db")), Number(body.userId));
   else return c.json({ error: "tokenId or userId required" }, 400);
+  forgetVerified();
   return c.json({ ok: true, revoked: n });
 });
 
@@ -290,11 +294,11 @@ export function analyseBody(path: string, status: number, isError: boolean, body
 app.post("/admin/leak-check", async (c) => {
   const denied = denyUnlessAdmin(c);
   if (denied) return denied;
-  const db = mcpDb(c.env);
+  const db = mcpDbOf(c.get("db"));
   const body = (await c.req.json().catch(() => ({}))) as { userId?: unknown; offset?: unknown };
   const userId = Number(body.userId);
   const offset = Math.max(0, Number(body.offset) || 0);
-  const u = Number.isInteger(userId) && userId > 0 ? await loadUser(getDb(c.env), userId) : null;
+  const u = Number.isInteger(userId) && userId > 0 ? await loadUser(c.get("db"), userId) : null;
   if (!u) return c.json({ error: "User not found" }, 404);
   if (isMcpAdmin(u)) return c.json({ error: "Admins see everything — pick a staff account." }, 400);
   if (!u.active) return c.json({ error: "That account is inactive." }, 400);

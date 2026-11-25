@@ -8,8 +8,8 @@ import { effective, type Perm } from "../services/perms";
 import type { DevApp, DevUser, Env } from "../types";
 import type { DB } from "../db/client";
 import { MCP_TOKEN_PREFIX, hasMcpAccess, resolveAccessToken, MCP_ADMIN_PERMISSION } from "../services/mcp-store";
-import { MCP_INNER_HEADER, isMcpInner } from "../services/mcp-inner";
-import { mcpDb } from "../services/mcp-db";
+import { MCP_INNER_HEADER, borrowDb, isMcpInner, recallVerified } from "../services/mcp-inner";
+import { mcpDbOf } from "../services/mcp-db";
 
 const COOKIE = "hub_session";
 const SESSION_DAYS = 7;
@@ -68,29 +68,23 @@ export const devAuth = createMiddleware<DevApp>(async (c, next) => {
   // in-process call (per-isolate secret header) and ONLY for reads; a token
   // copied out of an AI app gets 403 here. Runs as the real person.
   const bearer = /^Bearer\s+(.+)$/i.exec(c.req.header("Authorization") ?? "")?.[1]?.trim() ?? "";
-  let id: number;
-  let viaMcp = false;
   if (bearer.startsWith(MCP_TOKEN_PREFIX)) {
     if (!isMcpInner(c.req.header(MCP_INNER_HEADER))) return c.json({ error: "AI Connector tokens only work through the connector" }, 403);
     if (c.req.method !== "GET" && c.req.method !== "HEAD") return c.json({ error: "The AI Connector is read-only" }, 403);
-    const row = await resolveAccessToken(mcpDb(c.env), bearer);
-    if (!row) return c.json({ error: "Not signed in" }, 401);
-    id = row.userId;
-    viaMcp = true;
-  } else {
-    const token = getCookie(c, COOKIE);
-    const payload = token ? await verify(token, secret(c.env), "HS256").catch(() => null) : null;
-    id = Number(payload?.sub);
-  }
-  if (!Number.isInteger(id)) return c.json({ error: "Not signed in" }, 401);
-
-  const db = getDb(c.env);
-  const user = await loadUser(db, id);
-  if (!user) return c.json({ error: "Not signed in" }, 401);
-  if (!user.active) return c.json({ error: ACCOUNT_DISABLED, code: "account_disabled" }, 401);
-  if (viaMcp) {
-    if (user.mustChangePassword || !(await hasMcpAccess(mcpDb(c.env), user.id, user.perms.includes(MCP_ADMIN_PERMISSION)))) {
-      return c.json({ error: "Not signed in" }, 401);
+    // The connector's own postgres client for this tool call when it lent one (routes/mcp.ts).
+    const db = borrowDb<DB>(c.req.raw) ?? getDb(c.env);
+    // Verified at the door of this same tool call (routes/mcp.ts rememberVerified):
+    // reuse it instead of resolving the token and reloading the user a second time.
+    // Anything else (e.g. the admin leak check) is checked in full here.
+    let user = recallVerified<{ user: DevUser }>(bearer)?.user ?? null;
+    if (!user) {
+      const store = mcpDbOf(db);
+      const row = await resolveAccessToken(store, bearer);
+      if (!row) return c.json({ error: "Not signed in" }, 401);
+      user = await loadUser(db, row.userId);
+      if (!user || !user.active || user.mustChangePassword || !(await hasMcpAccess(store, user.id, user.perms.includes(MCP_ADMIN_PERMISSION)))) {
+        return c.json({ error: "Not signed in" }, 401);
+      }
     }
     c.set("user", user);
     c.set("db", db);
@@ -98,6 +92,16 @@ export const devAuth = createMiddleware<DevApp>(async (c, next) => {
     await next();
     return;
   }
+
+  const token = getCookie(c, COOKIE);
+  const payload = token ? await verify(token, secret(c.env), "HS256").catch(() => null) : null;
+  const id = Number(payload?.sub);
+  if (!Number.isInteger(id)) return c.json({ error: "Not signed in" }, 401);
+
+  const db = getDb(c.env);
+  const user = await loadUser(db, id);
+  if (!user) return c.json({ error: "Not signed in" }, 401);
+  if (!user.active) return c.json({ error: ACCOUNT_DISABLED, code: "account_disabled" }, 401);
   // With a handed-out password, the only things allowed are reading who you
   // are and setting your own password.
   const path = c.req.path;
