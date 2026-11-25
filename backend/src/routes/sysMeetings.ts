@@ -864,7 +864,7 @@ app.post("/public/links/:code/book", async (c) => {
     const base = erpUrl(c.env, l.created_in)?.replace(/\/meetings$/, "") ?? null;
     if (guest.email) {
       await enqueue(db, res.id, "guest_confirm", [guest.email],
-        withFrom(c.env, l.created_in, (b) => renderGuestConfirm({ code, guestName: guest.name, title: res.title, people: res.people, start, end, room: res.room }, base ? `${base}/book/${encodeURIComponent(l.code)}?b=${token}` : null, b.replace(/ Meetings$/, ""))));
+        withFrom(c.env, l.created_in, (b) => renderGuestConfirm({ code, guestName: guest.name, title: res.title, people: res.people, start, end, room: res.room }, base ? `${base}/book/${encodeURIComponent(l.code)}?b=${token}` : null, { ...b, name: b.name.replace(/ Meetings$/, "") })));
     }
     const hostPeople = await peopleByKey(db, hosts);
     for (const h of hostPeople.values()) {

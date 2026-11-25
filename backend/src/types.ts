@@ -35,6 +35,8 @@ export interface Env {
   MEETING_MAIL_FROM_BY_SYSTEM?: string;
   MEETING_MAIL_FROM?: string;
   MEETING_ERP_URLS?: string;
+  // Where the meeting emails' logos are served (frontend/public/mail); local runs point it at wrangler dev.
+  MEETING_LOGO_BASE?: string;
 }
 
 export type SysVars = { systemCode: string; reporterId: string };
