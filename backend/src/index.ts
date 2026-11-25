@@ -2,6 +2,8 @@ import { and, eq, lt } from "drizzle-orm";
 import { Hono } from "hono";
 import { getDb, schema } from "./db/client";
 import auth from "./routes/auth";
+import mcp, { mcpWellKnown, setMcpApp } from "./routes/mcp";
+import mcpAdmin from "./routes/mcpAdmin";
 import dev from "./routes/dev";
 import sys from "./routes/sys";
 import sysAiUsage from "./routes/sysAiUsage";
@@ -33,7 +35,14 @@ app.route("/api/v1/dev", dev);
 // Meetings for IT Support's own users (session) and for guests of a link made here (no sign-in).
 app.route("/api/v1/meetings", portalMeetings);
 app.route("/api/v1/public/meetings", publicMeetings);
+// AI Connector (MCP): own auth (OAuth + hbmcp_ tokens); discovery at the root.
+app.route("/api/mcp", mcp);
+app.route("/.well-known", mcpWellKnown);
+app.route("/api/v1/ai-connector", mcpAdmin);
 app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
+
+// The AI Connector re-enters the assembled app in-process for its reads.
+setMcpApp(app as unknown as Parameters<typeof setMcpApp>[0]);
 
 const AUTO_CLOSE_DAYS = 7;
 

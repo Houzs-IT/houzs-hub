@@ -13,6 +13,8 @@ import NotificationsPage from "./pages/NotificationsPage";
 import BillingPage from "./pages/BillingPage";
 import HealthPage from "./pages/HealthPage";
 import IntegrationsPage from "./pages/IntegrationsPage";
+import AiConnectorPage from "./pages/AiConnectorPage";
+import AiConnectPage from "./pages/AiConnectPage";
 import ReportsPage from "./pages/ReportsPage";
 import RolesPage from "./pages/RolesPage";
 import UsersPage from "./pages/UsersPage";
@@ -23,6 +25,8 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        {/* The AI Connector's "Allow?" screen, outside the portal layout. */}
+        <Route path="/ai-connect" element={<AiConnectPage />} />
         {/* A guest of a booking link made here: no sign-in. */}
         <Route path="/book/:code" element={<MeetingBook />} />
         <Route element={<Layout />}>
@@ -36,6 +40,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
           <Route path="/users" element={<UsersPage />} />
           <Route path="/integrations" element={<IntegrationsPage />} />
           <Route path="/health" element={<HealthPage />} />
+          <Route path="/ai-connector" element={<AiConnectorPage />} />
           <Route path="/accounts" element={<Navigate to="/billing?tab=accounts" replace />} />
           <Route path="/billing" element={<BillingPage />} />
           <Route path="/roles" element={<RolesPage />} />

@@ -1,4 +1,4 @@
-import { Activity, BarChart3, Bell, CalendarDays, ChevronDown, CreditCard, KanbanSquare, List, LogOut, Menu, Moon, Plug, Plus, ShieldCheck, Sun, UserCheck, UserCog, Users } from "lucide-react";
+import { Activity, BarChart3, Bell, Bot, CalendarDays, ChevronDown, CreditCard, KanbanSquare, List, LogOut, Menu, Moon, Plug, Plus, ShieldCheck, Sun, UserCheck, UserCog, Users } from "lucide-react";
 import { useMeetingsUnread } from "../pages/meetings/kit";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
@@ -29,6 +29,7 @@ const PAGE_NAMES: Record<string, string> = {
   "/health": "System health",
   "/billing": "System billing",
   "/roles": "Roles",
+  "/ai-connector": "AI Connector",
 };
 
 // A sidebar category's open or closed state, remembered in this browser.
@@ -482,6 +483,8 @@ export default function Layout() {
                 {can("health_view", "health_edit") && <NavItem to="/health" icon={<Activity className="h-4 w-4" />} label="System health" />}
               </>
             )}
+            {/* Everyone: connect your own Claude / ChatGPT (read-only); admins approve here. */}
+            <NavItem to="/ai-connector" icon={<Bot className="h-4 w-4" />} label="AI Connector" />
           </nav>
           </div>
         </aside>
