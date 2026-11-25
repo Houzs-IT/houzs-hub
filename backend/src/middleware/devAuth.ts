@@ -5,7 +5,11 @@ import { createMiddleware } from "hono/factory";
 import { sign, verify } from "hono/jwt";
 import { getDb, schema } from "../db/client";
 import { effective, type Perm } from "../services/perms";
-import type { DevApp, Env } from "../types";
+import type { DevApp, DevUser, Env } from "../types";
+import type { DB } from "../db/client";
+import { MCP_TOKEN_PREFIX, hasMcpAccess, resolveAccessToken, MCP_ADMIN_PERMISSION } from "../services/mcp-store";
+import { MCP_INNER_HEADER, isMcpInner } from "../services/mcp-inner";
+import { mcpDb } from "../services/mcp-db";
 
 const COOKIE = "hub_session";
 const SESSION_DAYS = 7;
@@ -39,13 +43,8 @@ export const need = (...perms: Perm[]) =>
     await next();
   });
 
-export const devAuth = createMiddleware<DevApp>(async (c, next) => {
-  const token = getCookie(c, COOKIE);
-  const payload = token ? await verify(token, secret(c.env), "HS256").catch(() => null) : null;
-  const id = Number(payload?.sub);
-  if (!Number.isInteger(id)) return c.json({ error: "Not signed in" }, 401);
-
-  const db = getDb(c.env);
+/** A hub user with roles and effective permissions, or null if there is none. */
+export async function loadUser(db: DB, id: number): Promise<DevUser | null> {
   const rows = await db
     .select({ user: schema.users, role: schema.roles })
     .from(schema.users)
@@ -54,15 +53,51 @@ export const devAuth = createMiddleware<DevApp>(async (c, next) => {
     .where(eq(schema.users.id, id))
     .orderBy(asc(schema.roles.name));
   const [first] = rows;
-  if (!first) return c.json({ error: "Not signed in" }, 401);
-  if (!first.user.active) return c.json({ error: ACCOUNT_DISABLED, code: "account_disabled" }, 401);
+  if (!first) return null;
   const roles = rows.flatMap(({ role }) => (role ? [role] : []));
-  const user = {
+  return {
     ...first.user,
     roles: roles.map(({ key }) => key),
     roleName: roles.map(({ name }) => name).join(", "),
     perms: effective(roles.map(({ permissions }) => permissions), first.user.permAllow, first.user.permDeny),
   };
+}
+
+export const devAuth = createMiddleware<DevApp>(async (c, next) => {
+  // AI Connector token (routes/mcp.ts). Honoured ONLY on the connector's own
+  // in-process call (per-isolate secret header) and ONLY for reads; a token
+  // copied out of an AI app gets 403 here. Runs as the real person.
+  const bearer = /^Bearer\s+(.+)$/i.exec(c.req.header("Authorization") ?? "")?.[1]?.trim() ?? "";
+  let id: number;
+  let viaMcp = false;
+  if (bearer.startsWith(MCP_TOKEN_PREFIX)) {
+    if (!isMcpInner(c.req.header(MCP_INNER_HEADER))) return c.json({ error: "AI Connector tokens only work through the connector" }, 403);
+    if (c.req.method !== "GET" && c.req.method !== "HEAD") return c.json({ error: "The AI Connector is read-only" }, 403);
+    const row = await resolveAccessToken(mcpDb(c.env), bearer);
+    if (!row) return c.json({ error: "Not signed in" }, 401);
+    id = row.userId;
+    viaMcp = true;
+  } else {
+    const token = getCookie(c, COOKIE);
+    const payload = token ? await verify(token, secret(c.env), "HS256").catch(() => null) : null;
+    id = Number(payload?.sub);
+  }
+  if (!Number.isInteger(id)) return c.json({ error: "Not signed in" }, 401);
+
+  const db = getDb(c.env);
+  const user = await loadUser(db, id);
+  if (!user) return c.json({ error: "Not signed in" }, 401);
+  if (!user.active) return c.json({ error: ACCOUNT_DISABLED, code: "account_disabled" }, 401);
+  if (viaMcp) {
+    if (user.mustChangePassword || !(await hasMcpAccess(mcpDb(c.env), user.id, user.perms.includes(MCP_ADMIN_PERMISSION)))) {
+      return c.json({ error: "Not signed in" }, 401);
+    }
+    c.set("user", user);
+    c.set("db", db);
+    c.set("viaMcp", true);
+    await next();
+    return;
+  }
   // With a handed-out password, the only things allowed are reading who you
   // are and setting your own password.
   const path = c.req.path;

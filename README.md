@@ -347,3 +347,17 @@ and may be empty; `audience` is `anyone` or `staff` (company must be one of ours
 days or hours (the portals' dialog sends none) offers every room, rooms added later included, each
 within its own opening days and hours, which a guest cannot book outside. The older fixed-length
 `/slots` shape still works for pages not yet updated.
+
+## AI Connector (MCP)
+
+IT staff can ask Claude / ChatGPT about the hub with their own login, read-only.
+Connector URL: `https://support.houzscentury.com/api/mcp`. Admin > AI Connector in the portal:
+holders of **Manage users** approve people, see every lookup and disconnect anyone.
+
+- OAuth 2.1 (dynamic client registration, PKCE S256, rotating refresh) in `backend/src/routes/mcp.ts`;
+  discovery at `/.well-known/oauth-*` (`run_worker_first` in `wrangler.toml`).
+- Read-only by construction: a tool call re-enters the app in-process as a GET; `middleware/devAuth.ts`
+  accepts an `hbmcp_` token only with the per-isolate `x-hub-mcp-inner` header and only for GET/HEAD,
+  then runs the route as the real person (their roles and permissions).
+- Never readable: sign-in, the system-key API (`/api/v1/sys`), attachments, live streams.
+  Credential-shaped fields are stripped from replies. Tables: migration `023_mcp_connector.sql`.
