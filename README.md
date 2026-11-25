@@ -361,3 +361,24 @@ holders of **Manage users** approve people, see every lookup and disconnect anyo
   then runs the route as the real person (their roles and permissions).
 - Never readable: sign-in, the system-key API (`/api/v1/sys`), attachments, live streams.
   Credential-shaped fields are stripped from replies. Tables: migration `023_mcp_connector.sql`.
+
+**Tools, fastest first** (`backend/src/services/mcp-quick.ts` holds the pure summarising code):
+
+| Tool | Reads (as the person, so `need(...)` applies) | Answers |
+| --- | --- | --- |
+| `ticket_summary {from?, to?, system?}` | `/dev/tickets/report` + `/dev/tickets/stats` | open now by status / system / assignee, new vs resolved in the range, median time to resolve, oldest open, every high-priority open ticket |
+| `health_summary` | `/dev/health` | systems down (since when) or slow (> 2000 ms, as on the System health page), 24 h uptime, systems' own reports with problems |
+| `search {query}` / `fetch {id}` | `/dev/tickets?q=` / `/dev/tickets/:code` | the shape ChatGPT requires: `{"results":[{id,title,url}]}` and `{id,title,text,url,metadata}`; id = ticket code |
+| `whoami`, `list_modules`, `list_endpoints`, `erp_get {path, query?, fields?}` | any readable GET | the general path; `fields` keeps only the named keys, replies are cut at 30,000 characters |
+
+`ticket_summary` ranges map onto the report's windows: inside this or last month they are exact by day;
+longer ranges (up to 12 months back) are counted by whole months, and the reply says so.
+Three prompts (`prompts/list`, `prompts/get`) offer ready-made questions in the AI app.
+
+**Speed.** One token check per lookup: the door (`POST /api/mcp`) verifies the token, account and access,
+and the tool call's inner GETs reuse that answer for up to 15 s (`services/mcp-inner.ts`
+`rememberVerified` / `recallVerified`, per isolate, cleared on Disconnect / Remove in that isolate)
+instead of `devAuth` resolving the token and reloading the user again. Every new request is still checked
+at the door. The inner GETs also borrow the door's postgres client (`lendDb` / `borrowDb`, keyed by the
+Request object), so a lookup opens one connection instead of six. Tests: `npm --prefix backend test`
+(`node --test`, Node 22.18+; not part of CI, which runs typecheck + build).
