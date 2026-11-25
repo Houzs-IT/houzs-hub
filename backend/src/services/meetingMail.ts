@@ -50,6 +50,24 @@ export function senderFor(env: Env, system: string): string {
 /** "Hookka Meetings <hello@hookka.com>" -> "Hookka Meetings", for the email's header line. */
 const brandOf = (from: string) => from.replace(/\s*<[^>]*>\s*$/, "").trim() || "Meetings";
 
+/** The header of an email: the company's logo (owner 2026-11-25), with its name as the alt text. */
+export type Brand = { name: string; logo: { url: string; width: number; height: number } | null };
+// Served by this Worker from frontend/public/mail (PNG: Gmail and Outlook do not show SVG). Size = half the
+// file's pixels, so the logo stays sharp on phones. IT Support and HRIS are Houzs.
+const LOGOS: Record<string, { file: string; width: number; height: number }> = {
+  HC: { file: "hc.png", width: 137, height: 40 },
+  IT: { file: "hc.png", width: 137, height: 40 },
+  HR: { file: "hc.png", width: 137, height: 40 },
+  HK: { file: "hk.png", width: 115, height: 48 },
+  CARRES: { file: "carres.png", width: 181, height: 32 },
+  CONTS: { file: "conts.png", width: 68, height: 56 },
+};
+export function brandFor(env: Env, system: string): Brand {
+  const l = LOGOS[system] ?? LOGOS.HC!;
+  const base = (env.MEETING_LOGO_BASE ?? "https://support.houzscentury.com/mail").replace(/\/+$/, "");
+  return { name: brandOf(senderFor(env, system)), logo: { url: `${base}/${l.file}`, width: l.width, height: l.height } };
+}
+
 export async function peopleByKey(db: Exec, keys: string[]): Promise<Map<string, Person>> {
   const out = new Map<string, Person>();
   const ks = [...new Set(keys.filter(Boolean))];
@@ -74,13 +92,17 @@ function erpUrl(env: Env, system: string): string | null {
 
 // ---- layout ---------------------------------------------------------------------------------------------------
 type Row = [string, string];
-function shell(o: { brand: string; bar?: string; kicker?: string; heading: string; rows: Row[]; button?: { label: string; url: string }; under?: string; foot: string }): string {
+function shell(o: { brand: Brand; bar?: string; kicker?: string; heading: string; rows: Row[]; button?: { label: string; url: string }; under?: string; foot: string }): string {
   const tr = o.rows
     .map(([k, v]) => `<tr><td style="width:96px;color:#5b655f;vertical-align:top;padding:2px 0">${esc(k)}</td><td style="padding:2px 0">${v}</td></tr>`)
     .join("");
   return `<!doctype html><html><body style="margin:0;padding:20px 12px;background:#f2f3f1">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #dfe3dc;border-radius:10px;font-family:Arial,Helvetica,sans-serif;color:#1d2420">
-<tr><td style="padding:18px 24px;border-bottom:3px solid ${o.bar ?? "#0f5c4c"};font-size:13px;color:#5b655f;letter-spacing:.06em;text-transform:uppercase">${esc(o.brand)}</td></tr>
+<tr><td style="padding:18px 24px;border-bottom:3px solid ${o.bar ?? "#0f5c4c"};font-size:13px;color:#5b655f;letter-spacing:.06em;text-transform:uppercase">${
+    o.brand.logo
+      ? `<img src="${esc(o.brand.logo.url)}" width="${o.brand.logo.width}" height="${o.brand.logo.height}" alt="${esc(o.brand.name)}" style="display:block;border:0;height:${o.brand.logo.height}px;width:${o.brand.logo.width}px">`
+      : esc(o.brand.name)
+  }</td></tr>
 ${o.kicker ? `<tr><td style="padding:22px 24px 0;font-size:13px;color:#0f5c4c;font-weight:bold;text-transform:uppercase;letter-spacing:.05em">${esc(o.kicker)}</td></tr>` : ""}
 <tr><td style="padding:${o.kicker ? "4px" : "22px"} 24px 6px;font-size:20px;font-weight:bold;line-height:1.3">${esc(o.heading)}</td></tr>
 <tr><td style="padding:6px 24px 16px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:15px;line-height:1.6">${tr}</table></td></tr>
@@ -111,7 +133,7 @@ const joinButton = (m: MailMeeting, erp: string | null) =>
       : undefined;
 
 // ---- the six emails -------------------------------------------------------------------------------------------
-export function renderInvite(m: MailMeeting, by: string, organizer: Person, people: Person[], erp: string | null, brand: string): Rendered {
+export function renderInvite(m: MailMeeting, by: string, organizer: Person, people: Person[], erp: string | null, brand: Brand): Rendered {
   const rows: Row[] = [whenRow(m), whereRow(m), ["Organiser", esc([organizer.name, organizer.company, organizer.department].filter(Boolean).join(", "))]];
   if (people.length) rows.push(["People", esc(people.map((p) => p.name).join(", "))]);
   if (!m.room && m.videoUrl) rows.push(["Link", `<a href="${esc(m.videoUrl)}" style="color:#0f5c4c">${esc(m.videoUrl)}</a>`]);
@@ -125,7 +147,7 @@ export function renderInvite(m: MailMeeting, by: string, organizer: Person, peop
   };
 }
 
-export function renderReminder(m: MailMeeting, minutes: number, organizer: Person, erp: string | null, brand: string): Rendered {
+export function renderReminder(m: MailMeeting, minutes: number, organizer: Person, erp: string | null, brand: Brand): Rendered {
   const lead = minutes < 60 ? `${minutes} minutes` : minutes % 1440 === 0 ? `${minutes / 1440} day${minutes === 1440 ? "" : "s"}` : minutes % 60 === 0 ? `${minutes / 60} hour${minutes === 60 ? "" : "s"}` : `${minutes} minutes`;
   const rows: Row[] = [whenRow(m), whereRow(m), ["Organiser", esc(organizer.name)]];
   const button = joinButton(m, erp);
@@ -137,7 +159,7 @@ export function renderReminder(m: MailMeeting, minutes: number, organizer: Perso
   };
 }
 
-export function renderChanged(m: MailMeeting, by: string, before: { start: number; end: number }, organizer: Person, erp: string | null, brand: string): Rendered {
+export function renderChanged(m: MailMeeting, by: string, before: { start: number; end: number }, organizer: Person, erp: string | null, brand: Brand): Rendered {
   const moved = before.start !== m.start || before.end !== m.end;
   const rows: Row[] = moved
     ? [
@@ -156,7 +178,7 @@ export function renderChanged(m: MailMeeting, by: string, before: { start: numbe
   };
 }
 
-export function renderCancelled(m: MailMeeting, by: string, brand: string): Rendered {
+export function renderCancelled(m: MailMeeting, by: string, brand: Brand): Rendered {
   const rows: Row[] = [
     ["Was", `<span style="text-decoration:line-through">${esc(day(m.start))}, ${time(m.start)} - ${time(m.end)}</span>`],
     ...(m.room ? ([["Where", `${esc(m.room.name)} is free again`]] as Row[]) : []),
@@ -170,7 +192,7 @@ export function renderCancelled(m: MailMeeting, by: string, brand: string): Rend
   };
 }
 
-export function renderGuestConfirm(b: { code: string; guestName: string; title: string; people: number; start: number; end: number; room: { name: string; floor: string; location: string; address?: string } }, viewUrl: string | null, company: string): Rendered {
+export function renderGuestConfirm(b: { code: string; guestName: string; title: string; people: number; start: number; end: number; room: { name: string; floor: string; location: string; address?: string } }, viewUrl: string | null, brand: Brand): Rendered {
   const rows: Row[] = [
     ["Booking", `<b>${esc(b.code)}</b>`],
     whenRow(b),
@@ -181,12 +203,12 @@ export function renderGuestConfirm(b: { code: string; guestName: string; title: 
   const foot = `Need to change the time? Cancel with the button above and book again with the same link.`;
   return {
     subject: `Booked: ${b.room.name}, ${shortDay(b.start)}, ${time(b.start)} (${b.code})`,
-    html: shell({ brand: company, heading, rows, button: viewUrl ? { label: "View or cancel your booking", url: viewUrl } : undefined, foot }),
+    html: shell({ brand, heading, rows, button: viewUrl ? { label: "View or cancel your booking", url: viewUrl } : undefined, foot }),
     text: plain(heading, rows, [viewUrl ? `View or cancel your booking: ${viewUrl}` : "", foot]),
   };
 }
 
-export function renderGuestNotice(b: { guestName: string; company: string; phone: string; email: string; title: string; people: number; start: number; end: number; roomName: string; linkName: string }, erp: string | null, brand: string): Rendered {
+export function renderGuestNotice(b: { guestName: string; company: string; phone: string; email: string; title: string; people: number; start: number; end: number; roomName: string; linkName: string }, erp: string | null, brand: Brand): Rendered {
   const rows: Row[] = [
     ["When", `<b>${esc(day(b.start))}, ${time(b.start)} - ${time(b.end)}</b>`],
     ["Room", esc(b.roomName)],
@@ -345,10 +367,9 @@ export async function mailCancelled(env: Env, db: Exec, meetingId: number, to: s
   await enqueue(db, m.id, "cancelled", emails, withFrom(env, m.system, (b) => renderCancelled(m, byName, b)));
 }
 
-/** Render with the brand of the system's sender, and remember that sender. */
-export function withFrom(env: Env, system: string, render: (brand: string) => Rendered): Mail {
-  const from = senderFor(env, system);
-  return { ...render(brandOf(from)), from, via: viaFor(system) };
+/** Render with the brand of the system's company, and remember its sender. */
+export function withFrom(env: Env, system: string, render: (brand: Brand) => Rendered): Mail {
+  return { ...render(brandFor(env, system)), from: senderFor(env, system), via: viaFor(system) };
 }
 
 export { erpUrl };
