@@ -216,8 +216,8 @@ const MAX_TRIES = 5;
 
 export type ClaimedMail = { id: number; from: string; to: string[]; subject: string; html: string; text: string };
 
-/** The ERP that sends a system's emails: its own, except IT Support, which has no mail of its own and uses Houzs. */
-export const viaFor = (system: string) => (system === "IT" || !system ? "HC" : system);
+/** The ERP that sends a system's emails: its own, except IT Support and HRIS, which have no mail of their own and use Houzs. */
+export const viaFor = (system: string) => (system === "IT" || system === "HR" || !system ? "HC" : system);
 
 /** Hand a system the emails waiting for it (oldest first) and mark them taken. Each claim counts as a try. */
 export async function claimMail(db: Exec, system: string): Promise<ClaimedMail[]> {

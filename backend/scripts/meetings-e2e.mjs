@@ -206,7 +206,7 @@ ok(r.status === 200, `the link maker can cancel the guest booking (${r.status} $
 
 // Attached files (owner 2026-11-24: make sure attaching works): a person in the meeting uploads, anyone who can see it downloads the same bytes.
 {
-  const dayF = new Date(Date.parse(day) + 5 * 86400e3).toISOString().slice(0, 10);
+  const dayF = new Date(Date.parse(day) + 9 * 86400e3).toISOString().slice(0, 10);
   r = await call(HC, lim, "POST", "/meetings", { title: "File check", start: `${dayF}T10:00:00+08:00`, end: `${dayF}T11:00:00+08:00`, roomId: boardroom, attendees: ["hana@example.com"] });
   const fid0 = r.j?.ids?.[0];
   const form = new FormData();
@@ -279,6 +279,24 @@ ok(r.status === 200, `the link maker can cancel the guest booking (${r.status} $
   ok(r.status === 201, `meeting starting soon booked (${r.status} ${r.j?.error ?? ""})`);
   // The reminder is queued by the 5-minute cron, which local wrangler cannot fire here:
   // run scripts/meetings-reminders-local.mts right after this to queue it and check it is queued once.
+}
+
+// Houzs HRIS (owner 2026-11-25): HR staff book from the HRIS back office; HRIS has no mail of its own, so
+// Houzs ERP collects and sends its meeting emails. Runs when HR_KEY (the local HR system key) is set.
+if (process.env.HR_KEY) {
+  const HR = process.env.HR_KEY;
+  const hr = { id: "5", name: "Hana HR", email: "hana@example.com", company: "Houzs Century", dept: "HR" };
+  await call(HC, lim, "POST", "/mail/claim", {});
+  const dayH = new Date(Date.parse(day) + 9 * 86400e3).toISOString().slice(0, 10);
+  r = await call(HR, hr, "POST", "/meetings", { title: "HR interview", start: `${dayH}T13:00:00+08:00`, end: `${dayH}T14:00:00+08:00`, attendees: ["lim@example.com"] });
+  ok(r.status === 201, `HRIS books a meeting (${r.status} ${r.j?.error ?? ""})`);
+  const hrOwn = (await call(HR, hr, "POST", "/mail/claim", {})).j?.mail ?? [];
+  ok(hrOwn.length === 0, "HRIS itself is handed no emails to send");
+  const viaHc = (await call(HC, lim, "POST", "/mail/claim", {})).j?.mail ?? [];
+  const inv = viaHc.find((m) => m.subject.startsWith("Invitation: HR interview"));
+  ok(inv && inv.from === "Houzs Meetings <hello@houzscentury.com>" && inv.to.includes("lim@example.com"), `Houzs ERP sends the HRIS meeting's invitation from hello@houzscentury.com (${inv?.from})`);
+  r = await call(HC, lim, "GET", "/bootstrap");
+  ok(r.j?.people?.some((p) => p.key === "hana@example.com"), "the HR person joins the shared directory under their email");
 }
 
 // IT Support's own users: the session vouches for the person; headers from the browser are ignored.

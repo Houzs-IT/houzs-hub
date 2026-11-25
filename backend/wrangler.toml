@@ -37,8 +37,8 @@ HEALTH_ALERT_FROM = "Houzs IT Hub <no-reply@houzscentury.com>"
 GOOGLE_MEET_OWNER = "hello@houzscentury.com"
 # Meetings: emails go out from this address; the button in each email opens the person's own ERP.
 MEETING_MAIL_FROM = "Houzs Meetings <hello@houzscentury.com>"
-MEETING_MAIL_FROM_BY_SYSTEM = '{"HC":"Houzs Meetings <hello@houzscentury.com>","IT":"Houzs Meetings <hello@houzscentury.com>","HK":"Hookka Meetings <hello@hookka.com>","CARRES":"Carres Meetings <hello@carresofficial.com>","CONTS":"The Conts Meetings <hello@theconts.com>"}'
-MEETING_ERP_URLS = '{"HC":"https://erp.houzscentury.com","HK":"https://erp.hookka.com","CARRES":"https://erp.carresofficial.com","CONTS":"https://erp.theconts.com","IT":"https://support.houzscentury.com"}'
+MEETING_MAIL_FROM_BY_SYSTEM = '{"HC":"Houzs Meetings <hello@houzscentury.com>","IT":"Houzs Meetings <hello@houzscentury.com>","HR":"Houzs Meetings <hello@houzscentury.com>","HK":"Hookka Meetings <hello@hookka.com>","CARRES":"Carres Meetings <hello@carresofficial.com>","CONTS":"The Conts Meetings <hello@theconts.com>"}'
+MEETING_ERP_URLS = '{"HC":"https://erp.houzscentury.com","HK":"https://erp.hookka.com","CARRES":"https://erp.carresofficial.com","CONTS":"https://erp.theconts.com","IT":"https://support.houzscentury.com","HR":"https://hris.houzscentury.com"}'
 
 [[r2_buckets]]
 binding = "FILES"
