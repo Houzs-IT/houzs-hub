@@ -347,6 +347,85 @@ dev.get("/tickets/report", async (c) => {
   return c.json(await buildReport(c.get("db"), range));
 });
 
+// Ticket digest: the tickets raised in a window (newest first), each with the start of what was
+// reported and its latest comment. The same text the ticket page shows to anyone with "it" (internal
+// comments included, marked), trimmed here so the reply stays small. Read by the AI Connector's
+// ticket_digest (routes/mcp.ts). from / to are ISO instants, to exclusive, at most 400 days apart.
+const DIGEST_MAX_MS = 400 * 86_400_000;
+const DIGEST_TEXT = 400;
+
+dev.get("/tickets/digest", async (c) => {
+  const db = c.get("db");
+  const q = c.req.query();
+  const fromMs = Date.parse(q.from ?? "");
+  const toMs = Date.parse(q.to ?? "");
+  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs) || toMs <= fromMs || toMs - fromMs > DIGEST_MAX_MS) {
+    return c.json({ error: "from and to must be dates, from before to, at most 400 days apart" }, 400);
+  }
+  const from = new Date(fromMs).toISOString();
+  const to = new Date(toMs).toISOString();
+  const limit = Math.min(200, Math.max(1, Number(q.limit) || 50));
+  const systems = list(q.system);
+  const where = and(
+    sql`${t.createdAt}::timestamptz >= ${from}::timestamptz`,
+    sql`${t.createdAt}::timestamptz < ${to}::timestamptz`,
+    systems.length ? inArray(t.systemCode, systems) : undefined,
+  );
+  const [rows, [total]] = await Promise.all([
+    db
+      .select({
+        id: t.id,
+        code: t.code,
+        system_code: t.systemCode,
+        system_name: schema.systems.name,
+        type: t.type,
+        priority: t.priority,
+        status: t.status,
+        module: t.module,
+        title: t.title,
+        description: sql<string>`left(${t.description}, ${DIGEST_TEXT})`,
+        reporter_name: t.reporterName,
+        reporter_department: t.reporterDepartment,
+        assignee_name: schema.users.name,
+        created_at: t.createdAt,
+        updated_at: t.updatedAt,
+      })
+      .from(t)
+      .leftJoin(schema.users, eq(schema.users.id, t.assigneeId))
+      .leftJoin(schema.systems, eq(schema.systems.code, t.systemCode))
+      .where(where)
+      .orderBy(desc(t.createdAt))
+      .limit(limit),
+    db.select({ n: count() }).from(t).where(where),
+  ]);
+  const ev = schema.ticketEvents;
+  const ids = rows.map((r) => r.id);
+  const latest = ids.length
+    ? await db
+        .selectDistinctOn([ev.ticketId], {
+          ticket_id: ev.ticketId,
+          author_name: ev.authorName,
+          author_kind: ev.authorKind,
+          visibility: ev.visibility,
+          created_at: ev.createdAt,
+          body: sql<string>`left(${ev.body}, ${DIGEST_TEXT})`,
+        })
+        .from(ev)
+        .where(and(inArray(ev.ticketId, ids), eq(ev.kind, "comment"), sql`coalesce(${ev.body}, '') <> ''`))
+        .orderBy(ev.ticketId, desc(ev.createdAt), desc(ev.id))
+    : [];
+  const byTicket = new Map(latest.map((e) => [e.ticket_id, e]));
+  return c.json({
+    from,
+    to,
+    total: total?.n ?? 0,
+    tickets: rows.map(({ id, ...r }) => {
+      const e = byTicket.get(id);
+      return { ...r, latest_comment: e ? { author_name: e.author_name, author_kind: e.author_kind, visibility: e.visibility, created_at: e.created_at, body: e.body } : null };
+    }),
+  });
+});
+
 async function findTicket(db: DB, code: string) {
   const [row] = await db.select().from(t).where(eq(t.code, code)).limit(1);
   return row ?? null;

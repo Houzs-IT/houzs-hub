@@ -59,6 +59,7 @@ import {
   myDayRange,
   type BriefPart,
 } from "../services/mcp-round3";
+import { periodWindow, PERIODS, ROUND4_TOOLS, runRound4Tool } from "../services/mcp-round4";
 import { buildXlsx, XLSX_TYPE } from "../services/xlsx";
 import { classifyPath, moduleCatalog, readablePaths, redactSecrets, type RouteInfo } from "../services/mcp-access";
 import {
@@ -235,9 +236,13 @@ ANSWER FAST — use a quick answer first; each is ONE call and already summarise
 - Today's meetings and room bookings: meetings_today {date?}.
 - A ticket list as an Excel file: export_excel {list: "tickets", filters...} returns a download link valid 15 minutes.
 - Systems down or slow right now, since when, problems the systems report: health_summary.
-- One ticket by code (e.g. HC-0042) or words from its title / reporter: search {query}, then fetch {id} for the full ticket with its timeline.
+- Overdue (past SLA, the Reports page's rule) and urgent tickets nobody is assigned to, by system and assignee: tickets_overdue {system?}.
+- What the recent tickets are about, short, grouped by system (subject, summary, latest comment): ticket_digest {period?, system?}.
+- Records missing something (tickets with no assignee / module, billing charges or accounts with blanks): data_gaps.
+- One ticket by code (e.g. HC-0042): fetch {id} directly (status, assignee, the whole history). By words from its title / reporter: search {query} first.
 Only when no quick answer fits (billing register, accounts, meeting rooms, ticket lists with filters): list_modules → list_endpoints → erp_get. With erp_get pass "fields" (only the keys you need) and query filters (e.g. /api/v1/dev/tickets with status, system, priority, assignee, q, page_size) to keep replies small.
-Dates are Malaysia time (UTC+8). The hub keeps no SLA target or due date on tickets: "overdue" means open longer than a number of days.
+Periods: tools with "period" take today | week (Monday to today) | month | last_month | quarter | year | custom (with from / to), Malaysia days, and compare with the previous period where cheap.
+Dates are Malaysia time (UTC+8). Tickets have no due date. The Reports page's SLA (high 24 h, medium 3 d, low 7 d, not counting time waiting on the reporter) is what tickets_overdue uses; tickets_today / open_tickets "overdue" means open longer than a number of days.
 Each person may make ${RATE_LIMITS.perMinute} tool calls a minute and ${RATE_LIMITS.perDay} a day; over that a call says so — wait instead of retrying at once.
 If a call says "You do not have permission" or "not available to your role", tell the person they do not have permission for that data.`;
 
@@ -253,6 +258,7 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
+        period: { type: "string", enum: [...PERIODS], description: "today | week | month | last_month | quarter | year | custom (with from / to). Overrides from / to unless custom." },
         from: { type: "string", description: "YYYY-MM-DD. Default: the 1st of this month. Up to 12 months back." },
         to: { type: "string", description: "YYYY-MM-DD. Default: today." },
         system: { type: "string", description: "System code (e.g. HC, HK). Default: all systems." },
@@ -265,7 +271,7 @@ const TOOLS = [
     name: "tickets_today",
     title: "Tickets today (quick answer)",
     description:
-      "Today at the IT desk in ONE call: tickets opened today and resolved today by system (Hookka, Houzs, 2990s, Conts...) and category (type bug / development, module) with their titles; everything still open by system / type / module / status; every urgent (high-priority) open ticket; and the overdue ones (open longer than overdueDays — the hub has no SLA target). Only what this person may see in the hub.",
+      "Today at the IT desk in ONE call: tickets opened today and resolved today by system (Hookka, Houzs, 2990s, Conts...) and category (type bug / development, module) with their titles; everything still open by system / type / module / status; every urgent (high-priority) open ticket; and the overdue ones (open longer than overdueDays; for the Reports page's SLA use tickets_overdue). Only what this person may see in the hub.",
     inputSchema: {
       type: "object",
       properties: {
@@ -288,7 +294,7 @@ const TOOLS = [
     name: "open_tickets",
     title: "Open tickets by filter (quick answer)",
     description:
-      "Open tickets matching filters, counted by status, priority, system, age and assignee, with the 10 oldest. Default: every active ticket. Use olderThanDays for 'overdue' (the hub has no SLA target).",
+      "Open tickets matching filters, counted by status, priority, system, age and assignee, with the 10 oldest. Default: every active ticket. Use olderThanDays for 'open longer than N days'; for past SLA use tickets_overdue.",
     inputSchema: {
       type: "object",
       properties: {
@@ -357,10 +363,11 @@ const TOOLS = [
   {
     name: "fetch",
     title: "Open a ticket",
-    description: "The full ticket for an id returned by search (its ticket code): what was reported, status, priority, assignee and the whole timeline of comments and changes.",
+    description: "Ticket lookup: the full ticket for a ticket code (e.g. HC-0042, from search or from the person): what was reported, status, priority, assignee and the whole timeline of comments and changes.",
     inputSchema: { type: "object", properties: { id: { type: "string", description: "A ticket code from search, e.g. HC-0042" } }, required: ["id"], additionalProperties: false },
     annotations: RO,
   },
+  ...ROUND4_TOOLS,
   { name: "whoami", title: "Who am I connected as", description: "The hub account this connection uses and its roles.", inputSchema: NO_ARGS, annotations: RO },
   { name: "list_modules", title: "List hub modules", description: "The hub's modules (API path prefixes) with how many read endpoints each has. Only when no quick answer fits.", inputSchema: NO_ARGS, annotations: RO },
   {
@@ -512,7 +519,15 @@ async function runTool(c: Context<HonoEnv>, id: Identity, token: string, name: s
 
   switch (name) {
     case "ticket_summary": {
-      const w = ticketWindow(args.from, args.to, myToday());
+      let from = args.from;
+      let to = args.to;
+      if (args.period !== undefined && args.period !== "") {
+        const p = periodWindow(args.period, args.from, args.to, myToday());
+        if ("error" in p) return bad(p.error);
+        from = p.current.from;
+        to = p.current.to;
+      }
+      const w = ticketWindow(from, to, myToday());
       if ("error" in w) return bad(w.error);
       const system = typeof args.system === "string" && /^[A-Za-z0-9]{1,12}$/.test(args.system.trim()) ? args.system.trim().toUpperCase() : null;
       const target = `tickets:${w.from}..${w.to}${system ? `:${system}` : ""}`;
@@ -700,8 +715,12 @@ async function runTool(c: Context<HonoEnv>, id: Identity, token: string, name: s
       const r = await readEndpoint(c, token, String(args.path ?? ""), (args.query as Record<string, unknown> | undefined) ?? undefined, fields);
       return { result: r.result, status: r.status, note: r.note, target: r.target };
     }
-    default:
-      return bad(`Unknown tool: ${name}`);
+    default: {
+      // Round 4 (services/mcp-round4.ts): reads only through readValue, as the person.
+      const r4 = await runRound4Tool(name, args, { read: (p, q) => readValue(c, token, p, q), origin: originOf(c), today: myToday(), nowMs: Date.now() });
+      if (!r4) return bad(`Unknown tool: ${name}`);
+      return r4.ok ? ok(r4.body, r4.target) : { result: text(r4.message, true), status: r4.status, note: r4.note, target: r4.target };
+    }
   }
 }
 

@@ -96,7 +96,7 @@ const listTicket = (t: Obj, nowMs: number, origin: string) => ({
 
 // ── tickets_today ───────────────────────────────────────────────────────────
 
-/** Open longer than this (days) counts as overdue: the hub keeps no SLA target or due date. */
+/** Open longer than this (days) counts as overdue here: tickets keep no due date (past SLA is tickets_overdue, mcp-round4.ts). */
 export const OVERDUE_DAYS_DEFAULT = 3;
 
 /**
@@ -153,7 +153,7 @@ export function summariseTicketsToday(report: unknown, opts: { today: string; ov
     },
     urgent: { total: urgent.length, tickets: urgent.slice(0, 15).map(brief) },
     overdue: { olderThanDays: opts.overdueDays, total: overdue.length, tickets: overdue.slice(0, 15).map(brief) },
-    note: `Days are Malaysia time. Urgent = high priority. The hub keeps no SLA target or due date, so overdue = open more than ${opts.overdueDays} days. Category = type (bug / development) and module. "Opened today" counts every ticket raised today; the titles list those still open.`,
+    note: `Days are Malaysia time. Urgent = high priority. Tickets keep no due date, so overdue here = open more than ${opts.overdueDays} days (no SLA target is applied; tickets_overdue gives past SLA). Category = type (bug / development) and module. "Opened today" counts every ticket raised today; the titles list those still open.`,
   };
 }
 
@@ -193,7 +193,7 @@ export function summariseTicketList(body: unknown, opts: { olderThanDays: number
     byAge,
     byAssignee: Object.fromEntries(Object.entries(tally(aged, (t) => s(t.assignee_name) || "Unassigned")).slice(0, 20)),
     oldest: aged.slice(0, 10).map((t) => listTicket(t, nowMs, opts.origin)),
-    sla: "The hub keeps no SLA target or due date on tickets: use olderThanDays for 'overdue'.",
+    sla: "Tickets keep no due date: olderThanDays means open longer than N days. For past SLA (the Reports page's rule) use tickets_overdue.",
   };
 }
 
