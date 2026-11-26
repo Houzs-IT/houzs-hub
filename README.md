@@ -36,7 +36,8 @@ developer browser        --session cookie (/login)----> /api/v1/dev/*   + the po
 ```
 backend/
   src/routes/          API routes (sys*, dev, admin, auth, billing, health, ...)
-  src/services/        business rules (tickets, permissions, health, reports, ...)
+  src/services/        business rules (tickets, permissions, health, reports, ...);
+                       mcp-*.ts = the AI Connector's pure summarising code (round 4: mcp-round4.ts)
   src/db/migrations/   numbered SQL migrations
   scripts/             command-line tools (migrate, keys, users, one-off imports)
 frontend/src/
@@ -368,9 +369,12 @@ holders of **Manage users** approve people, see every lookup and disconnect anyo
 
 | Tool | Reads (as the person, so `need(...)` applies) | Answers |
 | --- | --- | --- |
-| `ticket_summary {from?, to?, system?}` | `/dev/tickets/report` + `/dev/tickets/stats` | open now by status / system / assignee, new vs resolved in the range, median time to resolve, oldest open, every high-priority open ticket |
+| `ticket_summary {period?, from?, to?, system?}` | `/dev/tickets/report` + `/dev/tickets/stats` | open now by status / system / assignee, new vs resolved in the range, median time to resolve, oldest open, every high-priority open ticket |
 | `health_summary` | `/dev/health` | systems down (since when) or slow (> 2000 ms, as on the System health page), 24 h uptime, systems' own reports with problems |
-| `search {query}` / `fetch {id}` | `/dev/tickets?q=` / `/dev/tickets/:code` | the shape ChatGPT requires: `{"results":[{id,title,url}]}` and `{id,title,text,url,metadata}`; id = ticket code |
+| `search {query}` / `fetch {id}` | `/dev/tickets?q=` / `/dev/tickets/:code` | the shape ChatGPT requires: `{"results":[{id,title,url}]}` and `{id,title,text,url,metadata}`; id = ticket code. `fetch` is also the ticket lookup: status, assignee, the whole history |
+| `tickets_overdue {system?}` | `/dev/tickets/report?range=this` | past SLA (the Reports page's rule) by system / assignee / priority, most overdue first; every high-priority ticket nobody is assigned to |
+| `ticket_digest {period?, from?, to?, system?, limit?}` | `/dev/tickets/digest` twice (this period, and the previous period's count) | tickets raised in the period grouped by system: subject, ~200-character summary, latest comment (trimmed, internal ones marked), status, assignee |
+| `data_gaps {system?}` | `/dev/tickets/report`, `/dev/billing`, `/dev/accounts` in parallel | open tickets with no assignee / module; active charges with no amount, card, system, account or check date, or not confirmed; accounts with no main owner / IT access / bills-to |
 | `tickets_today {system?, overdueDays?}` | `/dev/tickets/report?range=this` | opened today and resolved today by system and category (type, module) with titles; still open by system / type / module / status; urgent (high priority); overdue = open longer than `overdueDays` (default 3) |
 | `open_tickets {status?, priority?, system?, type?, assignee?, olderThanDays?}` | `/dev/tickets` (oldest first, 200) | counts by status / priority / system / age / assignee, the 10 oldest |
 | `my_tickets` | `/dev/tickets?assignee=me&status=active` | my active tickets, most urgent first |
@@ -386,8 +390,8 @@ Four prompts (`prompts/list`, `prompts/get`) offer ready-made questions in the A
 
 **Round 3 (2026-11-26)** — `services/mcp-round3.ts` (pure, tested in `backend/test/mcp-round3.test.mjs`):
 
-- The hub keeps **no SLA target or due date** on tickets, so "overdue" is always "open longer than N days",
-  and every reply that uses it says so. There is **no asset / device register** in the hub, so there is no
+- Tickets keep **no due date**, so in these tools "overdue" is "open longer than N days", and every reply
+  that uses it says so. (Round 4 found the Reports page's SLA targets; `tickets_overdue` uses those.) There is **no asset / device register** in the hub, so there is no
   asset tool.
 - **Rate limit:** 30 tool calls a minute and 600 a day per person, counted from `mcp_calls` (index
   `mcp_calls_user_created_idx`, migration `024_mcp_calls_rate_limit.sql`, applied by the deploy workflow on
@@ -403,15 +407,52 @@ Four prompts (`prompts/list`, `prompts/get`) offer ready-made questions in the A
   page itself) refresh the person's own row in `meeting_people` on every read. That is the existing GET's
   behaviour, not something the connector adds.
 
+**Round 4 (2026-11-27)** — `services/mcp-round4.ts` (pure, tested in `backend/test/mcp-round4.test.mjs`):
+
+- **SLA.** Tickets have no due date, but the Reports page has an SLA: high 24 h, medium 3 d, low 7 d from
+  submitted to done, not counting time in Waiting Reporter (`frontend/src/lib/labels.ts` `SLA_HOURS`).
+  `tickets_overdue` uses exactly that rule on the report's `open_tickets` (imported tickets never count);
+  the backend keeps a copy of the targets and a test fails if the two drift. `tickets_today` / `open_tickets`
+  still mean "open longer than N days" by "overdue".
+- **`period`** (every period-type tool): `today | week | month | last_month | quarter | year | custom`
+  (custom needs `from` / `to`, at most 366 days). Malaysia days, inclusive; `week` starts on Monday. The
+  previous period is the same span one unit earlier (yesterday; last week to the same weekday; last month to
+  the same day, clamped at month end; ...), or for custom the same number of days straight before.
+  `ticket_digest` (default `week`) compares the count; `ticket_summary` takes `period` in place of from / to.
+- **`GET /api/v1/dev/tickets/digest?from=&to=&system=&limit=`** (new, read-only, `need("it")` like every
+  `/tickets/*` route): tickets raised in [from, to) (ISO instants, at most 400 days), newest first, up to
+  200, each with `description` and its latest non-empty comment cut to 400 characters. It is the text the
+  ticket page already shows to the same role; internal comments are included and marked, as on the page.
+  Registered before `/tickets/:code`. The admin leak check probes it like any other list endpoint.
+- **No asset register.** The hub keeps no expiry or renewal date for domains, licences, SSL or
+  subscriptions (System billing has only a monthly / yearly cycle), so there is no `assets_expiring` tool
+  and `data_gaps` says it cannot check "no expiry date".
+- **Permissions.** No new rule in the connector: each part reads as the person, and a refused part says
+  "You do not have access to X in the hub." The tests run every round-4 tool against a fake hub that
+  refuses exactly as the routes do, and pin those `need(...)` guards in the route source.
+
+| Tool | Endpoints | Hub permission that gates it |
+| --- | --- | --- |
+| `tickets_overdue` | `/dev/tickets/report` | `it` |
+| `ticket_digest` | `/dev/tickets/digest` | `it` |
+| `data_gaps` | `/dev/tickets/report`, `/dev/billing`, `/dev/accounts` | `it`; `billing_view` or `billing_edit`; `accounts_view` or `accounts_edit` (each part separately) |
+| `fetch` (ticket lookup) | `/dev/tickets/:code` | `it` |
+| `ticket_summary {period}` | `/dev/tickets/report`, `/dev/tickets/stats` | `it` |
+
 **FAQ (owner's acceptance list, 2026-11-26)** — each question is one tool call:
 
 | # | Question | Tool |
 | --- | --- | --- |
 | I1 | What problems came in today, and by which system? | `tickets_today` (opened / resolved today by system and category, with titles) |
-| I2 | Which tickets are overdue or urgent? Which are mine? | `tickets_today` (urgent + overdue), `open_tickets {olderThanDays}`, `my_tickets`. No SLA target exists: overdue = open longer than N days |
+| I2 | Which tickets are overdue or urgent? Which are mine? | `tickets_overdue` (past SLA by system and assignee, urgent and unassigned), `tickets_today`, `open_tickets {olderThanDays}`, `my_tickets` |
 | I3 | What meetings / room bookings are there today? | `meetings_today` |
 | E1 | What do I need to look at today? | `daily_brief` (prompt `daily-brief`) |
 | E2 | Export X to Excel | `export_excel {list: "tickets", ...}` |
+| I4 | What have the recent IT tickets been about? (近期 IT 有什么 ticket，简短) | `ticket_digest {period?: "week", system?}` |
+| I5 | Where does ticket HC-0042 stand, who has it, what happened? | `fetch {id: "HC-0042"}` |
+| I6 | Which domains / licences / SSL / subscriptions expire soon? | Not available: the hub stores no expiry dates (see Round 4) |
+| D4 | What data is missing or needs filling in? | `data_gaps` |
+| P | How many tickets this quarter vs last? | `ticket_summary {period: "quarter"}`, `ticket_digest {period: "quarter"}` |
 
 **Speed.** One token check per lookup: the door (`POST /api/mcp`) verifies the token, account and access,
 and the tool call's inner GETs reuse that answer for up to 15 s (`services/mcp-inner.ts`

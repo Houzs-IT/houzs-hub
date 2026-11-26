@@ -320,9 +320,12 @@ export function ticketDocument(body: unknown, origin: string, maxChars: number) 
   const b = obj(body);
   const t = obj(b.ticket);
   const code = s(t.code);
+  // The ticket row carries only assigneeId; the name is on the last assign event (the page shows the same).
+  const assigns = arr(b.events).filter((e) => s(e.kind) === "assign");
+  const assignee = t.assigneeId === null || t.assigneeId === undefined ? "" : s(assigns[assigns.length - 1]?.toValue);
   const lines: string[] = [
     `${code}: ${s(t.title)}`,
-    `System: ${s(t.system_name) || s(t.systemCode)}${t.module ? ` / ${s(t.module)}` : ""} · Type: ${s(t.type)} · Priority: ${s(t.priority)} · Status: ${s(t.status)}`,
+    `System: ${s(t.system_name) || s(t.systemCode)}${t.module ? ` / ${s(t.module)}` : ""} · Type: ${s(t.type)} · Priority: ${s(t.priority)} · Status: ${s(t.status)} · Assignee: ${assignee || (t.assigneeId ? "assigned" : "unassigned")}`,
     `Reported by ${s(t.reporterName)}${t.reporterDepartment ? ` (${s(t.reporterDepartment)})` : ""} on ${s(t.createdAt)}${t.resolvedAt ? ` · resolved ${s(t.resolvedAt)}` : ""}${t.closedAt ? ` · closed ${s(t.closedAt)}` : ""}`,
     ...(t.pageUrl ? [`Page: ${s(t.pageUrl)}`] : []),
     "",
@@ -356,6 +359,7 @@ export function ticketDocument(body: unknown, origin: string, maxChars: number) 
       status: s(t.status),
       priority: s(t.priority),
       type: s(t.type),
+      assignee: assignee || null,
       createdAt: s(t.createdAt),
       updatedAt: s(t.updatedAt),
       events: arr(b.events).length,
