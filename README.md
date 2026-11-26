@@ -369,11 +369,47 @@ holders of **Manage users** approve people, see every lookup and disconnect anyo
 | `ticket_summary {from?, to?, system?}` | `/dev/tickets/report` + `/dev/tickets/stats` | open now by status / system / assignee, new vs resolved in the range, median time to resolve, oldest open, every high-priority open ticket |
 | `health_summary` | `/dev/health` | systems down (since when) or slow (> 2000 ms, as on the System health page), 24 h uptime, systems' own reports with problems |
 | `search {query}` / `fetch {id}` | `/dev/tickets?q=` / `/dev/tickets/:code` | the shape ChatGPT requires: `{"results":[{id,title,url}]}` and `{id,title,text,url,metadata}`; id = ticket code |
+| `tickets_today {system?, overdueDays?}` | `/dev/tickets/report?range=this` | opened today and resolved today by system and category (type, module) with titles; still open by system / type / module / status; urgent (high priority); overdue = open longer than `overdueDays` (default 3) |
+| `open_tickets {status?, priority?, system?, type?, assignee?, olderThanDays?}` | `/dev/tickets` (oldest first, 200) | counts by status / priority / system / age / assignee, the 10 oldest |
+| `my_tickets` | `/dev/tickets?assignee=me&status=active` | my active tickets, most urgent first |
+| `meetings_today {date?}` | `/meetings/mine` + `/meetings/calendar` | my meetings that day and every room booking (rooms by id) |
+| `daily_brief` | 4 reads in parallel: my tickets, unassigned high-priority tickets, `/meetings/mine`, unread `/dev/notifications` | what is mine today; a part the person may not read says "you do not have access" and the rest still answers |
+| `export_excel {list: "tickets", status?, priority?, system?, type?, assignee?, q?, from?, to?, fields?}` | `/dev/tickets`, paged 200 at a time, newest first | an .xlsx (`services/xlsx.ts`, no dependency) in R2 under `mcp-exports/`, a download link valid 15 minutes (`GET /api/mcp/export/:token`), the row count and `truncated` at 5,000 rows |
 | `whoami`, `list_modules`, `list_endpoints`, `erp_get {path, query?, fields?}` | any readable GET | the general path; `fields` keeps only the named keys, replies are cut at 30,000 characters |
 
 `ticket_summary` ranges map onto the report's windows: inside this or last month they are exact by day;
 longer ranges (up to 12 months back) are counted by whole months, and the reply says so.
-Three prompts (`prompts/list`, `prompts/get`) offer ready-made questions in the AI app.
+Four prompts (`prompts/list`, `prompts/get`) offer ready-made questions in the AI app, `daily-brief`
+("What do I need to look at today?") first.
+
+**Round 3 (2026-11-26)** — `services/mcp-round3.ts` (pure, tested in `backend/test/mcp-round3.test.mjs`):
+
+- The hub keeps **no SLA target or due date** on tickets, so "overdue" is always "open longer than N days",
+  and every reply that uses it says so. There is **no asset / device register** in the hub, so there is no
+  asset tool.
+- **Rate limit:** 30 tool calls a minute and 600 a day per person, counted from `mcp_calls` (index
+  `mcp_calls_user_created_idx`, migration `024_mcp_calls_rate_limit.sql`, applied by the deploy workflow on
+  merge). Over the limit a call returns a normal tool result with `isError` ("Too many requests — wait a
+  minute" / "Daily limit reached"); refused calls (status 429) are logged but not counted. `initialize`,
+  `tools/list` and prompts are not counted. The admin leak check reads through `readEndpoint`, never
+  `callTool`, so it is never limited. The AI Connector page shows the limits as text.
+- **Excel download links** are capability links: a random 24-byte token in the URL, whose SHA-256 names the
+  R2 object, checked against `expiresAt` (15 minutes) on download. Objects older than a day are swept on the
+  next export. Anyone holding the link can download it within those 15 minutes — the same trust as a
+  signed URL.
+- `meetings_today` and `daily_brief` read `/api/v1/meetings/mine` and `/calendar`, which (like the Meetings
+  page itself) refresh the person's own row in `meeting_people` on every read. That is the existing GET's
+  behaviour, not something the connector adds.
+
+**FAQ (owner's acceptance list, 2026-11-26)** — each question is one tool call:
+
+| # | Question | Tool |
+| --- | --- | --- |
+| I1 | What problems came in today, and by which system? | `tickets_today` (opened / resolved today by system and category, with titles) |
+| I2 | Which tickets are overdue or urgent? Which are mine? | `tickets_today` (urgent + overdue), `open_tickets {olderThanDays}`, `my_tickets`. No SLA target exists: overdue = open longer than N days |
+| I3 | What meetings / room bookings are there today? | `meetings_today` |
+| E1 | What do I need to look at today? | `daily_brief` (prompt `daily-brief`) |
+| E2 | Export X to Excel | `export_excel {list: "tickets", ...}` |
 
 **Speed.** One token check per lookup: the door (`POST /api/mcp`) verifies the token, account and access,
 and the tool call's inner GETs reuse that answer for up to 15 s (`services/mcp-inner.ts`

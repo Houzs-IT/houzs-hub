@@ -28,7 +28,8 @@ import {
   revokeUserTokens,
   takeAuthRequest,
 } from "../services/mcp-store";
-import { isMcpAdmin, mcpAppRoutes, readEndpoint } from "./mcp";
+import { EXPORT_TTL_MS, isMcpAdmin, mcpAppRoutes, readEndpoint } from "./mcp";
+import { EXPORT_ROW_CAP, RATE_LIMITS } from "../services/mcp-round3";
 
 type HonoEnv = DevApp;
 const app = new Hono<HonoEnv>();
@@ -206,6 +207,7 @@ app.get("/admin/overview", async (c) => {
   return c.json({
     connectorUrl: connectorUrl(c),
     stats: { connectedPeople: num(stats ?? {}, "people"), callsToday: num(stats ?? {}, "calls_24h"), refusedToday: num(stats ?? {}, "refused_24h"), waiting: requests.results.length },
+    limits: { ...RATE_LIMITS, exportRows: EXPORT_ROW_CAP, exportLinkMinutes: EXPORT_TTL_MS / 60_000 },
     requests: requests.results.map((r) => ({ id: s(r, "id"), userId: num(r, "user_id"), name: s(r, "name"), position: pos(r), reason: s(r, "reason"), createdAt: iso(r.created_at) })),
     connected: connected.results.map((r) => ({ tokenId: s(r, "id"), userId: num(r, "user_id"), name: s(r, "name"), position: pos(r), app: appLabel(s(r, "client_name")), connectedAt: iso(r.created_at), lastUsedAt: iso(r.last_used_at) })),
     allowed: allowed.results.map((r) => ({ userId: num(r, "user_id"), name: s(r, "name"), position: pos(r), approvedAt: iso(r.approved_at) })),

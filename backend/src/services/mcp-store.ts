@@ -258,6 +258,23 @@ export async function revokeUserTokens(db: Db, userId: number): Promise<number> 
 
 // ── call log ────────────────────────────────────────────────────────────────
 
+/**
+ * Tool calls this person made in the last minute and the last 24 hours, for the
+ * rate limit (routes/mcp.ts callTool). Refused calls (status 429) do not count,
+ * so waiting always frees the limit. Uses mcp_calls_user_created_idx (migration 024).
+ */
+export async function countRecentCalls(db: Db, userId: number): Promise<{ minute: number; day: number }> {
+  const now = Date.now();
+  const r = await db
+    .prepare(
+      `SELECT COUNT(*) FILTER (WHERE created_at > ?) AS minute, COUNT(*) AS day
+         FROM mcp_calls WHERE user_id = ? AND created_at > ? AND (status IS NULL OR status <> 429)`,
+    )
+    .bind(new Date(now - 60_000).toISOString(), userId, new Date(now - 24 * 3600_000).toISOString())
+    .first<Record<string, unknown>>();
+  return { minute: Number(r?.minute ?? 0), day: Number(r?.day ?? 0) };
+}
+
 export async function logCall(
   db: Db,
   c: { tokenId: string; userId: number; clientId: string; tool: string; target: string; status: number; ok: boolean; note: string; ms: number },
