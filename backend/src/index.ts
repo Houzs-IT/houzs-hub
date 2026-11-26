@@ -18,6 +18,7 @@ import { sendHealthAlerts } from "./services/healthAlerts";
 import { nowIso } from "./services/tickets";
 import type { Env } from "./types";
 import { syncAnthropicCosts, UsageSetupError } from "./services/anthropicUsage";
+import { kickMailSyncs, MAIL_SYNC_TARGETS } from "./services/mailSyncKick";
 
 export { LiveRoom } from "./live";
 
@@ -90,6 +91,12 @@ export default {
     ctx.waitUntil(
       sendDueReminders(env, getDb(env))
         .catch((e) => console.error("[meeting-mail]", e)),
+    );
+    // Start each ERP's Mail Sync workflow; GitHub's own schedule for it runs hours late (services/mailSyncKick.ts).
+    ctx.waitUntil(
+      kickMailSyncs({ GH_DISPATCH_TOKEN_HOUZS_CENTURY: env.GH_DISPATCH_TOKEN_HOUZS_CENTURY, GH_DISPATCH_TOKEN_HOUZS_IT: env.GH_DISPATCH_TOKEN_HOUZS_IT }, MAIL_SYNC_TARGETS, fetch)
+        .then((rs) => rs.filter((r) => r.status !== 204 && r.status !== "no-token").forEach((r) => console.error("[mail-sync-kick]", r)))
+        .catch((e) => console.error("[mail-sync-kick]", e)),
     );
     const at = new Date(event.scheduledTime);
     if (at.getUTCHours() === 2 && at.getUTCMinutes() < 5) {

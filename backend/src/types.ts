@@ -37,6 +37,9 @@ export interface Env {
   MEETING_ERP_URLS?: string;
   // Where the meeting emails' logos are served (frontend/public/mail); local runs point it at wrangler dev.
   MEETING_LOGO_BASE?: string;
+  // GitHub tokens (Actions: write) the cron uses to start each ERP's Mail Sync, per org. `wrangler secret put`.
+  GH_DISPATCH_TOKEN_HOUZS_CENTURY?: string;
+  GH_DISPATCH_TOKEN_HOUZS_IT?: string;
 }
 
 export type SysVars = { systemCode: string; reporterId: string };
