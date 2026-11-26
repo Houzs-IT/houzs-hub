@@ -49,6 +49,7 @@ type Person = { userId: number; name: string; position: string };
 type Overview = {
   connectorUrl: string;
   stats: { connectedPeople: number; callsToday: number; refusedToday: number; waiting: number };
+  limits?: { perMinute: number; perDay: number; exportRows: number; exportLinkMinutes: number };
   requests: (Person & { id: string; reason: string; createdAt: string | null })[];
   connected: (Person & { tokenId: string; app: string; connectedAt: string | null; lastUsedAt: string | null })[];
   allowed: (Person & { approvedAt: string | null })[];
@@ -281,6 +282,12 @@ function AdminView({ ov, reload }: { ov: Overview; reload: () => void }) {
           </div>
         ))}
       </div>
+      {ov.limits && (
+        <p className="text-xs text-ink-subtle">
+          Limits per person: {ov.limits.perMinute} lookups a minute and {ov.limits.perDay} a day (the leak check is not counted). Excel exports: up to{" "}
+          {ov.limits.exportRows.toLocaleString()} rows, download link valid {ov.limits.exportLinkMinutes} minutes.
+        </p>
+      )}
 
       <Section title="Waiting for your approval" sub="Staff who pressed Request access.">
         {ov.requests.length === 0 ? (

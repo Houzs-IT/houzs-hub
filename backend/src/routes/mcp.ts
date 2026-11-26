@@ -34,9 +34,36 @@ import {
   ticketSearchResults,
   ticketWindow,
 } from "../services/mcp-quick";
+import {
+  buildDailyBrief,
+  cleanList,
+  cleanSystems,
+  DAILY_BRIEF_PROMPT,
+  DAILY_BRIEF_TEXT,
+  dayCount,
+  EXPORT_ROW_CAP,
+  exportFileName,
+  inCreatedRange,
+  OVERDUE_DAYS_DEFAULT,
+  pickColumns,
+  RATE_LIMITS,
+  rateLimitMessage,
+  summariseMeetingsDay,
+  summariseMyTickets,
+  summariseTicketList,
+  summariseTicketsToday,
+  TICKET_EXPORT_COLUMNS,
+  TICKET_PRIORITY_FILTERS,
+  TICKET_STATUS_FILTERS,
+  TICKET_TYPE_FILTERS,
+  myDayRange,
+  type BriefPart,
+} from "../services/mcp-round3";
+import { buildXlsx, XLSX_TYPE } from "../services/xlsx";
 import { classifyPath, moduleCatalog, readablePaths, redactSecrets, type RouteInfo } from "../services/mcp-access";
 import {
   consumeCode,
+  countRecentCalls,
   createAuthRequest,
   getClient,
   hasMcpAccess,
@@ -45,8 +72,10 @@ import {
   MCP_ADMIN_PERMISSION,
   pkceS256,
   refreshTokens,
+  randomToken,
   registerClient,
   resolveAccessToken,
+  sha256Hex,
   validRedirectUri,
 } from "../services/mcp-store";
 
@@ -200,10 +229,16 @@ const INSTRUCTIONS = `You are connected to the Houzs IT Hub (the group's IT desk
 Everything is READ-ONLY and limited to what this person may see in the hub. Never guess figures a call did not return.
 ANSWER FAST — use a quick answer first; each is ONE call and already summarised:
 - Tickets (how many open / in progress / waiting on the reporter, by system or person; new vs resolved; oldest; high priority): ticket_summary {from?, to?, system?} (default: this month to today, all systems).
+- Today at the desk (opened / resolved today by system and category, still open, urgent, overdue): tickets_today {system?, overdueDays?}.
+- What do I need to look at today (my tickets, unassigned high priority, my meetings, unread notifications): daily_brief.
+- Open tickets filtered by status / priority / system / type / assignee / age: open_tickets. Tickets assigned to me: my_tickets.
+- Today's meetings and room bookings: meetings_today {date?}.
+- A ticket list as an Excel file: export_excel {list: "tickets", filters...} returns a download link valid 15 minutes.
 - Systems down or slow right now, since when, problems the systems report: health_summary.
 - One ticket by code (e.g. HC-0042) or words from its title / reporter: search {query}, then fetch {id} for the full ticket with its timeline.
 Only when no quick answer fits (billing register, accounts, meeting rooms, ticket lists with filters): list_modules → list_endpoints → erp_get. With erp_get pass "fields" (only the keys you need) and query filters (e.g. /api/v1/dev/tickets with status, system, priority, assignee, q, page_size) to keep replies small.
-Dates are Malaysia time (UTC+8).
+Dates are Malaysia time (UTC+8). The hub keeps no SLA target or due date on tickets: "overdue" means open longer than a number of days.
+Each person may make ${RATE_LIMITS.perMinute} tool calls a minute and ${RATE_LIMITS.perDay} a day; over that a call says so — wait instead of retrying at once.
 If a call says "You do not have permission" or "not available to your role", tell the person they do not have permission for that data.`;
 
 const NO_ARGS = { type: "object", properties: {}, additionalProperties: false };
@@ -222,6 +257,85 @@ const TOOLS = [
         to: { type: "string", description: "YYYY-MM-DD. Default: today." },
         system: { type: "string", description: "System code (e.g. HC, HK). Default: all systems." },
       },
+      additionalProperties: false,
+    },
+    annotations: RO,
+  },
+  {
+    name: "tickets_today",
+    title: "Tickets today (quick answer)",
+    description:
+      "Today at the IT desk in ONE call: tickets opened today and resolved today by system (Hookka, Houzs, 2990s, Conts...) and category (type bug / development, module) with their titles; everything still open by system / type / module / status; every urgent (high-priority) open ticket; and the overdue ones (open longer than overdueDays — the hub has no SLA target). Only what this person may see in the hub.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        system: { type: "string", description: "System code (e.g. HC, HK). Default: all systems." },
+        overdueDays: { type: "number", description: `Open longer than this many days counts as overdue. Default ${OVERDUE_DAYS_DEFAULT}.` },
+      },
+      additionalProperties: false,
+    },
+    annotations: RO,
+  },
+  {
+    name: "daily_brief",
+    title: "My day (quick answer)",
+    description:
+      "What this person needs to look at today in ONE call: their open tickets (count, high priority, waiting on the reporter, open over 7 days, top 5), unassigned high-priority tickets, their meetings today and their unread notifications. A part they may not read says so; the rest still answers.",
+    inputSchema: NO_ARGS,
+    annotations: RO,
+  },
+  {
+    name: "open_tickets",
+    title: "Open tickets by filter (quick answer)",
+    description:
+      "Open tickets matching filters, counted by status, priority, system, age and assignee, with the 10 oldest. Default: every active ticket. Use olderThanDays for 'overdue' (the hub has no SLA target).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        status: { type: "string", description: "Comma list: active (default), open, in_progress, on_hold, testing, waiting_reporter, resolved, closed, rejected, all" },
+        priority: { type: "string", description: "Comma list: high, medium, low" },
+        system: { type: "string", description: "Comma list of system codes, e.g. HC,HK" },
+        type: { type: "string", description: "bug or development" },
+        assignee: { type: "string", description: "me, none (unassigned) or user ids, comma list" },
+        olderThanDays: { type: "number", description: "Only tickets raised at least this many days ago" },
+      },
+      additionalProperties: false,
+    },
+    annotations: RO,
+  },
+  {
+    name: "my_tickets",
+    title: "My tickets (quick answer)",
+    description: "The active tickets assigned to this person, most urgent first, with counts by status and priority.",
+    inputSchema: NO_ARGS,
+    annotations: RO,
+  },
+  {
+    name: "meetings_today",
+    title: "Meetings today (quick answer)",
+    description: "This person's meetings on a day and every meeting-room booking that day (times in Malaysia time). Default: today.",
+    inputSchema: { type: "object", properties: { date: { type: "string", description: "YYYY-MM-DD. Default: today." } }, additionalProperties: false },
+    annotations: RO,
+  },
+  {
+    name: "export_excel",
+    title: "Export a list to Excel",
+    description: `Build an .xlsx of a hub list as this person sees it and return a download link valid 15 minutes, the row count and whether it was cut at ${EXPORT_ROW_CAP} rows. Lists: "tickets" (filters: status, priority, system, type, assignee, q, from/to on the created date). "fields" picks columns (keys or headers).`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        list: { type: "string", enum: ["tickets"], description: "Which list" },
+        status: { type: "string", description: "Comma list, default all statuses" },
+        priority: { type: "string" },
+        system: { type: "string" },
+        type: { type: "string" },
+        assignee: { type: "string", description: "me, none or user ids" },
+        q: { type: "string", description: "Words from the code, title or reporter" },
+        from: { type: "string", description: "Created on or after YYYY-MM-DD" },
+        to: { type: "string", description: "Created on or before YYYY-MM-DD" },
+        fields: { type: "array", items: { type: "string" }, description: "Columns to keep, e.g. [\"code\",\"title\",\"status\"]" },
+      },
+      required: ["list"],
       additionalProperties: false,
     },
     annotations: RO,
@@ -346,6 +460,52 @@ export async function readEndpoint(
 type Outcome = { result: ToolResult; status: number; note: string; target: string };
 const failed = (r: Extract<ReadValue, { ok: false }>, target: string): Outcome => ({ result: text(r.message, true), status: r.status, note: r.note, target });
 
+/** One read of a composite answer: refused / failed reads become a plain "unavailable" line. */
+const part = (r: ReadValue, what: string): BriefPart =>
+  r.ok ? { ok: true, value: r.value } : { ok: false, message: r.status === 401 || r.status === 403 ? `You do not have access to ${what} in the hub.` : r.message };
+
+const YMD = /^\d{4}-\d{2}-\d{2}$/;
+const cleanAssignee = (v: unknown): string =>
+  String(v ?? "")
+    .split(",")
+    .map((x) => x.trim().toLowerCase())
+    .filter((x) => x === "me" || x === "none" || /^\d{1,9}$/.test(x))
+    .join(",");
+const cleanQ = (v: unknown): string => String(v ?? "").trim().slice(0, 100);
+const qsOf = (o: Record<string, unknown>): string =>
+  new URLSearchParams(Object.entries(o).filter(([, v]) => v !== "" && v !== undefined && v !== null).map(([k, v]) => [k, String(v)])).toString();
+const dropEmpty = (o: Record<string, unknown>): Record<string, unknown> => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== "" && v !== undefined));
+
+// ── export_excel files ──────────────────────────────────────────────────────
+// Stored in R2 (FILES) under mcp-exports/<sha256 of the link token>.xlsx; the
+// link carries the random token, so a bucket listing never reveals a link.
+// The link works for EXPORT_TTL_MS (checked on download); objects older than a
+// day are swept on the next export.
+export const EXPORT_TTL_MS = 15 * 60 * 1000;
+const EXPORT_PREFIX = "mcp-exports/";
+const EXPORT_TOKEN = /^[A-Za-z0-9_-]{32}$/;
+
+async function storeExport(c: Context<HonoEnv>, bytes: Uint8Array, fileName: string, userId: number): Promise<{ url: string; expiresAt: string }> {
+  const token = randomToken(24);
+  const expiresAt = new Date(Date.now() + EXPORT_TTL_MS).toISOString();
+  await c.env.FILES.put(`${EXPORT_PREFIX}${await sha256Hex(token)}.xlsx`, bytes, {
+    httpMetadata: { contentType: XLSX_TYPE },
+    customMetadata: { expiresAt, userId: String(userId), fileName },
+  });
+  const sweep = (async () => {
+    const old = Date.now() - 24 * 3600_000;
+    const listed = await c.env.FILES.list({ prefix: EXPORT_PREFIX, limit: 200 });
+    const stale = listed.objects.filter((o) => o.uploaded.getTime() < old).map((o) => o.key);
+    if (stale.length) await c.env.FILES.delete(stale);
+  })().catch((e) => console.warn("[mcp] export sweep failed:", e instanceof Error ? e.message : String(e)));
+  try {
+    c.executionCtx.waitUntil(sweep);
+  } catch {
+    /* outside a Worker request */
+  }
+  return { url: `${originOf(c)}/api/mcp/export/${token}`, expiresAt };
+}
+
 async function runTool(c: Context<HonoEnv>, id: Identity, token: string, name: string, args: Record<string, unknown>): Promise<Outcome> {
   const ok = (body: unknown, target: string): Outcome => ({ result: text(JSON.stringify(body)), status: 200, note: "", target });
   const bad = (msg: string, target = ""): Outcome => ({ result: text(msg, true), status: 400, note: "", target });
@@ -363,6 +523,139 @@ async function runTool(c: Context<HonoEnv>, id: Identity, token: string, name: s
       ]);
       if (!report.ok) return failed(report, target);
       return ok(summariseTickets(report.value, stats.ok ? stats.value : null, w, system), target);
+    }
+    case "tickets_today": {
+      const system = typeof args.system === "string" && /^[A-Za-z0-9]{1,12}$/.test(args.system.trim()) ? args.system.trim().toUpperCase() : null;
+      const overdueDays = dayCount(args.overdueDays, OVERDUE_DAYS_DEFAULT);
+      const today = myToday();
+      const target = `tickets_today:${today}${system ? `:${system}` : ""}`;
+      const report = await readValue(c, token, "/api/v1/dev/tickets/report", { range: "this" });
+      if (!report.ok) return failed(report, target);
+      return ok(summariseTicketsToday(report.value, { today, overdueDays, system, origin: originOf(c) }), target);
+    }
+    case "open_tickets": {
+      const filters = {
+        status: cleanList(args.status, TICKET_STATUS_FILTERS) || "active",
+        priority: cleanList(args.priority, TICKET_PRIORITY_FILTERS),
+        system: cleanSystems(args.system),
+        type: cleanList(args.type, TICKET_TYPE_FILTERS),
+        assignee: cleanAssignee(args.assignee),
+      };
+      const olderThanDays = dayCount(args.olderThanDays, 0);
+      const target = `open_tickets:${qsOf(filters)}${olderThanDays ? `:>${olderThanDays}d` : ""}`;
+      const r = await readValue(c, token, "/api/v1/dev/tickets", dropEmpty({ ...filters, sort: "created", dir: "asc", page_size: 200, page: 1 }));
+      if (!r.ok) return failed(r, target);
+      return ok(summariseTicketList(r.value, { olderThanDays, origin: originOf(c), filters: dropEmpty(filters) }), target);
+    }
+    case "my_tickets": {
+      const r = await readValue(c, token, "/api/v1/dev/tickets", { assignee: "me", status: "active", sort: "priority", page_size: 100, page: 1 });
+      if (!r.ok) return failed(r, "my_tickets");
+      return ok(summariseMyTickets(r.value, originOf(c)), "my_tickets");
+    }
+    case "meetings_today": {
+      const day = typeof args.date === "string" && YMD.test(args.date.trim()) ? args.date.trim() : myToday();
+      const range = myDayRange(day);
+      const target = `meetings:${day}`;
+      const [mine, cal] = await Promise.all([
+        readValue(c, token, "/api/v1/meetings/mine", undefined),
+        readValue(c, token, "/api/v1/meetings/calendar", { from: range.from, to: range.to }),
+      ]);
+      if (!mine.ok && !cal.ok) return failed(mine, target);
+      return ok(
+        {
+          ...summariseMeetingsDay(mine.ok ? mine.value : null, cal.ok ? cal.value : null, day),
+          ...(mine.ok ? {} : { myMeetingsUnavailable: mine.message }),
+          ...(cal.ok ? {} : { roomBookingsUnavailable: cal.message }),
+        },
+        target,
+      );
+    }
+    case "daily_brief": {
+      const day = myToday();
+      // Four reads as the person, side by side.
+      const [mine, high, meetings, notes] = await Promise.all([
+        readValue(c, token, "/api/v1/dev/tickets", { assignee: "me", status: "active", sort: "priority", page_size: 100, page: 1 }),
+        readValue(c, token, "/api/v1/dev/tickets", { assignee: "none", status: "active", priority: "high", sort: "created", dir: "asc", page_size: 20, page: 1 }),
+        readValue(c, token, "/api/v1/meetings/mine", undefined),
+        readValue(c, token, "/api/v1/dev/notifications", { unread: "1", page_size: 20, page: 1 }),
+      ]);
+      return ok(
+        buildDailyBrief(
+          { mine: part(mine, "tickets"), unassignedHigh: part(high, "tickets"), meetings: part(meetings, "meetings"), notifications: part(notes, "notifications") },
+          day,
+          originOf(c),
+        ),
+        `daily_brief:${day}`,
+      );
+    }
+    case "export_excel": {
+      const list = String(args.list ?? "");
+      if (list !== "tickets") return bad('Unknown list. Lists you can export: "tickets".', `export:${list.slice(0, 40)}`);
+      const from = typeof args.from === "string" && YMD.test(args.from) ? args.from : "";
+      const to = typeof args.to === "string" && YMD.test(args.to) ? args.to : "";
+      if ((args.from && !from) || (args.to && !to)) return bad("Give from and to as YYYY-MM-DD.", "export:tickets");
+      const filters = {
+        status: cleanList(args.status, TICKET_STATUS_FILTERS) || "all",
+        priority: cleanList(args.priority, TICKET_PRIORITY_FILTERS),
+        system: cleanSystems(args.system),
+        type: cleanList(args.type, TICKET_TYPE_FILTERS),
+        assignee: cleanAssignee(args.assignee),
+        q: cleanQ(args.q),
+      };
+      const target = `export:tickets:${qsOf({ ...filters, from, to })}`.slice(0, 480);
+      const PAGE = 200;
+      const rows: Record<string, unknown>[] = [];
+      let truncated = false;
+      const removed = new Set<string>();
+      for (let page = 1; ; page++) {
+        // eslint-disable-next-line no-await-in-loop -- pages in order: newest first, stop at the "from" date or the cap
+        const r = await readValue(c, token, "/api/v1/dev/tickets", dropEmpty({ ...filters, sort: "created", dir: "desc", page_size: PAGE, page }));
+        if (!r.ok) {
+          if (page === 1) return failed(r, target);
+          truncated = true;
+          break;
+        }
+        for (const k of r.removed) removed.add(k);
+        const v = (r.value ?? {}) as Record<string, unknown>;
+        const got = Array.isArray(v.tickets) ? (v.tickets as Record<string, unknown>[]) : [];
+        const total = Number(v.total) || 0;
+        let pastFrom = false;
+        for (const t of got) {
+          if (!inCreatedRange(t, from, "")) {
+            pastFrom = true; // newest first: everything after this is older than "from"
+            break;
+          }
+          if (!inCreatedRange(t, "", to)) continue;
+          if (rows.length >= EXPORT_ROW_CAP) {
+            truncated = true;
+            break;
+          }
+          rows.push(t);
+        }
+        if (truncated || pastFrom || got.length < PAGE || page * PAGE >= total) break;
+      }
+      const columns = pickColumns(TICKET_EXPORT_COLUMNS, args.fields);
+      const fileName = exportFileName("tickets", myToday());
+      const bytes = await buildXlsx("Tickets", columns, rows);
+      const link = await storeExport(c, bytes, fileName, id.user.id);
+      return {
+        result: text(
+          JSON.stringify({
+            download: link.url,
+            fileName,
+            rows: rows.length,
+            truncated,
+            ...(truncated ? { note: `Cut at ${EXPORT_ROW_CAP} rows — narrow the filters or the date range for the rest.` } : {}),
+            linkExpiresAt: link.expiresAt,
+            linkValidMinutes: EXPORT_TTL_MS / 60_000,
+            columns: columns.map((col) => col.header),
+            ...(removed.size ? { credentialFieldsRemoved: [...removed] } : {}),
+          }),
+        ),
+        status: 200,
+        note: `${rows.length} rows${truncated ? ", truncated" : ""}, ${bytes.length} bytes`,
+        target,
+      };
     }
     case "health_summary": {
       const h = await readValue(c, token, "/api/v1/dev/health", undefined);
@@ -416,7 +709,10 @@ async function callTool(c: Context<HonoEnv>, store: McpDb, id: Identity, token: 
   const t0 = Date.now();
   let o: Outcome;
   try {
-    o = await runTool(c, id, token, name, args);
+    // Per person, tool calls only (initialize / tools/list / prompts are free). The admin
+    // leak check reads through readEndpoint, never through here, so it is never limited.
+    const refused = rateLimitMessage(await countRecentCalls(store, id.user.id));
+    o = refused ? { result: text(refused, true), status: 429, note: "rate limited", target: "" } : await runTool(c, id, token, name, args);
   } catch (e) {
     o = { result: text(`Failed: ${e instanceof Error ? e.message : String(e)}`, true), status: 500, note: "", target: "" };
   }
@@ -446,12 +742,12 @@ async function handleRpc(c: Context<HonoEnv>, store: McpDb, id: Identity, token:
     case "resources/list":
       return reply({ resources: [] });
     case "prompts/list":
-      return reply({ prompts: PROMPTS });
+      return reply({ prompts: [DAILY_BRIEF_PROMPT, ...PROMPTS] });
     case "prompts/get": {
       const pname = String(m.params?.name ?? "");
-      const ptext = promptText(pname, (m.params?.arguments as Record<string, unknown> | undefined) ?? {});
+      const ptext = pname === DAILY_BRIEF_PROMPT.name ? DAILY_BRIEF_TEXT : promptText(pname, (m.params?.arguments as Record<string, unknown> | undefined) ?? {});
       if (ptext === null) return { jsonrpc: "2.0", id: m.id ?? null, error: { code: -32602, message: `Unknown prompt: ${pname}` } };
-      return reply({ description: PROMPTS.find((x) => x.name === pname)?.description ?? "", messages: [{ role: "user", content: { type: "text", text: ptext } }] });
+      return reply({ description: [DAILY_BRIEF_PROMPT, ...PROMPTS].find((x) => x.name === pname)?.description ?? "", messages: [{ role: "user", content: { type: "text", text: ptext } }] });
     }
     default:
       if (m.id === undefined || m.id === null || (m.method ?? "").startsWith("notifications/")) return null;
@@ -499,6 +795,22 @@ app.post("/", async (c) => {
   }
   if (out.length === 0) return c.body(null, 202);
   return c.json(Array.isArray(body) ? out : out[0]);
+});
+
+// export_excel downloads: the 15-minute link handed back by the tool. The random
+// token in the path is the only key (its SHA-256 names the R2 object).
+app.get("/export/:token", async (c) => {
+  const tok = c.req.param("token");
+  const gone = () => plain("This download link has expired. Ask the AI for the export again.", 400);
+  if (!EXPORT_TOKEN.test(tok)) return gone();
+  const obj = await c.env.FILES.get(`${EXPORT_PREFIX}${await sha256Hex(tok)}.xlsx`);
+  if (!obj) return gone();
+  const exp = Date.parse(obj.customMetadata?.expiresAt ?? "");
+  if (!Number.isFinite(exp) || exp < Date.now()) return gone();
+  const name = (obj.customMetadata?.fileName ?? "export.xlsx").replace(/[^A-Za-z0-9._-]/g, "");
+  return new Response(obj.body, {
+    headers: { "Content-Type": XLSX_TYPE, "Content-Disposition": `attachment; filename="${name}"`, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" },
+  });
 });
 
 // Stateless server: no server-initiated stream.
