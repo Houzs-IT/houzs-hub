@@ -200,6 +200,8 @@ Set with `cd backend && npx wrangler secret put <NAME>`. A deploy never touches 
 | `SESSION_SECRET` | Yes | Signs session cookies. A long random string. |
 | `RESEND_API_KEY` | Optional | Sends health alert emails to `HEALTH_ALERT_TO` (set in `wrangler.toml`). |
 | `ANTHROPIC_ADMIN_KEY` | Optional | Reads Anthropic costs for System billing. |
+| `GH_DISPATCH_TOKEN_HOUZS_CENTURY` | Optional | Fine-grained GitHub token, owner Houzs-Century, repo Houzs-ERP, Actions: read and write. The 5-minute cron starts that ERP's Mail Sync workflow with it. |
+| `GH_DISPATCH_TOKEN_HOUZS_IT` | Optional | Same, owner Houzs-IT, repos hookka-erp-testing and Carres-Portal-v2. |
 
 ### First deploy (one time)
 
