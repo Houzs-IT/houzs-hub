@@ -32,12 +32,15 @@ developer browser        --session cookie (/login)----> /api/v1/dev/*   + the po
   **Attachments** live in R2. Open portal tabs get **live updates** from a Durable Object.
 - **A cron every 5 minutes** runs the health checks. The 10:00 (GMT+8) run also closes
   Done tickets older than 7 days and reads Anthropic costs.
+  The :00 and :30 runs also send the AI Connector's morning briefs and urgent alerts and, on
+  the 1st of the month from 09:00 (GMT+8), build and email the group monthly report.
 
 ```
 backend/
   src/routes/          API routes (sys*, dev, admin, auth, billing, health, ...)
   src/services/        business rules (tickets, permissions, health, reports, ...);
                        mcp-*.ts = the AI Connector's pure summarising code (round 4: mcp-round4.ts)
+                       proactive*.ts, group-*.ts, mcp-client.ts, mailer.ts = round 4d (briefs, alerts, group report)
   src/db/migrations/   numbered SQL migrations
   scripts/             command-line tools (migrate, keys, users, one-off imports)
 frontend/src/
@@ -199,10 +202,11 @@ Set with `cd backend && npx wrangler secret put <NAME>`. A deploy never touches 
 | Secret | Needed | What for |
 |---|---|---|
 | `SESSION_SECRET` | Yes | Signs session cookies. A long random string. |
-| `RESEND_API_KEY` | Optional | Sends health alert emails to `HEALTH_ALERT_TO` (set in `wrangler.toml`). |
+| `RESEND_API_KEY` | Optional | Sends health alert emails to `HEALTH_ALERT_TO` (set in `wrangler.toml`), and the AI Connector's morning briefs, urgent alerts and group monthly report (round 4d). Without it none of those are sent. |
 | `ANTHROPIC_ADMIN_KEY` | Optional | Reads Anthropic costs for System billing. |
 | `GH_DISPATCH_TOKEN_HOUZS_CENTURY` | Optional | Fine-grained GitHub token, owner Houzs-Century, repo Houzs-ERP, Actions: read and write. The 5-minute cron starts that ERP's Mail Sync workflow with it. |
 | `GH_DISPATCH_TOKEN_HOUZS_IT` | Optional | Same, owner Houzs-IT, repos hookka-erp-testing and Carres-Portal-v2. |
+| `GROUP_REPORT_KEY` | Optional | The group monthly report (AI Connector round 4d): encrypts the other systems' sign-in tokens (AES-GCM). Any random string of 16+ characters, e.g. `openssl rand -base64 32`. Without it the Group report page says "not configured". Changing it later means connecting every system again. |
 
 ### First deploy (one time)
 
@@ -527,3 +531,72 @@ instead of `devAuth` resolving the token and reloading the user again. Every new
 at the door. The inner GETs also borrow the door's postgres client (`lendDb` / `borrowDb`, keyed by the
 Request object), so a lookup opens one connection instead of six. Tests: `npm --prefix backend test`
 (`node --test`, Node 22.18+; not part of CI, which runs typecheck + build).
+
+**Round 4d — proactive + group** (owner 2026-11-26 「加 全部一起做」)
+
+- **D1 morning brief email.** AI Connector page > "Emails from the AI Connector": opt in (default **off**),
+  pick a time on the half hour (default 08:00 Malaysia time) and weekdays or every day. The brief is the
+  person's own `daily_brief`, built **as the person**: `routes/proactive.ts` issues a short-lived connector
+  token of their own (client `mcpc_morning_brief`, hidden from the connected-apps lists) and revokes it in
+  `finally`; the tool runs through `routes/mcp.ts runToolAs`, i.e. the same inner GETs, route permission
+  checks and tools/list visibility rule as a question from Claude. There is no service account. Preview (built,
+  not sent) and "Send me a test brief" (to your own hub email only, once per 10 minutes) are on the page.
+- **D2 urgent alerts** (opt-in, 08:00 to 20:00 Malaysia time, about every 30 minutes, as the person):
+  an urgent ticket unassigned for more than 1 hour and a ticket newly past SLA (both from `tickets_overdue`,
+  the Reports page's SLA rule), and a system failing its health check (`health_summary`, only for people
+  with `health_view`). The alert reads are quiet (`runToolAs {log: false}`): no `mcp_calls` row and no use of
+  the person's daily limit, but a tool hidden from them is still refused. **Debounce:** `mcp_proactive_keys`
+  (person + key + Malaysia day), claimed before sending, so each alert is emailed at most once a day; the
+  brief is a key too, so a second tick never sends a second brief.
+- **D4 data gaps.** Monday's brief adds the person's own `data_gaps` (tickets with no assignee / module,
+  billing and account blanks), as counts with links; an area they may not read is left out.
+- **One config place:** `PROACTIVE_CONFIG` in `backend/src/services/proactive.ts` (pure). The page shows the
+  thresholds read-only.
+- **Bounded, idempotent tick.** `index.ts scheduled` calls `POST /api/v1/ai-brief/tick` in-process on the
+  :00 and :30 runs, with the isolate's MCP inner secret (404 for anyone else). At most 15 briefs and 15 alert
+  checks per tick, a 20 s budget, people one at a time; a failed brief gives its claim back for the next tick
+  (until 4 hours after its time). Without `RESEND_API_KEY` the tick does nothing and the page says email is
+  not set up. Emails go out through Resend (`services/mailer.ts`, the health alerts' key) from
+  `BRIEF_MAIL_FROM`.
+- **Unsubscribe:** every email has a link with a random token; GET shows one button, POST unsubscribes (a mail
+  scanner opening the link changes nothing). The send log `mcp_proactive_sends` never keeps a body.
+
+**D3 group monthly report** — Admin > **Group report** (`/group-report`, holders of **Manage roles**):
+
+- The hub is an **MCP client** of each system's own connector: Hookka `https://erp.hookka.com/api/mcp`,
+  Houzs `https://erp.houzscentury.com/api/mcp`, The Conts `https://erp.theconts.com/api/mcp`, HRIS
+  `https://api.hris.houzscentury.com/mcp` (`GROUP_SYSTEMS` in `services/group-report.ts`). "Connect" runs that
+  system's normal OAuth (`services/mcp-client.ts`: RFC 9728 / 8414 discovery, dynamic client registration as a
+  public client named "Houzs IT Hub group report", PKCE S256, its own sign-in and "Allow?" screen) and comes
+  back to `/api/v1/group-report/callback`. So every figure comes through **the admin's own grant and his
+  permissions in that system**; the hub never reads another system's database.
+- **Tokens:** access + refresh tokens AES-GCM sealed with `GROUP_REPORT_KEY` (`services/group-crypto.ts`; the
+  additional data binds each value to its system + field), refreshed when under a minute is left or on a 401,
+  rotated refresh tokens stored again. Never logged, never returned to the browser.
+- **Build:** `company_report` on each connected system via MCP `tools/call`, with each system's own
+  arguments for the month: Hookka `{period: "month", month}`; Houzs `{period: "YYYY-MM"}` and again with
+  `company: "2990"` for the 2990s; The Conts `{period: "month", month}` and with `company: "Dream Crafter"`;
+  HRIS `{period: "YYYY-MM"}` (every company the login sees). One HTML report: the **group summary first**
+  (revenue, gross profit, net profit, net cash flow, AR, AP, headcount, each with "vs previous month"; group
+  totals over the companies reporting each figure, previous only like for like; headcount not added across
+  systems), then one section per company with the same definitions and labels. A system not connected, or
+  answering "no access", says so plainly. Definitions are printed at the bottom of every report.
+- **Schedule:** the 1st of each month from 09:00 Malaysia time (the first :00 / :30 tick from then), last
+  month's report, emailed to the admin(s) who connected the systems. Claimed once per month (unique index); a
+  build that throws gives the month back for the next tick. "Build report now" (any month up to this one)
+  keeps a copy but does not email. Reports: rows in `group_reports`, the HTML in R2 at
+  `group-reports/<id>.html`, viewable on the page (sandboxed, no scripts).
+- **Tables:** migration `026_mcp_proactive_group_report.sql` (`mcp_brief_subscriptions`, `mcp_proactive_keys`,
+  `mcp_proactive_sends`, `group_report_connections`, `group_report_pending`, `group_reports`; RLS on, no
+  policies). It reaches prod the usual way: the deploy workflow runs `npm --prefix backend run db:migrate` on
+  push to `main`, before `wrangler deploy`.
+- **Tests:** `backend/test/mcp-4d.test.mjs`: opt-in, brief due, tick caps, alert rules, debounce, email HTML
+  (escaping), seal / unseal, the report builder with fixture `company_report` answers of every system, the
+  schedule, and the MCP client against a stand-in fetch. No system's MCP is called in tests.
+
+**Untested live (4d):** no deploy, no real email sent, no real OAuth round trip with any system. Not yet seen:
+the tick firing from the real cron, the brief built through a real token on prod, each system's consent screen
+accepting the hub's registration and `resource` parameter, the real `company_report` answers (the builder was
+checked against shapes read from each repo's source on 2026-11-27, not against live replies), and the report
+email in a real mail client. The report viewer's sandboxed frame was not seen rendering (the preview browser
+blocks frames); the same HTML renders standalone.

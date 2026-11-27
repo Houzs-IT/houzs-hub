@@ -1,4 +1,4 @@
-import { Activity, BarChart3, Bell, Bot, CalendarDays, ChevronDown, CreditCard, KanbanSquare, List, LogOut, Menu, Moon, Plug, Plus, ShieldCheck, Sun, UserCheck, UserCog, Users } from "lucide-react";
+import { Activity, BarChart3, Bell, Bot, CalendarDays, ChevronDown, CreditCard, FileBarChart, KanbanSquare, List, LogOut, Menu, Moon, Plug, Plus, ShieldCheck, Sun, UserCheck, UserCog, Users } from "lucide-react";
 import { useMeetingsUnread } from "../pages/meetings/kit";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
@@ -30,6 +30,7 @@ const PAGE_NAMES: Record<string, string> = {
   "/billing": "System billing",
   "/roles": "Roles",
   "/ai-connector": "AI Connector",
+  "/group-report": "Group report",
 };
 
 // A sidebar category's open or closed state, remembered in this browser.
@@ -481,6 +482,8 @@ export default function Layout() {
                 {can("roles") && <NavItem to="/roles" icon={<ShieldCheck className="h-4 w-4" />} label="Roles" />}
                 {can("integrations") && <NavItem to="/integrations" icon={<Plug className="h-4 w-4" />} label="Integrations" />}
                 {can("health_view", "health_edit") && <NavItem to="/health" icon={<Activity className="h-4 w-4" />} label="System health" />}
+                {/* Round 4d: the group monthly report across the systems (the API checks Manage roles too). */}
+                {can("roles") && <NavItem to="/group-report" icon={<FileBarChart className="h-4 w-4" />} label="Group report" />}
               </>
             )}
             {/* Everyone: connect your own Claude / ChatGPT (read-only); admins approve here. */}
