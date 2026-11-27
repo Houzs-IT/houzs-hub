@@ -10,6 +10,7 @@ import type { DB } from "../db/client";
 import { MCP_TOKEN_PREFIX, hasMcpAccess, resolveAccessToken, MCP_ADMIN_PERMISSION } from "../services/mcp-store";
 import { MCP_INNER_HEADER, borrowDb, isMcpInner, recallVerified } from "../services/mcp-inner";
 import { mcpDbOf } from "../services/mcp-db";
+import { MCP_ACTION_HEADER, takeConfirmedAction } from "../services/mcp-write-actions";
 
 const COOKIE = "hub_session";
 const SESSION_DAYS = 7;
@@ -65,18 +66,25 @@ export async function loadUser(db: DB, id: number): Promise<DevUser | null> {
 
 export const devAuth = createMiddleware<DevApp>(async (c, next) => {
   // AI Connector token (routes/mcp.ts). Honoured ONLY on the connector's own
-  // in-process call (per-isolate secret header) and ONLY for reads; a token
-  // copied out of an AI app gets 403 here. Runs as the real person.
+  // in-process call (per-isolate secret header); a token copied out of an AI app
+  // gets 403 here. Reads only — EXCEPT one write per confirmed action (round 4b):
+  // confirm_action arms exactly one allowlisted method + path for this token and
+  // takeConfirmedAction (services/mcp-write-actions.ts) lets it through once.
+  // Runs as the real person, so the route's own need(...) still decides.
   const bearer = /^Bearer\s+(.+)$/i.exec(c.req.header("Authorization") ?? "")?.[1]?.trim() ?? "";
   if (bearer.startsWith(MCP_TOKEN_PREFIX)) {
     if (!isMcpInner(c.req.header(MCP_INNER_HEADER))) return c.json({ error: "AI Connector tokens only work through the connector" }, 403);
-    if (c.req.method !== "GET" && c.req.method !== "HEAD") return c.json({ error: "The AI Connector is read-only" }, 403);
+    const isWrite = c.req.method !== "GET" && c.req.method !== "HEAD";
+    const actionId = c.req.header(MCP_ACTION_HEADER);
+    if (isWrite && !actionId) return c.json({ error: "The AI Connector is read-only" }, 403);
     // The connector's own postgres client for this tool call when it lent one (routes/mcp.ts).
     const db = borrowDb<DB>(c.req.raw) ?? getDb(c.env);
     // Verified at the door of this same tool call (routes/mcp.ts rememberVerified):
     // reuse it instead of resolving the token and reloading the user a second time.
     // Anything else (e.g. the admin leak check) is checked in full here.
-    let user = recallVerified<{ user: DevUser }>(bearer)?.user ?? null;
+    const recalled = recallVerified<{ tokenId: string; user: DevUser }>(bearer);
+    let user = recalled?.user ?? null;
+    let tokenId = recalled?.tokenId ?? "";
     if (!user) {
       const store = mcpDbOf(db);
       const row = await resolveAccessToken(store, bearer);
@@ -85,6 +93,10 @@ export const devAuth = createMiddleware<DevApp>(async (c, next) => {
       if (!user || !user.active || user.mustChangePassword || !(await hasMcpAccess(store, user.id, user.perms.includes(MCP_ADMIN_PERMISSION)))) {
         return c.json({ error: "Not signed in" }, 401);
       }
+      tokenId = row.tokenId;
+    }
+    if (isWrite && !takeConfirmedAction(actionId, tokenId, c.req.method, c.req.path)) {
+      return c.json({ error: "The AI Connector is read-only" }, 403);
     }
     c.set("user", user);
     c.set("db", db);

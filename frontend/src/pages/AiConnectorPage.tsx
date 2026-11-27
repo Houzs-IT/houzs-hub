@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
 // /ai-connector — Admin > AI Connector (IT Hub). Everyone: connect your own Claude /
-// ChatGPT (read-only, your own permissions), request access, see and stop your
+// ChatGPT (your own permissions; ticket actions only when switched on and confirmed), request access, see and stop your
 // connections. Admin (Manage users): approve people,
 // see who is connected and what was looked up, disconnect anyone, run the leak
 // check. Every rule is the server's (backend routes/mcpAdmin.ts); this lays it out.
@@ -55,7 +55,9 @@ type Overview = {
   allowed: (Person & { approvedAt: string | null })[];
   calls: { id: string; userId: number; name: string; app: string; tool: string; target: string; status: number; ok: boolean; note: string; ms: number; at: string | null }[];
   staff: Person[];
+  actions?: ActionsState;
 };
+type ActionsState = { enabled: boolean; perDay: number; confirmMinutes: number; list: { key: string; label: string; enabled: boolean }[] };
 type LeakRow = { path: string; outcome: "opened" | "refused" | "error"; status: number; hidden: string[]; sensitive: string[] };
 
 const CARD = "card";
@@ -245,6 +247,42 @@ function LeakCheck({ people }: { people: Person[] }) {
   );
 }
 
+// Round 4b: the AI may change tickets only through these switches (all OFF until an admin
+// turns them on), and only after the person confirms each change in their AI app.
+function Toggle({ label, hint, checked, disabled, onChange }: { label: string; hint?: string; checked: boolean; disabled?: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className={cn("flex items-start gap-3 px-4 py-3 sm:px-5", disabled ? "opacity-60" : "cursor-pointer")}>
+      <input type="checkbox" className="mt-0.5 h-4 w-4 shrink-0" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
+      <span className="min-w-0">
+        <span className="block text-sm font-medium text-ink">{label}</span>
+        {hint && <span className="block text-[13px] text-ink-subtle">{hint}</span>}
+      </span>
+    </label>
+  );
+}
+
+function ActionSwitches({ a, busy, onSet }: { a: ActionsState; busy: string | null; onSet: (key: string, enabled: boolean) => void }) {
+  return (
+    <Section
+      title="AI actions"
+      sub={`Off by default. Each change is shown to the person first and needs their yes; one confirmation does one change, valid ${a.confirmMinutes} minutes. At most ${a.perDay} confirmed actions per person a day. Every action is in the lookups list below and on the ticket's timeline.`}
+    >
+      <div className="divide-y divide-line">
+        <Toggle
+          label="Allow AI actions"
+          hint="The main switch. While it is off, none of the actions below can run."
+          checked={a.enabled}
+          disabled={busy !== null}
+          onChange={(v) => onSet("actions_enabled", v)}
+        />
+        {a.list.map((x) => (
+          <Toggle key={x.key} label={x.label} hint={a.enabled ? "Needs the IT tickets permission, like the same button in the hub." : "Works only while Allow AI actions is on."} checked={x.enabled} disabled={busy !== null} onChange={(v) => onSet(x.key, v)} />
+        ))}
+      </div>
+    </Section>
+  );
+}
+
 function AdminView({ ov, reload }: { ov: Overview; reload: () => void }) {
   const [pick, setPick] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
@@ -288,6 +326,8 @@ function AdminView({ ov, reload }: { ov: Overview; reload: () => void }) {
           {ov.limits.exportRows.toLocaleString()} rows, download link valid {ov.limits.exportLinkMinutes} minutes.
         </p>
       )}
+
+      {ov.actions && <ActionSwitches a={ov.actions} busy={busy} onSet={(key, enabled) => act(`sw:${key}`, () => hub.post("/admin/actions", { key, enabled }))} />}
 
       <Section title="Waiting for your approval" sub="Staff who pressed Request access.">
         {ov.requests.length === 0 ? (
@@ -471,7 +511,7 @@ export default function AiConnectorPage() {
           </div>
           <div>
             <h1 className="text-xl font-semibold text-ink">AI Connector</h1>
-            <p className="text-sm text-ink-subtle">Ask Claude or ChatGPT about the hub. Read only, and only what your own login can see.</p>
+            <p className="text-sm text-ink-subtle">Ask Claude or ChatGPT about the hub, with only what your own login can see. It changes tickets only if your admin turned AI actions on, and only after you confirm.</p>
           </div>
         </div>
         <Button variant="secondary" icon={<RefreshCw size={14} />} onClick={reload}>

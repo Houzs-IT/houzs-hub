@@ -353,15 +353,17 @@ within its own opening days and hours, which a guest cannot book outside. The ol
 
 ## AI Connector (MCP)
 
-IT staff can ask Claude / ChatGPT about the hub with their own login, read-only.
+IT staff can ask Claude / ChatGPT about the hub with their own login. Reads are free; the only changes are
+three ticket actions (round 4b), each switched on by an admin and confirmed by the person.
 Connector URL: `https://support.houzscentury.com/api/mcp`. Admin > AI Connector in the portal:
 holders of **Manage users** approve people, see every lookup and disconnect anyone.
 
 - OAuth 2.1 (dynamic client registration, PKCE S256, rotating refresh) in `backend/src/routes/mcp.ts`;
   discovery at `/.well-known/oauth-*` (`run_worker_first` in `wrangler.toml`).
-- Read-only by construction: a tool call re-enters the app in-process as a GET; `middleware/devAuth.ts`
+- Reads by construction: a tool call re-enters the app in-process as a GET; `middleware/devAuth.ts`
   accepts an `hbmcp_` token only with the per-isolate `x-hub-mcp-inner` header and only for GET/HEAD,
-  then runs the route as the real person (their roles and permissions).
+  then runs the route as the real person (their roles and permissions). The one exception is a
+  confirmed action (round 4b below): one armed, allowlisted write.
 - Never readable: sign-in, the system-key API (`/api/v1/sys`), attachments, live streams.
   Credential-shaped fields are stripped from replies. Tables: migration `023_mcp_connector.sql`.
 
@@ -453,6 +455,70 @@ Four prompts (`prompts/list`, `prompts/get`) offer ready-made questions in the A
 | I6 | Which domains / licences / SSL / subscriptions expire soon? | Not available: the hub stores no expiry dates (see Round 4) |
 | D4 | What data is missing or needs filling in? | `data_gaps` |
 | P | How many tickets this quarter vs last? | `ticket_summary {period: "quarter"}`, `ticket_digest {period: "quarter"}` |
+
+**Round 4b — write actions (owner approved 2026-11-26)** — `backend/src/services/mcp-write-actions.ts`
+(pure + an `ActionStore` / `ActionDeps` interface; tests `backend/test/mcp-4bc.test.mjs`).
+Same design as Hookka (#1633): `propose_*` validates, stores ONE pending action (single use, 10 minutes,
+same token + person) and writes nothing else; the AI shows the summary; `confirm_action` → main switch →
+daily cap (30 confirmed actions per person per Malaysia day) → the action's own switch (peeked, so a
+switched-off action is refused without using up the id) → single-use claim (`UPDATE … RETURNING`) →
+stale check (update only) → the write fence → ONE in-process call to the hub's own route as the person.
+`cancel_action` drops a pending action.
+
+| Tool (args) | Hub endpoint (existing) | Body sent (only what the screen sends) | Permission the route checks | Switch |
+| --- | --- | --- | --- | --- |
+| `propose_ticket {system, title, description?, priority?, type?, reporterName?}` | `POST /api/v1/dev/tickets` (the New ticket dialog) | `system_code, title, description, type, priority, reporter_name` (reporter defaults to the person) | `it` | `action_ticket` |
+| `propose_ticket_comment {code, body, visibility?}` | `POST /api/v1/dev/tickets/:code/comments` | `body, visibility` — **internal by default**; `public` (the reporter sees it) is flagged in the summary. No files, no status | `it` | `action_ticket_comment` |
+| `propose_ticket_update {code, status?, assignee?}` | `PATCH /api/v1/dev/tickets/:code` (Assignee picker, Status button) | `assignee_id` (me / none / name / id → id or null) and / or `status` (incl. `closed`). Never priority, type or module | `it` | `action_ticket_update` |
+
+- **Fence.** `devAuth.ts` lets an `hbmcp_` token make a non-GET request only when `takeConfirmedAction`
+  says yes: `confirm_action` arms exactly one method + path for that token (30 s, one-shot) right after it
+  claimed the pending row, and the path must match `ACTION_ALLOWLIST` (the three routes above, `:code` =
+  one ticket code). The body is checked against `BODY_KEYS` before arming. Delete (ticket or comment),
+  pickup, reorder, billing, accounts, users, roles and health stay unreachable. Checked against the real
+  `devAuth` + `need("it")` with a bundled harness: unarmed PATCH 403, armed PATCH 200 once then 403, armed
+  DELETE 403, armed path for another ticket 403; without `it` the armed PATCH gets the hub's own
+  "You do not have permission for this".
+- **Stale check.** `propose_ticket_update` stores the status + assignee the summary showed; confirm re-reads
+  the ticket and refuses (409) if either changed in between. Comments and new tickets need no check.
+- **Switches.** Admin > AI Connector > "AI actions": "Allow AI actions" (the main switch, `actions_enabled`)
+  plus one per action, all **OFF until an admin turns them on** (no row = off; an unreadable table reads as
+  off). Only holders of Manage users (the connector admin) can set them: `POST /api/v1/ai-connector/admin/actions
+  {key, enabled}`; the connector's own token can never reach that router.
+- **Audit.** Every propose / confirm / cancel is a row in `mcp_calls` (target = action + ticket code, never
+  the comment or description text; confirm notes `done` / `refused <status>`), shown in the lookups list.
+  The route itself writes the ticket's timeline (`ticket_events`: created / comment / assign / status, by
+  the person) — the hub's audit trail for tickets; there is no separate audit table. The pending row keeps
+  the outcome; its payload is blanked once it ran or was cancelled.
+- **Tables:** migration `025_mcp_write_actions.sql` (`mcp_settings`, `mcp_pending_actions`, RLS on, no
+  policies). It reaches prod the repo's usual way: the deploy workflow runs `npm --prefix backend run
+  db:migrate` on push to `main`, before `wrangler deploy`. Until it has run, the switches read as off.
+
+**Round 4c — platform quality** — `backend/src/services/mcp-visibility.ts` (pure, same test file):
+
+- **P1 role-aware tools/list.** `TOOL_NEEDS` mirrors the routes' guards: ticket tools need `it`;
+  `health_summary` `health_view` or `health_edit`; `data_gaps` any of `it` / billing view or edit / accounts
+  view or edit; `daily_brief`, `meetings_today`, `whoami`, `list_modules`, `list_endpoints`, `erp_get` for
+  everyone (their parts refuse on their own). Write tools are listed only while the main switch and their
+  own switch are on and the person holds `it`; `confirm_action` / `cancel_action` while any of them is.
+  A hidden read tool called directly answers "You do not have access to this in the hub (… needs the "IT
+  tickets" permission)"; a switched-off action answers "… is switched off by your admin".
+- **P2 prompts per role:** `it_morning_triage {system?}`, `my_tickets_review`, `it_manager_weekly` (plus the
+  four before). A prompt is listed when its first tool is listed for the person.
+- **P3 structured output:** the ten quick answers (`ticket_summary`, `tickets_today`, `daily_brief`,
+  `open_tickets`, `my_tickets`, `meetings_today`, `health_summary`, `tickets_overdue`, `ticket_digest`,
+  `data_gaps`) carry an open `outputSchema` in tools/list and return `structuredContent` (the same JSON as
+  the text, which stays).
+- **P4 cache:** 60 s per isolate, keyed by person + permissions + tool + arguments, for `ticket_summary`,
+  `tickets_today`, `tickets_overdue`, `ticket_digest`, `data_gaps`, `daily_brief`; logged as `cached`; a
+  person's entries are dropped when they confirm an action.
+- **P5 links:** every quick answer gets `hubLink` (its page: /reports, /tickets, /queue, /meetings,
+  /health) and every row with a ticket `code` but no link gets `url` (`/tickets/:code`).
+
+**Untested live (4b / 4c):** every action against prod through a real Claude / ChatGPT client (the unit tests
+use an in-memory store and a faked hub that applies the routes' `need("it")`; the fence was run against
+the real middleware, not the real database); `structuredContent` against the clients' validators; the
+admin switches card (typechecked and built, not rendered — local dev would run on the live database).
 
 **Speed.** One token check per lookup: the door (`POST /api/mcp`) verifies the token, account and access,
 and the tool call's inner GETs reuse that answer for up to 15 s (`services/mcp-inner.ts`
