@@ -116,6 +116,39 @@ export function effStatus(m: { status: string; starts_at: Date; ends_at: Date },
   return "scheduled";
 }
 
+/** A room booking as seen by someone not in it: busy, nothing more. The blank fields keep the ERP calendars' Meeting type intact. */
+export function busyMeeting(m: MeetingRow, now: number) {
+  return {
+    id: m.id,
+    start: m.starts_at.toISOString(),
+    end: m.ends_at.toISOString(),
+    roomId: m.room_id,
+    busy: true,
+    title: "Busy",
+    organizer: "",
+    bookedBy: "",
+    attendees: [] as string[],
+    notes: "",
+    video: { type: "none", url: "" },
+    reminders: null,
+    status: effStatus(m, now),
+    startedAt: null,
+    endedAt: null,
+    seriesId: null,
+    createdIn: "",
+    linkId: null,
+    guest: null,
+    guestEmails: [] as string[],
+  };
+}
+
+const SAFE_MIME = new Set(["image/png", "image/jpeg", "application/pdf"]);
+/** Only these keep their type; anything else (HTML, SVG, ...) could run script in an ERP page, so it is a plain download. */
+export const safeMime = (t: string | null | undefined) => {
+  const v = String(t ?? "").trim().toLowerCase();
+  return SAFE_MIME.has(v) ? v : "application/octet-stream";
+};
+
 export function personKey(system: string, externalId: string, email: string | null | undefined): string {
   const e = (email ?? "").trim().toLowerCase();
   return /^[^@\s]+@[^@\s]+$/.test(e) ? e : `${system}:${externalId}`;

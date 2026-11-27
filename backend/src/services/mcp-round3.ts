@@ -355,6 +355,8 @@ export function exportFileName(list: string, day: string): string {
 // ── rate limit ──────────────────────────────────────────────────────────────
 
 export const RATE_LIMITS = { perMinute: 30, perDay: 600 };
+/** Most JSON-RPC messages in one POST: a big batch would run its calls before any of them is counted. */
+export const MAX_BATCH = 10;
 
 /** The refusal for a person over their limit, or null. Counts are tool calls already made. */
 export function rateLimitMessage(counts: { minute: number; day: number }, limits = RATE_LIMITS): string | null {

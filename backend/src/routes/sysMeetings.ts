@@ -6,6 +6,7 @@ import {
   MeetingInputError,
   atLocal,
   busyBetween,
+  busyMeeting,
   conflictsIn,
   effStatus,
   fmtDay,
@@ -22,6 +23,7 @@ import {
   notify,
   personKey,
   rows,
+  safeMime,
   seriesStarts,
   toPgIntArray,
   toPgTextArray,
@@ -240,7 +242,7 @@ app.get("/calendar", async (c) => {
     sql`SELECT ${MEETING_COLS} FROM meetings m WHERE status <> 'cancelled' AND starts_at < ${iso(b)}::timestamptz AND ends_at > ${iso(a)}::timestamptz AND ${visibleTo(key)} ORDER BY starts_at LIMIT 3000`,
   );
   const now = Date.now();
-  return c.json({ meetings: (await withPeople(db, ms)).map((m) => publicMeeting(m, now)) });
+  return c.json({ meetings: (await withPeople(db, ms)).map((m) => (isIn(m, key) ? publicMeeting(m, now) : busyMeeting(m, now))) });
 });
 
 app.get("/meetings/:id{[0-9]+}", async (c) => {
@@ -248,6 +250,7 @@ app.get("/meetings/:id{[0-9]+}", async (c) => {
   const actor = await me(c, db);
   const m = await getMeeting(db, Number(c.req.param("id")));
   if (!m || !maySee(m, actor)) return c.json({ error: "That meeting is not there any more." }, 404);
+  if (!isIn(m, actor)) return c.json({ meeting: busyMeeting(m, Date.now()), history: [], files: [] });
   const [hist, files] = await Promise.all([
     rows<{ at: Date; who: string; text: string }>(db, sql`SELECT at, who, text FROM meeting_history WHERE meeting_id = ${m.id} ORDER BY at`),
     rows<{ id: number; file_name: string; size_bytes: number; mime_type: string }>(db, sql`SELECT id, file_name, size_bytes, mime_type FROM meeting_files WHERE meeting_id = ${m.id} ORDER BY id`),
@@ -333,10 +336,14 @@ async function nameOf(db: Pick<DB, "execute">, key: string): Promise<string> {
 
 const mayChange = (m: MeetingRow, actor: string) => m.organizer === actor || m.booked_by === actor;
 /** An online meeting (no room) is private to the people in it (owner 2026-11-24); a room booking stays visible to everyone. */
-const maySee = (m: MeetingRow & { people: string[] }, actor: string) => m.room_id !== null || mayChange(m, actor) || m.people.includes(actor);
+const maySee = (m: MeetingRow & { people: string[] }, actor: string) => m.room_id !== null || isIn(m, actor);
+/** In the meeting: only they get its details (notes, people, guest, files); everyone else sees a room booking as busy. */
+const isIn = (m: MeetingRow & { people: string[] }, actor: string) => mayChange(m, actor) || m.people.includes(actor);
+/** SQL twin of isIn. */
+const inMeeting = (key: string) =>
+  sql`(m.organizer = ${key} OR m.booked_by = ${key} OR EXISTS (SELECT 1 FROM meeting_attendees a WHERE a.meeting_id = m.id AND a.person_key = ${key}))`;
 /** SQL twin of maySee for list reads. */
-const visibleTo = (key: string) =>
-  sql`(m.room_id IS NOT NULL OR m.organizer = ${key} OR m.booked_by = ${key} OR EXISTS (SELECT 1 FROM meeting_attendees a WHERE a.meeting_id = m.id AND a.person_key = ${key}))`;
+const visibleTo = (key: string) => sql`(m.room_id IS NOT NULL OR ${inMeeting(key)})`;
 
 app.patch("/meetings/:id{[0-9]+}", async (c) => {
   const db = getDb(c.env);
@@ -469,9 +476,9 @@ app.post("/meetings/:id{[0-9]+}/files", async (c) => {
   const saved: { id: number; file_name: string }[] = [];
   for (const f of files) {
     const key = `meetings/${m.id}/${crypto.randomUUID()}`;
-    await c.env.FILES.put(key, f.stream(), { httpMetadata: { contentType: f.type || "application/octet-stream" } });
+    await c.env.FILES.put(key, f.stream(), { httpMetadata: { contentType: safeMime(f.type) } });
     const [row] = await rows<{ id: number }>(db, sql`INSERT INTO meeting_files (meeting_id, r2_key, file_name, mime_type, size_bytes, uploaded_by)
-      VALUES (${m.id}, ${key}, ${f.name.slice(0, 200)}, ${f.type || "application/octet-stream"}, ${f.size}, ${actor}) RETURNING id`);
+      VALUES (${m.id}, ${key}, ${f.name.slice(0, 200)}, ${safeMime(f.type)}, ${f.size}, ${actor}) RETURNING id`);
     saved.push({ id: row.id, file_name: f.name });
   }
   await history(db, m.id, actor, `added ${saved.length === 1 ? saved[0].file_name : `${saved.length} files`}`);
@@ -484,13 +491,13 @@ app.get("/meetings/:id{[0-9]+}/files/:fid{[0-9]+}", async (c) => {
   const [f] = await rows<{ r2_key: string; file_name: string; mime_type: string }>(
     db,
     sql`SELECT f.r2_key, f.file_name, f.mime_type FROM meeting_files f JOIN meetings m ON m.id = f.meeting_id
-        WHERE f.id = ${Number(c.req.param("fid"))} AND f.meeting_id = ${Number(c.req.param("id"))} AND m.status <> 'cancelled' AND ${visibleTo(key)}`,
+        WHERE f.id = ${Number(c.req.param("fid"))} AND f.meeting_id = ${Number(c.req.param("id"))} AND m.status <> 'cancelled' AND ${inMeeting(key)}`,
   );
   if (!f) return c.json({ error: "File not found" }, 404);
   const obj = await c.env.FILES.get(f.r2_key);
   if (!obj) return c.json({ error: "File not found" }, 404);
   return new Response(obj.body, {
-    headers: { "Content-Type": f.mime_type, "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(f.file_name)}`, "X-Content-Type-Options": "nosniff" },
+    headers: { "Content-Type": safeMime(f.mime_type), "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(f.file_name)}`, "X-Content-Type-Options": "nosniff" },
   });
 });
 
@@ -629,7 +636,7 @@ const publicLink = (l: LinkRow) => ({ id: l.id, code: l.code, name: l.name, room
 app.get("/links", async (c) => {
   const db = getDb(c.env);
   await me(c, db);
-  const ls = await rows<LinkRow>(db, sql`SELECT ${LINK_COLS} FROM meeting_links ORDER BY created_at DESC`);
+  const ls = await rows<LinkRow>(db, sql`SELECT ${LINK_COLS} FROM meeting_links WHERE created_in = ${c.get("systemCode")} ORDER BY created_at DESC`);
   const counts = await rows<{ link_id: number; n: number }>(db, sql`SELECT link_id, count(*)::int AS n FROM meetings WHERE link_id IS NOT NULL AND status <> 'cancelled' GROUP BY link_id`);
   return c.json({ links: ls.map((l) => ({ ...publicLink(l), booked: counts.find((x) => x.link_id === l.id)?.n ?? 0 })) });
 });
