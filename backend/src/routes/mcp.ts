@@ -51,6 +51,7 @@ import {
   inCreatedRange,
   OVERDUE_DAYS_DEFAULT,
   pickColumns,
+  MAX_BATCH,
   RATE_LIMITS,
   rateLimitMessage,
   summariseMeetingsDay,
@@ -896,12 +897,8 @@ async function callTool(c: Context<HonoEnv>, store: McpDb, id: Identity, token: 
   } catch (e) {
     o = { result: text(`Failed: ${e instanceof Error ? e.message : String(e)}`, true), status: 500, note: "", target: "" };
   }
-  const done = logCall(store, { tokenId: id.tokenId, userId: id.user.id, clientId: id.clientId, tool: name, target: o.target, status: o.status, ok: !o.result.isError, note: o.note, ms: Date.now() - t0 });
-  try {
-    c.executionCtx.waitUntil(done);
-  } catch {
-    await done;
-  }
+  // Awaited, not waitUntil: the next call in this request must count this one.
+  await logCall(store, { tokenId: id.tokenId, userId: id.user.id, clientId: id.clientId, tool: name, target: o.target, status: o.status, ok: !o.result.isError, note: o.note, ms: Date.now() - t0 });
   return o.result;
 }
 
@@ -1006,6 +1003,7 @@ app.post("/", async (c) => {
   }
   const store = mcpDbOf(orm);
   const msgs = Array.isArray(body) ? (body as RpcReq[]) : [body as RpcReq];
+  if (msgs.length > MAX_BATCH) return c.json({ jsonrpc: "2.0", id: null, error: { code: -32600, message: `At most ${MAX_BATCH} messages in one batch.` } }, 400);
   const out: unknown[] = [];
   for (const m of msgs) {
     const r = await handleRpc(c, store, id, token, m);
