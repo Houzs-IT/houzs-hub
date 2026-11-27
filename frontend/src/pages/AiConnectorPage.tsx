@@ -8,6 +8,7 @@
 // ---------------------------------------------------------------------------
 import { useCallback, useEffect, useState } from "react";
 import { Bot, Copy, RefreshCw } from "lucide-react";
+import AiBriefCard from "./AiBriefCard";
 
 // The connector's API lives beside /api/v1/dev, so it gets its own small fetch with the
 // same rule as api(): an expired session goes back to the login page.
@@ -541,6 +542,9 @@ export default function AiConnectorPage() {
           </div>
         </Section>
       )}
+
+      {/* Round 4d: your own morning brief and urgent alerts (opt-in). */}
+      {me?.allowed && <AiBriefCard />}
 
       {me?.isAdmin && ov && <AdminView ov={ov} reload={reload} />}
 

@@ -15,6 +15,7 @@ import HealthPage from "./pages/HealthPage";
 import IntegrationsPage from "./pages/IntegrationsPage";
 import AiConnectorPage from "./pages/AiConnectorPage";
 import AiConnectPage from "./pages/AiConnectPage";
+import GroupReportPage from "./pages/GroupReportPage";
 import ReportsPage from "./pages/ReportsPage";
 import RolesPage from "./pages/RolesPage";
 import UsersPage from "./pages/UsersPage";
@@ -41,6 +42,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
           <Route path="/integrations" element={<IntegrationsPage />} />
           <Route path="/health" element={<HealthPage />} />
           <Route path="/ai-connector" element={<AiConnectorPage />} />
+          <Route path="/group-report" element={<GroupReportPage />} />
           <Route path="/accounts" element={<Navigate to="/billing?tab=accounts" replace />} />
           <Route path="/billing" element={<BillingPage />} />
           <Route path="/roles" element={<RolesPage />} />

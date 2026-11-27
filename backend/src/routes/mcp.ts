@@ -945,6 +945,42 @@ export async function mcpIdentity(orm: DB, token: string): Promise<Identity | nu
   return { tokenId: row.tokenId, clientId: row.clientId, user };
 }
 
+export type McpIdentity = Identity;
+export type McpCtx = Context<HonoEnv>;
+export type ToolAnswer = { ok: true; value: unknown } | { ok: false; status: number; message: string };
+
+/**
+ * Round 4d (routes/proactive.ts): one tool AS the person, with a short-lived token of
+ * their own that the caller revokes afterwards. The SAME runTool path a question from
+ * Claude takes: inner GETs as the person, the routes' own permission checks, the
+ * tools/list visibility rule. log = through callTool (rate limit + mcp_calls, for the
+ * brief); otherwise quiet (the 30-minute alert check would otherwise fill the log and
+ * eat the person's daily limit), still refused when the tool is hidden from them.
+ */
+export async function runToolAs(c: McpCtx, orm: DB, id: Identity, token: string, name: string, args: Record<string, unknown>, opts: { log: boolean }): Promise<ToolAnswer> {
+  rememberVerified(token, id);
+  lendDb(c.req.raw, orm);
+  const store = mcpDbOf(orm);
+  let result: ToolResult;
+  let status = 200;
+  if (opts.log) {
+    result = await callTool(c, store, id, token, name, args);
+  } else {
+    if (!allowedFor(id.user, NO_SWITCHES)(name)) return { ok: false, status: 403, message: `You do not have access to ${name} in the hub.` };
+    const o = await runTool(c, store, id, token, name, args);
+    result = o.result;
+    status = o.status;
+  }
+  const t = result.content[0]?.text ?? "";
+  if (result.isError) return { ok: false, status: status === 200 ? 400 : status, message: t.slice(0, 300) };
+  if (result.structuredContent && result.structuredContent.truncated !== true) return { ok: true, value: result.structuredContent };
+  try {
+    return { ok: true, value: JSON.parse(t) };
+  } catch {
+    return { ok: false, status: 500, message: "The answer could not be read." };
+  }
+}
+
 app.post("/", async (c) => {
   const token = (c.req.header("authorization") ?? "").match(/^Bearer\s+(.+)$/i)?.[1]?.trim() ?? "";
   // One postgres client for this request: the door check and the call log share it.
