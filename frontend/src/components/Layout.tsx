@@ -468,7 +468,8 @@ export default function Layout() {
             {can("accounts_view", "accounts_edit", "billing_view", "billing_edit") && (
               <SectionToggle label="Finance" open={financeOpen} onToggle={toggleFinance} />
             )}
-            {financeOpen && (
+            {/* Only with a Finance permission: BillingPage shows no tab to anyone else. */}
+            {financeOpen && can("accounts_view", "accounts_edit", "billing_view", "billing_edit") && (
               <>
                 {/* Account ownership is a tab of System billing. */}
                 <NavItem to="/billing" icon={<CreditCard className="h-4 w-4" />} label="System billing" />
