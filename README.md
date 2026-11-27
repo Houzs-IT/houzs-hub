@@ -600,3 +600,29 @@ accepting the hub's registration and `resource` parameter, the real `company_rep
 checked against shapes read from each repo's source on 2026-11-27, not against live replies), and the report
 email in a real mail client. The report viewer's sandboxed frame was not seen rendering (the preview browser
 blocks frames); the same HTML renders standalone.
+
+**Round 5 — process help ("how do I…", owner 2026-11-27)** — `backend/src/services/mcp-howto*.ts` (pure,
+no hub data read, tested in `backend/test/mcp-howto.test.mjs`). Same design as the Houzs and Hookka connectors.
+
+- **Tools** (listed for everyone, `TOOL_NEEDS` null; each answer's `canDo` / `canOpen` / `canUse` follows the
+  person's own permissions through `PAGE_GATES` in `mcp-howto-types.ts`, which mirrors `Layout.tsx` and each
+  route's `need(...)`): `how_to {question | topic}`, `module_overview {module?}`, `glossary {term?}`,
+  `explain_error {text}`, `onboarding {role?}` (it-staff, it-manager, admin, finance), `explain_screen {path |
+  labels}`, `where_is {thing}`. Prompts: `how_do_i`, `explain_this_error`, `my_first_week`.
+- **Guides** (`mcp-howto-guides-tickets.ts`, `mcp-howto-guides-hub.ts`): full SOP per task (purpose,
+  prerequisites, who / permission, fields, click-by-click steps with `?highlight=` links, check before, result,
+  warnings, undo, approvals, deadlines, common mistakes, worked example, related / next step, contact) and two
+  click-by-click flows with who does each step (a ticket from report to closed; a new IT staff member). Every
+  business rule cites the line of code that enforces it.
+- **Screen map** (`mcp-howto-screens.ts`): every portal page, its parts, buttons and tabs, and the extra
+  permission a button needs; used by `explain_screen` and `where_is`.
+- **`?highlight=<label>`** (`frontend/src/components/HighlightFromUrl.tsx` + `lib/highlight-match.ts`, mounted in
+  `Layout.tsx`): finds the visible element with that label (retries about 3 s), scrolls to it and outlines it in
+  gold for about 6 s, then drops the parameter. It never clicks or edits.
+- **Gap log:** a question no guide / term / screen / error answers is logged in `mcp_calls` with note `no-guide`
+  and a redacted target (emails and long numbers removed, 80 characters); Admin > AI Connector shows them under
+  "Questions with no guide yet", most asked first. No names are kept.
+- **Honesty tests:** every guide / module / onboarding / screen path exists in `frontend/src/main.tsx`; every
+  quoted label, highlight, field, screen action and tab label exists in `frontend/src`; every `explain_error`
+  match string still appears in the backend source; related / next-step ids exist; guides are English.
+- **Untested live (round 5):** not yet called through a real Claude / ChatGPT client on prod.
