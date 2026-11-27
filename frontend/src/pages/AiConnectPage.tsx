@@ -140,7 +140,7 @@ export default function AiConnectPage() {
               <li className="flex gap-2.5">
                 <Check size={18} className="mt-0.5 shrink-0 text-synced" aria-hidden="true" />
                 <span>
-                  <b className="text-ink">Read only.</b> It can look things up; it cannot create, change or delete anything.
+                  <b className="text-ink">Looks things up; changes only with your yes.</b> If your admin has turned on AI actions, it can prepare a new ticket, a comment, or an assignment / status change, and does it only after you confirm. It can never delete anything.
                 </span>
               </li>
               <li className="flex gap-2.5">

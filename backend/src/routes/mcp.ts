@@ -8,11 +8,16 @@
 //   POST /api/mcp/oauth/token        authorization_code (PKCE S256) / refresh_token (rotating).
 //   GET  /.well-known/oauth-*        discovery (mounted at the root; wrangler.toml runs the Worker first there).
 //
-// READ-ONLY and OWN-PERMISSIONS by construction: a tool call re-enters the
-// whole app as a GET carrying the person's MCP token. middleware/devAuth.ts
-// accepts an hbmcp_ token ONLY on that in-process call (a per-isolate secret
-// header nobody outside can know) and ONLY for GET/HEAD, then runs every route
-// as the real person — their roles and permissions.
+// OWN-PERMISSIONS by construction: a tool call re-enters the whole app as a GET
+// carrying the person's MCP token. middleware/devAuth.ts accepts an hbmcp_ token
+// ONLY on that in-process call (a per-isolate secret header nobody outside can
+// know) and ONLY for GET/HEAD, then runs every route as the real person — their
+// roles and permissions.
+// Round 4b (owner 2026-11-26) adds three write actions, each propose → the person
+// says yes → confirm_action → ONE armed call to the hub's own ticket route
+// (services/mcp-write-actions.ts: switches, daily cap, fence). Round 4c: the
+// tools/list is filtered per person, prompts per role, structured output, a 60 s
+// cache and hub links (services/mcp-visibility.ts).
 // ---------------------------------------------------------------------------
 import { Hono } from "hono";
 import type { Context } from "hono";
@@ -61,6 +66,33 @@ import {
 } from "../services/mcp-round3";
 import { periodWindow, PERIODS, ROUND4_TOOLS, runRound4Tool } from "../services/mcp-round4";
 import { buildXlsx, XLSX_TYPE } from "../services/xlsx";
+import {
+  ACTION_PERMISSION,
+  ACTION_TOOLS,
+  ACTIONS_PER_DAY,
+  armConfirmedAction,
+  cancelAction,
+  confirmAction,
+  MCP_ACTION_HEADER,
+  mcpActionStore,
+  proposeAction,
+  TOOL_ACTION,
+  WRITE_ACTIONS,
+  type ActionDeps,
+} from "../services/mcp-write-actions";
+import {
+  AnswerCache,
+  CACHEABLE_TOOLS,
+  needLabel,
+  PROMPT_TOOLS,
+  QUICK_OUTPUT_SCHEMA,
+  ROLE_PROMPTS,
+  rolePromptText,
+  STRUCTURED_TOOLS,
+  toolAllowed,
+  withHubLinks,
+  type Switches,
+} from "../services/mcp-visibility";
 import { classifyPath, moduleCatalog, readablePaths, redactSecrets, type RouteInfo } from "../services/mcp-access";
 import {
   consumeCode,
@@ -223,11 +255,11 @@ app.post("/oauth/token", async (c) => {
 
 type Identity = { tokenId: string; clientId: string; user: DevUser };
 type RpcReq = { jsonrpc?: string; id?: string | number | null; method?: string; params?: Record<string, unknown> };
-type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
+type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean; structuredContent?: Record<string, unknown> };
 const text = (t: string, isError = false): ToolResult => ({ content: [{ type: "text", text: t }], ...(isError ? { isError: true } : {}) });
 
 const INSTRUCTIONS = `You are connected to the Houzs IT Hub (the group's IT desk: IT tickets from Hookka, Houzs Century, 2990s, Conts, Houzs Connect and Carres; reports; system health; account ownership and system billing; meeting rooms) as the signed-in IT staff member.
-Everything is READ-ONLY and limited to what this person may see in the hub. Never guess figures a call did not return.
+Everything is limited to what this person may see and do in the hub. Reading is free; changes are only the actions below, each confirmed by the person. Never guess figures a call did not return.
 ANSWER FAST — use a quick answer first; each is ONE call and already summarised:
 - Tickets (how many open / in progress / waiting on the reporter, by system or person; new vs resolved; oldest; high priority): ticket_summary {from?, to?, system?} (default: this month to today, all systems).
 - Today at the desk (opened / resolved today by system and category, still open, urgent, overdue): tickets_today {system?, overdueDays?}.
@@ -244,7 +276,8 @@ Only when no quick answer fits (billing register, accounts, meeting rooms, ticke
 Periods: tools with "period" take today | week (Monday to today) | month | last_month | quarter | year | custom (with from / to), Malaysia days, and compare with the previous period where cheap.
 Dates are Malaysia time (UTC+8). Tickets have no due date. The Reports page's SLA (high 24 h, medium 3 d, low 7 d, not counting time waiting on the reporter) is what tickets_overdue uses; tickets_today / open_tickets "overdue" means open longer than a number of days.
 Each person may make ${RATE_LIMITS.perMinute} tool calls a minute and ${RATE_LIMITS.perDay} a day; over that a call says so — wait instead of retrying at once.
-If a call says "You do not have permission" or "not available to your role", tell the person they do not have permission for that data.`;
+If a call says "You do not have permission" or "not available to your role", tell the person they do not have permission for that data.
+ACTIONS (only those the admin switched on appear in your tool list): propose_ticket (log a new IT ticket), propose_ticket_comment (comment on a ticket, internal by default), propose_ticket_update (assign and / or change status, including close). They change NOTHING yet — they return a summary and a confirmationId. Show the person that summary word for word and ask them to confirm. Only call confirm_action after they explicitly say yes; if they say no or want changes, call cancel_action (and propose again). Never confirm on your own. Nothing can be deleted, and billing, accounts, users and roles cannot be changed. At most ${ACTIONS_PER_DAY} confirmed actions per person a day.`;
 
 const NO_ARGS = { type: "object", properties: {}, additionalProperties: false };
 const RO = { readOnlyHint: true, openWorldHint: false };
@@ -368,6 +401,7 @@ const TOOLS = [
     annotations: RO,
   },
   ...ROUND4_TOOLS,
+  ...ACTION_TOOLS,
   { name: "whoami", title: "Who am I connected as", description: "The hub account this connection uses and its roles.", inputSchema: NO_ARGS, annotations: RO },
   { name: "list_modules", title: "List hub modules", description: "The hub's modules (API path prefixes) with how many read endpoints each has. Only when no quick answer fits.", inputSchema: NO_ARGS, annotations: RO },
   {
@@ -409,6 +443,39 @@ async function innerGet(c: Context<HonoEnv>, token: string, pathWithQuery: strin
   const db = borrowDb(c.req.raw);
   if (db) lendDb(req, db);
   return appRef.fetch(req, c.env, ctx);
+}
+
+/**
+ * The ONE write a confirmed action makes: the hub's own ticket route, in-process,
+ * as the person. Armed for this token + method + path just before the call;
+ * devAuth.ts takes the arm once (services/mcp-write-actions.ts). Route and body
+ * come from confirmAction, already checked against ACTION_ALLOWLIST and
+ * actionBodyAllowed.
+ */
+async function innerAction(c: Context<HonoEnv>, id: Identity, token: string, actionId: string, route: { method: string; path: string; body: unknown }): Promise<{ status: number; body: unknown }> {
+  if (!appRef) throw new Error("MCP app not initialised");
+  let ctx: unknown;
+  try {
+    ctx = c.executionCtx;
+  } catch {
+    ctx = undefined;
+  }
+  armConfirmedAction(actionId, id.tokenId, route.method, route.path);
+  const req = new Request(originOf(c) + route.path, {
+    method: route.method,
+    headers: {
+      authorization: `Bearer ${token}`,
+      [MCP_INNER_HEADER]: mcpInnerSecret(),
+      [MCP_ACTION_HEADER]: actionId,
+      "content-type": "application/json",
+      accept: "application/json",
+    },
+    body: JSON.stringify(route.body),
+  });
+  const db = borrowDb(c.req.raw);
+  if (db) lendDb(req, db);
+  const res = await appRef.fetch(req, c.env, ctx);
+  return { status: res.status, body: await res.json().catch(() => null) };
 }
 
 type ReadValue =
@@ -513,7 +580,25 @@ async function storeExport(c: Context<HonoEnv>, bytes: Uint8Array, fileName: str
   return { url: `${originOf(c)}/api/mcp/export/${token}`, expiresAt };
 }
 
-async function runTool(c: Context<HonoEnv>, id: Identity, token: string, name: string, args: Record<string, unknown>): Promise<Outcome> {
+/** The real I/O for services/mcp-write-actions.ts: reads as the person and the armed write. */
+function actionDeps(c: Context<HonoEnv>, store: McpDb, id: Identity, token: string): ActionDeps {
+  return {
+    store: mcpActionStore(store),
+    tokenId: id.tokenId,
+    userId: id.user.id,
+    userName: id.user.name,
+    origin: originOf(c),
+    read: async (path, query) => {
+      const r = await readValue(c, token, path, query);
+      return r.ok ? { status: r.status, body: r.value } : { status: r.status, body: { error: r.message } };
+    },
+    write: (actionId, req) => innerAction(c, id, token, actionId, req),
+  };
+}
+
+const NEXT_STEP = "Nothing has been changed yet. Show this summary to the person and ask them to confirm. Only call confirm_action after they explicitly say yes; otherwise call cancel_action.";
+
+async function runTool(c: Context<HonoEnv>, store: McpDb, id: Identity, token: string, name: string, args: Record<string, unknown>): Promise<Outcome> {
   const ok = (body: unknown, target: string): Outcome => ({ result: text(JSON.stringify(body)), status: 200, note: "", target });
   const bad = (msg: string, target = ""): Outcome => ({ result: text(msg, true), status: 400, note: "", target });
 
@@ -693,8 +778,25 @@ async function runTool(c: Context<HonoEnv>, id: Identity, token: string, name: s
       if (!r.ok) return failed(r, target);
       return ok(ticketDocument(r.value, originOf(c), MAX_RESULT_CHARS), target);
     }
-    case "whoami":
-      return ok({ name: id.user.name, email: id.user.email, roles: id.user.roleName, readOnly: true }, "");
+    case "propose_ticket":
+    case "propose_ticket_comment":
+    case "propose_ticket_update": {
+      const o = await proposeAction(actionDeps(c, store, id, token), TOOL_ACTION[name], args);
+      if (!o.ok) return { result: text(o.text, true), status: o.status, note: "", target: o.target };
+      return ok({ confirmationId: o.confirmationId, summary: o.summary, warnings: o.warnings, expiresInMinutes: o.expiresInMinutes, next: NEXT_STEP }, o.target);
+    }
+    case "confirm_action":
+    case "cancel_action": {
+      const deps = actionDeps(c, store, id, token);
+      const o = name === "confirm_action" ? await confirmAction(deps, args.confirmationId) : await cancelAction(deps, args.confirmationId);
+      if (o.ok && name === "confirm_action") answerCache.dropUser(id.user.id);
+      return { result: text(o.text, !o.ok), status: o.status, note: name === "confirm_action" ? (o.ok ? "done" : `refused ${o.status}`) : "", target: o.target };
+    }
+    case "whoami": {
+      const sw = await mcpActionStore(store).switches();
+      const actions = WRITE_ACTIONS.filter((a) => sw.main && sw[a] && (id.user.perms as readonly string[]).includes(ACTION_PERMISSION[a]));
+      return ok({ name: id.user.name, email: id.user.email, roles: id.user.roleName, readOnly: actions.length === 0, actions }, "");
+    }
     case "list_modules":
       return ok(
         {
@@ -724,6 +826,40 @@ async function runTool(c: Context<HonoEnv>, id: Identity, token: string, name: s
   }
 }
 
+// ── round 4c: visibility (P1), structured output (P3 + P5), cache (P4) ──────
+
+const NO_SWITCHES: Switches = { main: false };
+const WRITE_META = { toolAction: TOOL_ACTION, permission: ACTION_PERMISSION, actions: WRITE_ACTIONS };
+const allowedFor = (u: DevUser, sw: Switches) => (name: string) => toolAllowed(name, u.perms, sw, WRITE_META);
+
+async function visibleTools(store: McpDb, u: DevUser): Promise<Record<string, unknown>[]> {
+  const ok = allowedFor(u, await mcpActionStore(store).switches());
+  return TOOLS.filter((t) => ok(t.name)).map((t) => (STRUCTURED_TOOLS.has(t.name) ? { ...t, outputSchema: QUICK_OUTPUT_SCHEMA } : t));
+}
+
+const ALL_PROMPTS = [DAILY_BRIEF_PROMPT, ...PROMPTS, ...ROLE_PROMPTS];
+
+/** A prompt is listed when the first tool it uses is listed for the person. */
+function visiblePrompts(u: DevUser): typeof ALL_PROMPTS {
+  const ok = allowedFor(u, NO_SWITCHES);
+  return ALL_PROMPTS.filter((p) => ok((PROMPT_TOOLS[p.name] ?? [""])[0]));
+}
+
+/** The answer's JSON as structuredContent (with hubLink + row urls); the text carries the same JSON. */
+function structured(name: string, r: ToolResult, origin: string): ToolResult {
+  const raw = r.content[0]?.text ?? "";
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { ...r, structuredContent: { text: raw, truncated: true } };
+  }
+  const value = withHubLinks(name, parsed, origin);
+  return { ...r, content: [{ type: "text", text: JSON.stringify(value) }], structuredContent: value };
+}
+
+const answerCache = new AnswerCache<Outcome>();
+
 async function callTool(c: Context<HonoEnv>, store: McpDb, id: Identity, token: string, name: string, args: Record<string, unknown>): Promise<ToolResult> {
   const t0 = Date.now();
   let o: Outcome;
@@ -731,7 +867,32 @@ async function callTool(c: Context<HonoEnv>, store: McpDb, id: Identity, token: 
     // Per person, tool calls only (initialize / tools/list / prompts are free). The admin
     // leak check reads through readEndpoint, never through here, so it is never limited.
     const refused = rateLimitMessage(await countRecentCalls(store, id.user.id));
-    o = refused ? { result: text(refused, true), status: 429, note: "rate limited", target: "" } : await runTool(c, id, token, name, args);
+    if (refused) {
+      o = { result: text(refused, true), status: 429, note: "rate limited", target: "" };
+    } else {
+      // Round 4c P1: a tool hidden from this person's tools/list answers "no access"
+      // when called directly — the same check the list uses. Action tools keep their
+      // own plain refusals (switched off) unless the person lacks the route's permission.
+      const known = TOOLS.some((t) => t.name === name);
+      const isAction = Object.hasOwn(TOOL_ACTION, name) || name === "confirm_action" || name === "cancel_action";
+      if (known && !isAction && !allowedFor(id.user, NO_SWITCHES)(name)) {
+        o = { result: text(`You do not have access to this in the hub (${name} needs the "${needLabel(name)}" permission).`, true), status: 403, note: "no permission", target: name };
+      } else if (isAction && !WRITE_ACTIONS.some((a) => (id.user.perms as readonly string[]).includes(ACTION_PERMISSION[a]))) {
+        o = { result: text('You do not have access to this in the hub (AI actions on tickets need the "IT tickets" permission).', true), status: 403, note: "no permission", target: name };
+      } else {
+        // P4: heavy summaries reused for 60 s per person + permissions + arguments.
+        const key = CACHEABLE_TOOLS.has(name) ? AnswerCache.key(id.user.id, id.user.perms, name, args) : "";
+        const hit = key ? answerCache.get(key) : null;
+        if (hit) {
+          o = { ...hit, note: hit.note ? `cached,${hit.note}` : "cached" };
+        } else {
+          o = await runTool(c, store, id, token, name, args);
+          // P3 + P5: a quick answer also as structuredContent, with hub links.
+          if (STRUCTURED_TOOLS.has(name) && !o.result.isError) o = { ...o, result: structured(name, o.result, originOf(c)) };
+          if (key && !o.result.isError && o.status === 200) answerCache.set(key, o);
+        }
+      }
+    }
   } catch (e) {
     o = { result: text(`Failed: ${e instanceof Error ? e.message : String(e)}`, true), status: 500, note: "", target: "" };
   }
@@ -755,18 +916,20 @@ async function handleRpc(c: Context<HonoEnv>, store: McpDb, id: Identity, token:
     case "ping":
       return reply({});
     case "tools/list":
-      return reply({ tools: TOOLS });
+      return reply({ tools: await visibleTools(store, id.user) });
     case "tools/call":
       return reply(await callTool(c, store, id, token, String(m.params?.name ?? ""), (m.params?.arguments as Record<string, unknown> | undefined) ?? {}));
     case "resources/list":
       return reply({ resources: [] });
     case "prompts/list":
-      return reply({ prompts: [DAILY_BRIEF_PROMPT, ...PROMPTS] });
+      return reply({ prompts: visiblePrompts(id.user) });
     case "prompts/get": {
       const pname = String(m.params?.name ?? "");
-      const ptext = pname === DAILY_BRIEF_PROMPT.name ? DAILY_BRIEF_TEXT : promptText(pname, (m.params?.arguments as Record<string, unknown> | undefined) ?? {});
+      const pargs = (m.params?.arguments as Record<string, unknown> | undefined) ?? {};
+      const visible = visiblePrompts(id.user).some((x) => x.name === pname);
+      const ptext = !visible ? null : pname === DAILY_BRIEF_PROMPT.name ? DAILY_BRIEF_TEXT : (promptText(pname, pargs) ?? rolePromptText(pname, pargs));
       if (ptext === null) return { jsonrpc: "2.0", id: m.id ?? null, error: { code: -32602, message: `Unknown prompt: ${pname}` } };
-      return reply({ description: [DAILY_BRIEF_PROMPT, ...PROMPTS].find((x) => x.name === pname)?.description ?? "", messages: [{ role: "user", content: { type: "text", text: ptext } }] });
+      return reply({ description: ALL_PROMPTS.find((x) => x.name === pname)?.description ?? "", messages: [{ role: "user", content: { type: "text", text: ptext } }] });
     }
     default:
       if (m.id === undefined || m.id === null || (m.method ?? "").startsWith("notifications/")) return null;

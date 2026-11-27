@@ -6,7 +6,7 @@
 //           GET /consent/:id, POST /consent/:id      (the OAuth "Allow?" step)
 //   admin:  GET /admin/overview, POST /admin/requests/:id/:decision,
 //           POST /admin/access, DELETE /admin/access/:userId, POST /admin/revoke,
-//           POST /admin/leak-check
+//           POST /admin/leak-check, POST /admin/actions (round 4b AI action switches)
 // Admin = holds "Manage users".
 // ---------------------------------------------------------------------------
 import { Hono } from "hono";
@@ -30,6 +30,7 @@ import {
 } from "../services/mcp-store";
 import { EXPORT_TTL_MS, isMcpAdmin, mcpAppRoutes, readEndpoint } from "./mcp";
 import { EXPORT_ROW_CAP, RATE_LIMITS } from "../services/mcp-round3";
+import { ACTION_TTL_MS, ACTIONS_PER_DAY, mcpActionStore, setActionSwitch, SWITCH_KEYS, switchKey, WRITE_ACTION_LABELS, WRITE_ACTIONS } from "../services/mcp-write-actions";
 
 type HonoEnv = DevApp;
 const app = new Hono<HonoEnv>();
@@ -213,7 +214,31 @@ app.get("/admin/overview", async (c) => {
     allowed: allowed.results.map((r) => ({ userId: num(r, "user_id"), name: s(r, "name"), position: pos(r), approvedAt: iso(r.approved_at) })),
     calls: calls.results.map((r) => ({ id: s(r, "id"), userId: num(r, "user_id"), name: s(r, "name"), app: appLabel(s(r, "client_name")), tool: s(r, "tool"), target: s(r, "target"), status: num(r, "status"), ok: num(r, "ok") === 1, note: s(r, "note"), ms: num(r, "ms"), at: iso(r.created_at) })),
     staff: staff.results.map((r) => ({ userId: num(r, "id"), name: s(r, "name"), position: pos(r) })),
+    actions: await actionsState(db),
   });
+});
+
+// ── round 4b: AI action switches (admin only, default OFF) ──────────────────
+
+async function actionsState(db: ReturnType<typeof mcpDbOf>) {
+  const sw = await mcpActionStore(db).switches();
+  return {
+    enabled: sw.main,
+    perDay: ACTIONS_PER_DAY,
+    confirmMinutes: ACTION_TTL_MS / 60_000,
+    list: WRITE_ACTIONS.map((a) => ({ key: switchKey(a), label: WRITE_ACTION_LABELS[a], enabled: sw[a] })),
+  };
+}
+
+app.post("/admin/actions", async (c) => {
+  const denied = denyUnlessAdmin(c);
+  if (denied) return denied;
+  const body = (await c.req.json().catch(() => ({}))) as { key?: unknown; enabled?: unknown };
+  const key = typeof body.key === "string" ? body.key : "";
+  if (!SWITCH_KEYS.includes(key) || typeof body.enabled !== "boolean") return c.json({ error: `key must be one of ${SWITCH_KEYS.join(", ")} and enabled true or false` }, 400);
+  const db = mcpDbOf(c.get("db"));
+  await setActionSwitch(db, key, body.enabled, c.get("user").id);
+  return c.json({ ok: true, actions: await actionsState(db) });
 });
 
 async function grant(c: Context<HonoEnv>, userId: number): Promise<void> {
