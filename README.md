@@ -625,4 +625,20 @@ no hub data read, tested in `backend/test/mcp-howto.test.mjs`). Same design as t
 - **Honesty tests:** every guide / module / onboarding / screen path exists in `frontend/src/main.tsx`; every
   quoted label, highlight, field, screen action and tab label exists in `frontend/src`; every `explain_error`
   match string still appears in the backend source; related / next-step ids exist; guides are English.
-- **Untested live (round 5):** not yet called through a real Claude / ChatGPT client on prod.
+- **`show_me {guide_id + step | path + label | label}`** (`services/mcp-show-me.ts`, tested in
+  `backend/test/mcp-show-me.test.mjs`): the captured screenshot of that page as a **plain WebP image item (never
+  SVG)**, the red-box coordinates of the button in the text, the live-page `?highlight=` link, and a **15-minute link**
+  (`/api/mcp/shot/<token>`, R2 `mcp-exports/shot-<sha256>.html`, swept with the exports) to an annotated page: the WebP
+  with a red box and caption drawn in HTML / CSS, served with a CSP that allows only inline styles and `data:` images.
+  A page or button the person may not use gets the no-permission note and no picture.
+- **Screenshots:** `frontend/public/help-shots/*.webp` + boxes in `backend/src/services/mcp-help-shots-data.ts`
+  (generated). Re-capture after a UI change: `npm --prefix frontend run dev` (Vite only; never start the backend for
+  this, local dev is the live database), then
+  `PLAYWRIGHT_CORE=<folder of playwright-core> node scripts/capture-help-shots.mjs`. The script answers **every**
+  `/api` call itself with the made-up data in `scripts/help-shots-demo.mjs`, aborts every other host, closes the live
+  WebSocket, never signs in, and encodes WebP with Chromium's own encoder. The test fails when a boxed label no
+  longer exists in `frontend/src`, a box leaves its picture, a screen has no picture, or fewer than 80% of guide
+  buttons have a box.
+- **Untested live (round 5):** not yet called through a real Claude / ChatGPT client on prod; `show_me`'s route
+  (ASSETS fetch, R2 write, `/api/mcp/shot`) runs only on the Worker and was not exercised locally (local dev is the
+  live database); its pieces are unit-tested and the annotated page was rendered in a browser.

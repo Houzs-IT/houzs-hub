@@ -404,7 +404,7 @@ export function runHowtoTool(ctx: HowtoCtx, name: string, args: Record<string, u
 }
 
 /** The help part of the server instructions. */
-export const HOWTO_INSTRUCTIONS = `HELP (no hub data, always available): "how do I / where do I / steps to ..." -> how_to {question}; give the steps in the person's language, keep the quoted button names in English as the screen shows them, and give each step's link (it highlights the button). If canDo is false say: you don't have permission for this in the hub — ask your IT admin. "What is this screen" -> explain_screen {path or labels}; "where is X" -> where_is {thing}; "what is module X" -> module_overview; "what does X mean" -> glossary; an error message -> explain_error {text}; a new staff member -> onboarding {role}.`;
+export const HOWTO_INSTRUCTIONS = `HELP (no hub data, always available): "how do I / where do I / steps to ..." -> how_to {question}; give the steps in the person's language, keep the quoted button names in English as the screen shows them, and give each step's link (it highlights the button). If canDo is false say: you don't have permission for this in the hub — ask your IT admin. "What is this screen" -> explain_screen {path or labels}; "where is X" -> where_is {thing}; "what is module X" -> module_overview; "what does X mean" -> glossary; an error message -> explain_error {text}; a new staff member -> onboarding {role}. "Show me where to click" -> show_me {guide_id, step} or {path, label}: show the picture, say where the red box is, and give the live-page link.`;
 
 /** Ready-made prompts for the help tools. */
 export const HOWTO_PROMPTS = [

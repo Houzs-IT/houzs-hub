@@ -127,7 +127,7 @@ export const HUB_GUIDES: HowtoGuide[] = [
     ],
     steps: [
       { do: "Open \"Meetings\" and click the \"Guest links\" tab (or \"Make a guest booking link\").", page: "/meetings", highlight: "Guest links" },
-      { do: "Click \"Create link\".", then: "The \"Create a booking link\" window opens." },
+      { do: "Click \"Create link\".", page: "/meetings?tab=links", highlight: "Create link", then: "The \"Create a booking link\" window opens." },
       { do: "Fill the name, length, hours, room or online, and how long the link works (\"No end date\" or \"Until a date\")." },
       { do: "Click \"Create link\", then \"Copy\" and send the link to the guest." },
     ],
@@ -177,7 +177,7 @@ export const HUB_GUIDES: HowtoGuide[] = [
     ],
     steps: [
       { do: "Open \"Meetings\" and click the \"Rooms\" tab.", page: "/meetings", highlight: "Meetings" },
-      { do: "Click \"Add room\", or \"Edit\" on an existing room." },
+      { do: "Click \"Add room\", or \"Edit\" on an existing room.", page: "/meetings?tab=rooms", highlight: "Add room" },
       { do: "Fill \"Room name\", \"Location\", \"How many people\", \"Opens\", \"Closes\", \"Open days\", equipment and the rules (\"Gap between meetings\", \"Longest booking\", \"Book ahead up to\")." },
       { do: "Add closed dates with a reason (e.g. renovation) and click \"Add\"." },
       { do: "Untick \"Open for booking\" to take the room out of use without deleting it." },
