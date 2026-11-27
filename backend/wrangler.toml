@@ -34,6 +34,13 @@ localConnectionString = "postgres://postgres:postgres@127.0.0.1:54329/postgres"
 [vars]
 HEALTH_ALERT_TO = "it@houzscentury.com"
 HEALTH_ALERT_FROM = "Houzs IT Hub <no-reply@houzscentury.com>"
+# AI Connector round 4d (routes/proactive.ts, routes/groupReport.ts): the hub's public address
+# (email links, the group report's OAuth return address) and the sender of the morning brief,
+# alert and group report emails. They go out through Resend once RESEND_API_KEY is set.
+# The group report also needs the secret GROUP_REPORT_KEY (any long random string; it encrypts
+# the systems' sign-in tokens): `wrangler secret put GROUP_REPORT_KEY`.
+HUB_ORIGIN = "https://support.houzscentury.com"
+BRIEF_MAIL_FROM = "Houzs IT Hub <no-reply@houzscentury.com>"
 # Meetings: the Houzs account every Google Meet link is created as (services/googleMeet.ts).
 GOOGLE_MEET_OWNER = "hello@houzscentury.com"
 # Meetings: emails go out from this address; the button in each email opens the person's own ERP.

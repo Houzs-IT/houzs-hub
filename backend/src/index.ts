@@ -4,6 +4,9 @@ import { getDb, schema } from "./db/client";
 import auth from "./routes/auth";
 import mcp, { mcpWellKnown, setMcpApp } from "./routes/mcp";
 import mcpAdmin from "./routes/mcpAdmin";
+import proactive from "./routes/proactive";
+import groupReport from "./routes/groupReport";
+import { MCP_INNER_HEADER, mcpInnerSecret } from "./services/mcp-inner";
 import dev from "./routes/dev";
 import sys from "./routes/sys";
 import sysAiUsage from "./routes/sysAiUsage";
@@ -40,6 +43,9 @@ app.route("/api/v1/public/meetings", publicMeetings);
 app.route("/api/mcp", mcp);
 app.route("/.well-known", mcpWellKnown);
 app.route("/api/v1/ai-connector", mcpAdmin);
+// Round 4d: morning brief + alerts (per person, opt-in) and the group monthly report (admin).
+app.route("/api/v1/ai-brief", proactive);
+app.route("/api/v1/group-report", groupReport);
 app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
 
 // The AI Connector re-enters the assembled app in-process for its reads.
@@ -99,6 +105,20 @@ export default {
         .catch((e) => console.error("[mail-sync-kick]", e)),
     );
     const at = new Date(event.scheduledTime);
+    // AI Connector round 4d, twice an hour (the :00 and :30 runs): the morning briefs and urgent
+    // alerts, then the group monthly report (only does anything on the 1st from 09:00 Malaysia time).
+    // In-process calls into the app with this isolate's inner secret, so they run as routes
+    // (routes/proactive.ts, routes/groupReport.ts) and nobody outside can fire them.
+    if (at.getUTCMinutes() % 30 < 5) {
+      const origin = (env.HUB_ORIGIN || "https://support.houzscentury.com").replace(/\/+$/, "");
+      const tick = (path: string) =>
+        Promise.resolve(app.fetch(new Request(`${origin}${path}`, { method: "POST", headers: { [MCP_INNER_HEADER]: mcpInnerSecret() } }), env, ctx))
+          .then(async (r) => {
+            if (!r.ok) console.error(`[tick ${path}]`, r.status, (await r.text()).slice(0, 200));
+          })
+          .catch((e) => console.error(`[tick ${path}]`, e));
+      ctx.waitUntil(tick("/api/v1/ai-brief/tick").then(() => tick("/api/v1/group-report/tick")));
+    }
     if (at.getUTCHours() === 2 && at.getUTCMinutes() < 5) {
       ctx.waitUntil(autoCloseResolved(env));
       // No admin key yet is normal until it is set up; anything else is worth a log line.

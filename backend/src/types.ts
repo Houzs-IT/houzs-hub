@@ -37,6 +37,14 @@ export interface Env {
   MEETING_ERP_URLS?: string;
   // Where the meeting emails' logos are served (frontend/public/mail); local runs point it at wrangler dev.
   MEETING_LOGO_BASE?: string;
+  // AI Connector round 4d: the sender of the brief / alert / group report emails (var; falls back to
+  // HEALTH_ALERT_FROM) and the hub's public address for links in them and the OAuth callback (var).
+  BRIEF_MAIL_FROM?: string;
+  HUB_ORIGIN?: string;
+  // Group monthly report (routes/groupReport.ts): the AES-GCM key the systems' OAuth tokens are
+  // encrypted with. Any long random string: `wrangler secret put GROUP_REPORT_KEY`. Missing =
+  // the feature says "not configured".
+  GROUP_REPORT_KEY?: string;
   // GitHub tokens (Actions: write) the cron uses to start each ERP's Mail Sync, per org. `wrangler secret put`.
   GH_DISPATCH_TOKEN_HOUZS_CENTURY?: string;
   GH_DISPATCH_TOKEN_HOUZS_IT?: string;

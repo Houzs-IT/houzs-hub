@@ -63,7 +63,7 @@ app.get("/me", async (c) => {
     .prepare(
       `SELECT t.id, t.created_at, t.last_used_at, cl.client_name
          FROM mcp_tokens t LEFT JOIN mcp_oauth_clients cl ON cl.client_id = t.client_id
-        WHERE t.user_id = ? AND t.revoked_at IS NULL AND t.refresh_expires_at > ? AND t.client_id <> 'mcpc_leak_check'
+        WHERE t.user_id = ? AND t.revoked_at IS NULL AND t.refresh_expires_at > ? AND t.client_id NOT IN ('mcpc_leak_check', 'mcpc_morning_brief')
         ORDER BY t.created_at DESC`,
     )
     .bind(u.id, new Date().toISOString())
@@ -170,7 +170,7 @@ app.get("/admin/overview", async (c) => {
            FROM mcp_tokens t JOIN users u ON u.id = t.user_id
            LEFT JOIN mcp_oauth_clients cl ON cl.client_id = t.client_id
            
-          WHERE t.revoked_at IS NULL AND t.refresh_expires_at > ? AND t.client_id <> 'mcpc_leak_check'
+          WHERE t.revoked_at IS NULL AND t.refresh_expires_at > ? AND t.client_id NOT IN ('mcpc_leak_check', 'mcpc_morning_brief')
           ORDER BY t.last_used_at DESC NULLS LAST, t.created_at DESC`,
       )
       .bind(nowIso)
@@ -199,7 +199,7 @@ app.get("/admin/overview", async (c) => {
       .prepare(
         `SELECT (SELECT COUNT(*) FROM mcp_calls WHERE created_at > ?) AS calls_24h,
                 (SELECT COUNT(*) FROM mcp_calls WHERE created_at > ? AND ok = 0) AS refused_24h,
-                (SELECT COUNT(DISTINCT user_id) FROM mcp_tokens WHERE revoked_at IS NULL AND refresh_expires_at > ? AND client_id <> 'mcpc_leak_check') AS people`,
+                (SELECT COUNT(DISTINCT user_id) FROM mcp_tokens WHERE revoked_at IS NULL AND refresh_expires_at > ? AND client_id NOT IN ('mcpc_leak_check', 'mcpc_morning_brief')) AS people`,
       )
       .bind(dayAgo, dayAgo, nowIso)
       .first<Record<string, unknown>>(),
