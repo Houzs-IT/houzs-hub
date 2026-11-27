@@ -104,7 +104,7 @@ export const TICKET_GUIDES: HowtoGuide[] = [
       { do: "In the sidebar, under IT → Workspace, click \"List\".", page: "/tickets", highlight: "List" },
       { do: "Type a code or words in \"Search tickets\".", page: "/tickets", highlight: "Search tickets" },
       { do: "Narrow with the filter buttons: \"System\", \"Type\", \"Status: Active\", \"Priority\", \"Assignee\", \"Reporter\". On a phone, open them with \"Filters\".", check: "Closed, Done and Rejected tickets are hidden until you tick them under Status." },
-      { do: "Click a column heading (Status, Priority, Assignee, Created, Updated) to sort; click again to reverse." },
+      { do: "Sort with \"Sort by\" and the arrow next to it; on a wide screen the list is a table and you click a column heading (Status, Priority, Assignee, Created, Updated) instead, again to reverse." },
       { do: "Click a row to open the ticket beside the list; \"Open full page\" opens it on its own page." },
       { do: "Click \"Clear filters\" to go back to all active tickets." },
     ],

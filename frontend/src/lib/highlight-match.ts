@@ -4,6 +4,8 @@ const SCAN = `${INTERACTIVE}, th, h1, h2, h3, h4, legend, span, div, p, li, td, 
 /** A label for comparing: whitespace collapsed, trimmed, lower case. */
 export const normLabel = (s: string): string => s.replace(/\s+/g, " ").trim().toLowerCase();
 const tight = (s: string): string => s.replace(/\s+/g, "").toLowerCase();
+// A leading icon glyph is part of some buttons' text ("+ Add room", "+Book a room"): ignore it.
+const bare = (s: string): string => normLabel(s).replace(/^[^\p{L}\p{N}]+/u, "");
 
 const visible = (el: Element): boolean => {
   if (!(el instanceof HTMLElement)) return false;
@@ -30,7 +32,7 @@ const ownText = (el: Element): string => {
 
 const matches = (candidate: string, want: string): boolean => {
   if (!candidate) return false;
-  return normLabel(candidate) === normLabel(want) || tight(candidate) === tight(want);
+  return normLabel(candidate) === normLabel(want) || tight(candidate) === tight(want) || (bare(want) !== "" && bare(candidate) === bare(want));
 };
 
 /**

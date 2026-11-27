@@ -9,6 +9,21 @@ const CLASS = "help-highlight";
 type Tip = { top: number; left: number };
 
 /**
+ * Centres the element in its own scrolling panel. Not scrollIntoView: that also scrolls the
+ * overflow-hidden <main> of Layout.tsx, which leaves the page shifted under the header.
+ */
+function scrollToCentre(el: HTMLElement): void {
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const oy = getComputedStyle(p).overflowY;
+    if ((oy === "auto" || oy === "scroll") && p.scrollHeight > p.clientHeight) {
+      const top = el.getBoundingClientRect().top - p.getBoundingClientRect().top + p.scrollTop - p.clientHeight / 2 + el.offsetHeight / 2;
+      p.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+      return;
+    }
+  }
+}
+
+/**
  * `?highlight=<label>` (links from the AI Connector's how_to, where_is and explain_screen): waits for
  * the page, finds the visible element with that label (retrying about 3 s while data loads), scrolls
  * to it, outlines it in pulsing gold for about 6 s with a small "Here" tooltip, then drops the
@@ -38,7 +53,7 @@ export function HighlightFromUrl() {
     const seek = () => {
       target = findHighlightTarget(document, label);
       if (target) {
-        target.scrollIntoView({ block: "center", behavior: "smooth" });
+        scrollToCentre(target);
         target.classList.add(CLASS);
         target.addEventListener("animationend", () => {
           cancelAnimationFrame(frame);
