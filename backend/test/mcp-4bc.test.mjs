@@ -399,7 +399,9 @@ const listFor = (perms, sw = { main: false }) => Object.keys({ ...TOOL_NEEDS, ..
 
 test("P1: tools follow the hub permissions; write tools only while switched on", () => {
   const staff = listFor([]);
-  assert.deepEqual(staff.sort(), ["daily_brief", "erp_get", "list_endpoints", "list_modules", "meetings_today", "whoami"]);
+  // Round 5 help tools read no hub data, so every staff member has them too.
+  const HELP = ["explain_error", "explain_screen", "glossary", "how_to", "module_overview", "onboarding", "where_is"];
+  assert.deepEqual(staff.sort(), ["daily_brief", "erp_get", ...HELP, "list_endpoints", "list_modules", "meetings_today", "whoami"].sort());
   const it = listFor(["it"]);
   for (const n of ["ticket_summary", "tickets_today", "search", "fetch", "export_excel", "data_gaps"]) assert.ok(it.includes(n), n);
   assert.ok(!it.includes("health_summary"));
@@ -436,7 +438,8 @@ test("P2: role prompts exist, use listed tools, and render", () => {
   assert.equal(rolePromptText("nope", {}), null);
   // A staff member without IT tickets sees no IT prompt (first tool hidden).
   const ok = (n) => toolAllowed(n, [], { main: false }, WRITE_META);
-  assert.deepEqual(Object.keys(PROMPT_TOOLS).filter((p) => ok(PROMPT_TOOLS[p][0])), ["daily-brief"]);
+  // ...only the daily brief and the round 5 help prompts (help reads no hub data).
+  assert.deepEqual(Object.keys(PROMPT_TOOLS).filter((p) => ok(PROMPT_TOOLS[p][0])), ["daily-brief", "how_do_i", "explain_this_error", "my_first_week"]);
 });
 
 // ── 4c P3 / P5: structured output + links ───────────────────────────────────

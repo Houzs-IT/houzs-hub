@@ -55,6 +55,7 @@ type Overview = {
   connected: (Person & { tokenId: string; app: string; connectedAt: string | null; lastUsedAt: string | null })[];
   allowed: (Person & { approvedAt: string | null })[];
   calls: { id: string; userId: number; name: string; app: string; tool: string; target: string; status: number; ok: boolean; note: string; ms: number; at: string | null }[];
+  noGuide?: { tool: string; question: string; times: number; lastAt: string | null }[];
   staff: Person[];
   actions?: ActionsState;
 };
@@ -431,6 +432,35 @@ function AdminView({ ov, reload }: { ov: Overview; reload: () => void }) {
       </Section>
 
       <LeakCheck people={ov.allowed} />
+
+      <Section title="Questions with no guide yet" sub="How-to, glossary, screen and error questions the AI found no answer for, most asked first. No names are kept.">
+        {(ov.noGuide ?? []).length === 0 ? (
+          <Empty>None so far.</Empty>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] border-collapse">
+              <thead className="bg-surface-2">
+                <tr>
+                  <th className={TH}>Question</th>
+                  <th className={TH}>Tool</th>
+                  <th className={TH}>Times</th>
+                  <th className={TH}>Last asked</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(ov.noGuide ?? []).map((q) => (
+                  <tr key={`${q.tool}:${q.question}`} className="border-t border-line">
+                    <td className={TD}>{q.question}</td>
+                    <td className={cn(TD, "font-mono text-[12px]")}>{q.tool}</td>
+                    <td className={TD}>{q.times}</td>
+                    <td className={cn(TD, "whitespace-nowrap text-ink-subtle")}>{when(q.lastAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Section>
 
       <Section title="Recent lookups" sub="The last 100 things an AI read, newest first.">
         {ov.calls.length === 0 ? (

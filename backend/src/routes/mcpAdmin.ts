@@ -29,6 +29,7 @@ import {
   takeAuthRequest,
 } from "../services/mcp-store";
 import { EXPORT_TTL_MS, isMcpAdmin, mcpAppRoutes, readEndpoint } from "./mcp";
+import { NO_GUIDE_NOTE } from "../services/mcp-howto";
 import { EXPORT_ROW_CAP, RATE_LIMITS } from "../services/mcp-round3";
 import { ACTION_TTL_MS, ACTIONS_PER_DAY, mcpActionStore, setActionSwitch, SWITCH_KEYS, switchKey, WRITE_ACTION_LABELS, WRITE_ACTIONS } from "../services/mcp-write-actions";
 
@@ -156,7 +157,7 @@ app.get("/admin/overview", async (c) => {
   const db = mcpDbOf(c.get("db"));
   const nowIso = new Date().toISOString();
   const dayAgo = new Date(Date.now() - 24 * 3600_000).toISOString();
-  const [requests, connected, allowed, calls, staff, stats] = await Promise.all([
+  const [requests, connected, allowed, calls, staff, stats, noGuide] = await Promise.all([
     db
       .prepare(
         `SELECT r.id, r.user_id, r.reason, r.created_at, u.name, u.email, (SELECT string_agg(r.name, ', ' ORDER BY r.name) FROM user_roles ur JOIN roles r ON r.key = ur.role_key WHERE ur.user_id = u.id) AS position_name
@@ -203,6 +204,14 @@ app.get("/admin/overview", async (c) => {
       )
       .bind(dayAgo, dayAgo, nowIso)
       .first<Record<string, unknown>>(),
+    // Round 5 gap log: help questions no guide answered (target is already redacted, no names).
+    db
+      .prepare(
+        `SELECT tool, target, COUNT(*) AS n, MAX(created_at) AS last_at FROM mcp_calls
+          WHERE note = ? GROUP BY tool, target ORDER BY n DESC, last_at DESC LIMIT 50`,
+      )
+      .bind(NO_GUIDE_NOTE)
+      .all<Record<string, unknown>>(),
   ]);
   const pos = (r: Record<string, unknown>) => s(r, "position_name") || "—";
   return c.json({
@@ -213,6 +222,7 @@ app.get("/admin/overview", async (c) => {
     connected: connected.results.map((r) => ({ tokenId: s(r, "id"), userId: num(r, "user_id"), name: s(r, "name"), position: pos(r), app: appLabel(s(r, "client_name")), connectedAt: iso(r.created_at), lastUsedAt: iso(r.last_used_at) })),
     allowed: allowed.results.map((r) => ({ userId: num(r, "user_id"), name: s(r, "name"), position: pos(r), approvedAt: iso(r.approved_at) })),
     calls: calls.results.map((r) => ({ id: s(r, "id"), userId: num(r, "user_id"), name: s(r, "name"), app: appLabel(s(r, "client_name")), tool: s(r, "tool"), target: s(r, "target"), status: num(r, "status"), ok: num(r, "ok") === 1, note: s(r, "note"), ms: num(r, "ms"), at: iso(r.created_at) })),
+    noGuide: noGuide.results.map((r) => ({ tool: s(r, "tool"), question: s(r, "target"), times: num(r, "n"), lastAt: iso(r.last_at) })),
     staff: staff.results.map((r) => ({ userId: num(r, "id"), name: s(r, "name"), position: pos(r) })),
     actions: await actionsState(db),
   });

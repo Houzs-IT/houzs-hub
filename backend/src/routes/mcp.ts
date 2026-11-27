@@ -66,6 +66,7 @@ import {
 } from "../services/mcp-round3";
 import { periodWindow, PERIODS, ROUND4_TOOLS, runRound4Tool } from "../services/mcp-round4";
 import { buildXlsx, XLSX_TYPE } from "../services/xlsx";
+import { HOWTO_INSTRUCTIONS, HOWTO_PROMPTS, HOWTO_TOOLS, howtoPromptText, isHowtoTool, runHowtoTool } from "../services/mcp-howto";
 import {
   ACTION_PERMISSION,
   ACTION_TOOLS,
@@ -277,7 +278,8 @@ Periods: tools with "period" take today | week (Monday to today) | month | last_
 Dates are Malaysia time (UTC+8). Tickets have no due date. The Reports page's SLA (high 24 h, medium 3 d, low 7 d, not counting time waiting on the reporter) is what tickets_overdue uses; tickets_today / open_tickets "overdue" means open longer than a number of days.
 Each person may make ${RATE_LIMITS.perMinute} tool calls a minute and ${RATE_LIMITS.perDay} a day; over that a call says so — wait instead of retrying at once.
 If a call says "You do not have permission" or "not available to your role", tell the person they do not have permission for that data.
-ACTIONS (only those the admin switched on appear in your tool list): propose_ticket (log a new IT ticket), propose_ticket_comment (comment on a ticket, internal by default), propose_ticket_update (assign and / or change status, including close). They change NOTHING yet — they return a summary and a confirmationId. Show the person that summary word for word and ask them to confirm. Only call confirm_action after they explicitly say yes; if they say no or want changes, call cancel_action (and propose again). Never confirm on your own. Nothing can be deleted, and billing, accounts, users and roles cannot be changed. At most ${ACTIONS_PER_DAY} confirmed actions per person a day.`;
+ACTIONS (only those the admin switched on appear in your tool list): propose_ticket (log a new IT ticket), propose_ticket_comment (comment on a ticket, internal by default), propose_ticket_update (assign and / or change status, including close). They change NOTHING yet — they return a summary and a confirmationId. Show the person that summary word for word and ask them to confirm. Only call confirm_action after they explicitly say yes; if they say no or want changes, call cancel_action (and propose again). Never confirm on your own. Nothing can be deleted, and billing, accounts, users and roles cannot be changed. At most ${ACTIONS_PER_DAY} confirmed actions per person a day.
+${HOWTO_INSTRUCTIONS}`;
 
 const NO_ARGS = { type: "object", properties: {}, additionalProperties: false };
 const RO = { readOnlyHint: true, openWorldHint: false };
@@ -427,6 +429,8 @@ const TOOLS = [
     },
     annotations: RO,
   },
+  // Round 5: process help (services/mcp-howto.ts). No hub data; open to everyone.
+  ...HOWTO_TOOLS,
 ];
 
 async function innerGet(c: Context<HonoEnv>, token: string, pathWithQuery: string): Promise<Response> {
@@ -601,6 +605,9 @@ const NEXT_STEP = "Nothing has been changed yet. Show this summary to the person
 async function runTool(c: Context<HonoEnv>, store: McpDb, id: Identity, token: string, name: string, args: Record<string, unknown>): Promise<Outcome> {
   const ok = (body: unknown, target: string): Outcome => ({ result: text(JSON.stringify(body)), status: 200, note: "", target });
   const bad = (msg: string, target = ""): Outcome => ({ result: text(msg, true), status: 400, note: "", target });
+
+  // Round 5 help tools: pure, read nothing; canDo follows the person's own permissions.
+  if (isHowtoTool(name)) return runHowtoTool({ user: id.user, origin: originOf(c) }, name, args);
 
   switch (name) {
     case "ticket_summary": {
@@ -837,7 +844,7 @@ async function visibleTools(store: McpDb, u: DevUser): Promise<Record<string, un
   return TOOLS.filter((t) => ok(t.name)).map((t) => (STRUCTURED_TOOLS.has(t.name) ? { ...t, outputSchema: QUICK_OUTPUT_SCHEMA } : t));
 }
 
-const ALL_PROMPTS = [DAILY_BRIEF_PROMPT, ...PROMPTS, ...ROLE_PROMPTS];
+const ALL_PROMPTS = [DAILY_BRIEF_PROMPT, ...PROMPTS, ...ROLE_PROMPTS, ...HOWTO_PROMPTS];
 
 /** A prompt is listed when the first tool it uses is listed for the person. */
 function visiblePrompts(u: DevUser): typeof ALL_PROMPTS {
@@ -927,7 +934,7 @@ async function handleRpc(c: Context<HonoEnv>, store: McpDb, id: Identity, token:
       const pname = String(m.params?.name ?? "");
       const pargs = (m.params?.arguments as Record<string, unknown> | undefined) ?? {};
       const visible = visiblePrompts(id.user).some((x) => x.name === pname);
-      const ptext = !visible ? null : pname === DAILY_BRIEF_PROMPT.name ? DAILY_BRIEF_TEXT : (promptText(pname, pargs) ?? rolePromptText(pname, pargs));
+      const ptext = !visible ? null : pname === DAILY_BRIEF_PROMPT.name ? DAILY_BRIEF_TEXT : (promptText(pname, pargs) ?? rolePromptText(pname, pargs) ?? howtoPromptText(pname, pargs));
       if (ptext === null) return { jsonrpc: "2.0", id: m.id ?? null, error: { code: -32602, message: `Unknown prompt: ${pname}` } };
       return reply({ description: ALL_PROMPTS.find((x) => x.name === pname)?.description ?? "", messages: [{ role: "user", content: { type: "text", text: ptext } }] });
     }

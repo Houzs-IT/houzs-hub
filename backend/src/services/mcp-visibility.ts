@@ -39,6 +39,15 @@ export const TOOL_NEEDS: Record<string, string[][] | null> = {
   list_modules: null,
   list_endpoints: null,
   erp_get: null,
+  // Round 5 process help (services/mcp-howto.ts): no hub data, so open to everyone;
+  // each answer's canDo / canOpen follows the person's own permissions.
+  how_to: null,
+  module_overview: null,
+  glossary: null,
+  explain_error: null,
+  onboarding: null,
+  explain_screen: null,
+  where_is: null,
 };
 
 const LABEL: Record<string, string> = {
@@ -114,6 +123,9 @@ export const PROMPT_TOOLS: Record<string, string[]> = {
   ticket_desk_today: ["ticket_summary"],
   systems_health_now: ["health_summary"],
   find_ticket: ["search", "fetch"],
+  how_do_i: ["how_to"],
+  explain_this_error: ["explain_error"],
+  my_first_week: ["onboarding"],
 };
 
 export function rolePromptText(name: string, args: Obj): string | null {

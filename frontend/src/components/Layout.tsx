@@ -8,6 +8,7 @@ import { useNewVersion } from "../lib/useNewVersion";
 import { usePoll } from "../lib/usePoll";
 import FirstPasswordPage from "../pages/FirstPasswordPage";
 import { Avatar } from "./Bits";
+import { HighlightFromUrl } from "./HighlightFromUrl";
 import { useOutside } from "./FilterButton";
 import NewTicketDialog from "./NewTicketDialog";
 import NewTicketToasts from "./NewTicketToasts";
@@ -541,6 +542,8 @@ export default function Layout() {
           </main>
         </div>
       </div>
+      {/* ?highlight=<label> from the AI Connector's how-to links: outlines that button. */}
+      <HighlightFromUrl />
       {hasNotifications && <NewTicketToasts />}
       {isCreatingTicket && defaultSystemCode && (
         <NewTicketDialog
