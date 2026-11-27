@@ -119,6 +119,10 @@ export default function GroupReportPage() {
   const anyConnected = !!st?.systems.some((s) => s.connected);
 
   return (
+    // Layout's <main> is overflow-hidden: every page scrolls inside itself (h-full overflow-auto),
+    // like Reports, Health and Billing. Without it the lower sections could not be reached.
+    // relative: the sr-only label inside (absolute) stays in here instead of stretching the document.
+    <div className="relative h-full overflow-auto">
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 py-5 sm:px-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-3">
@@ -257,6 +261,7 @@ export default function GroupReportPage() {
           )}
         </section>
       )}
+    </div>
     </div>
   );
 }
