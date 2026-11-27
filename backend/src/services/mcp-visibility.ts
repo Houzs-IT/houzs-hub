@@ -48,6 +48,7 @@ export const TOOL_NEEDS: Record<string, string[][] | null> = {
   onboarding: null,
   explain_screen: null,
   where_is: null,
+  show_me: null,
 };
 
 const LABEL: Record<string, string> = {

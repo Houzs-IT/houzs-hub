@@ -66,7 +66,8 @@ import {
 } from "../services/mcp-round3";
 import { periodWindow, PERIODS, ROUND4_TOOLS, runRound4Tool } from "../services/mcp-round4";
 import { buildXlsx, XLSX_TYPE } from "../services/xlsx";
-import { HOWTO_INSTRUCTIONS, HOWTO_PROMPTS, HOWTO_TOOLS, howtoPromptText, isHowtoTool, runHowtoTool } from "../services/mcp-howto";
+import { HOWTO_INSTRUCTIONS, HOWTO_PROMPTS, HOWTO_TOOLS, howtoPromptText, isHowtoTool, redactQuestion, runHowtoTool, NO_GUIDE_NOTE } from "../services/mcp-howto";
+import { ANNOTATED_CSP, annotatedHtml, mayUse, noPermissionText, resolveShot, SHOW_ME_TOOL, showMeContent, showMeText } from "../services/mcp-show-me";
 import {
   ACTION_PERMISSION,
   ACTION_TOOLS,
@@ -256,7 +257,10 @@ app.post("/oauth/token", async (c) => {
 
 type Identity = { tokenId: string; clientId: string; user: DevUser };
 type RpcReq = { jsonrpc?: string; id?: string | number | null; method?: string; params?: Record<string, unknown> };
-type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean; structuredContent?: Record<string, unknown> };
+// show_me adds an image item after the JSON text (never SVG); every other tool answers text only.
+type ImageItem = { type: "image"; data: string; mimeType: string };
+type ToolResult = { content: ({ type: "text"; text: string } | ImageItem)[]; isError?: boolean; structuredContent?: Record<string, unknown> };
+const firstText = (r: ToolResult): string => r.content.find((x): x is { type: "text"; text: string } => x.type === "text")?.text ?? "";
 const text = (t: string, isError = false): ToolResult => ({ content: [{ type: "text", text: t }], ...(isError ? { isError: true } : {}) });
 
 const INSTRUCTIONS = `You are connected to the Houzs IT Hub (the group's IT desk: IT tickets from Hookka, Houzs Century, 2990s, Conts, Houzs Connect and Carres; reports; system health; account ownership and system billing; meeting rooms) as the signed-in IT staff member.
@@ -431,6 +435,7 @@ const TOOLS = [
   },
   // Round 5: process help (services/mcp-howto.ts). No hub data; open to everyone.
   ...HOWTO_TOOLS,
+  SHOW_ME_TOOL,
 ];
 
 async function innerGet(c: Context<HonoEnv>, token: string, pathWithQuery: string): Promise<Response> {
@@ -584,6 +589,45 @@ async function storeExport(c: Context<HonoEnv>, bytes: Uint8Array, fileName: str
   return { url: `${originOf(c)}/api/mcp/export/${token}`, expiresAt };
 }
 
+// show_me's annotated page: the same 15-minute link rule as export_excel, its own object name.
+const SHOT_PREFIX = "mcp-exports/shot-";
+
+const toBase64 = (bytes: Uint8Array): string => {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+};
+
+/**
+ * show_me (round 5): the captured screenshot of a page (frontend/public/help-shots, made-up demo
+ * data) with the box of the button. A page or button this person may not use gets the no-permission
+ * note and no picture. The annotated page goes to R2 behind a 15-minute link.
+ */
+async function showMeTool(c: Context<HonoEnv>, id: Identity, args: Record<string, unknown>): Promise<Outcome> {
+  const s = (k: string) => (typeof args[k] === "string" ? (args[k] as string).trim().slice(0, 300) : undefined);
+  const asked = [s("guide_id"), s("path"), s("label")].filter(Boolean).join(" ");
+  const hit = resolveShot({ guide_id: s("guide_id"), path: s("path"), label: s("label"), step: typeof args.step === "number" ? args.step : undefined });
+  if ("error" in hit) return { result: text(JSON.stringify({ matched: false, message: hit.error })), status: 200, note: NO_GUIDE_NOTE, target: redactQuestion(asked || "show_me") };
+  const target = `show_me ${hit.page} ${hit.label}`.slice(0, 200);
+  if (!mayUse(hit, id.user)) return { result: text(JSON.stringify(noPermissionText(hit))), status: 200, note: "no permission", target };
+  const origin = originOf(c);
+  const res = await c.env.ASSETS.fetch(new Request(`${origin}/help-shots/${hit.shot.file}`));
+  if (!res.ok) return { result: text(JSON.stringify(showMeText(hit, origin, null))), status: 200, note: `shot ${res.status}`, target };
+  const webp = toBase64(new Uint8Array(await res.arrayBuffer()));
+  const token = randomToken(24);
+  const expiresAt = new Date(Date.now() + EXPORT_TTL_MS).toISOString();
+  let link: string | null = `${origin}/api/mcp/shot/${token}`;
+  try {
+    await c.env.FILES.put(`${SHOT_PREFIX}${await sha256Hex(token)}.html`, annotatedHtml(hit, webp, `Press "${hit.label}" (test data, real layout)`), {
+      httpMetadata: { contentType: "text/html; charset=utf-8" },
+      customMetadata: { expiresAt, userId: String(id.user.id) },
+    });
+  } catch {
+    link = null;
+  }
+  return { result: { content: showMeContent(showMeText(hit, origin, link), webp) }, status: 200, note: "", target };
+}
+
 /** The real I/O for services/mcp-write-actions.ts: reads as the person and the armed write. */
 function actionDeps(c: Context<HonoEnv>, store: McpDb, id: Identity, token: string): ActionDeps {
   return {
@@ -608,6 +652,7 @@ async function runTool(c: Context<HonoEnv>, store: McpDb, id: Identity, token: s
 
   // Round 5 help tools: pure, read nothing; canDo follows the person's own permissions.
   if (isHowtoTool(name)) return runHowtoTool({ user: id.user, origin: originOf(c) }, name, args);
+  if (name === "show_me") return showMeTool(c, id, args);
 
   switch (name) {
     case "ticket_summary": {
@@ -854,7 +899,7 @@ function visiblePrompts(u: DevUser): typeof ALL_PROMPTS {
 
 /** The answer's JSON as structuredContent (with hubLink + row urls); the text carries the same JSON. */
 function structured(name: string, r: ToolResult, origin: string): ToolResult {
-  const raw = r.content[0]?.text ?? "";
+  const raw = firstText(r);
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -981,7 +1026,7 @@ export async function runToolAs(c: McpCtx, orm: DB, id: Identity, token: string,
     result = o.result;
     status = o.status;
   }
-  const t = result.content[0]?.text ?? "";
+  const t = firstText(result);
   if (result.isError) return { ok: false, status: status === 200 ? 400 : status, message: t.slice(0, 300) };
   if (result.structuredContent && result.structuredContent.truncated !== true) return { ok: true, value: result.structuredContent };
   try {
@@ -1035,6 +1080,21 @@ app.get("/export/:token", async (c) => {
   const name = (obj.customMetadata?.fileName ?? "export.xlsx").replace(/[^A-Za-z0-9._-]/g, "");
   return new Response(obj.body, {
     headers: { "Content-Type": XLSX_TYPE, "Content-Disposition": `attachment; filename="${name}"`, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" },
+  });
+});
+
+// show_me's annotated page (15 minutes). Served inline with a CSP that allows only inline
+// styles and data: images: the page is the screenshot, a CSS box and an escaped caption.
+app.get("/shot/:token", async (c) => {
+  const tok = c.req.param("token");
+  const gone = () => plain("This picture link has expired. Ask the AI to show it again.", 400);
+  if (!EXPORT_TOKEN.test(tok)) return gone();
+  const obj = await c.env.FILES.get(`${SHOT_PREFIX}${await sha256Hex(tok)}.html`);
+  if (!obj) return gone();
+  const exp = Date.parse(obj.customMetadata?.expiresAt ?? "");
+  if (!Number.isFinite(exp) || exp < Date.now()) return gone();
+  return new Response(obj.body, {
+    headers: { "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": ANNOTATED_CSP, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer" },
   });
 });
 

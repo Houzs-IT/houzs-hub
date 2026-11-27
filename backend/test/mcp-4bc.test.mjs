@@ -400,7 +400,7 @@ const listFor = (perms, sw = { main: false }) => Object.keys({ ...TOOL_NEEDS, ..
 test("P1: tools follow the hub permissions; write tools only while switched on", () => {
   const staff = listFor([]);
   // Round 5 help tools read no hub data, so every staff member has them too.
-  const HELP = ["explain_error", "explain_screen", "glossary", "how_to", "module_overview", "onboarding", "where_is"];
+  const HELP = ["explain_error", "explain_screen", "glossary", "how_to", "module_overview", "onboarding", "show_me", "where_is"];
   assert.deepEqual(staff.sort(), ["daily_brief", "erp_get", ...HELP, "list_endpoints", "list_modules", "meetings_today", "whoami"].sort());
   const it = listFor(["it"]);
   for (const n of ["ticket_summary", "tickets_today", "search", "fetch", "export_excel", "data_gaps"]) assert.ok(it.includes(n), n);
