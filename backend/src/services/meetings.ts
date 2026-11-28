@@ -204,6 +204,43 @@ export function conflictsIn(busy: Busy[], rooms: Room[], d: Draft, now: number):
   };
 }
 
+/* ---------- who may see what (audit 2026-11-28, B1) ---------- */
+
+type Who = { organizer: string; booked_by: string; room_id: number | null; people: string[] };
+
+/** The organiser or the booker: may change, cancel, start or end the meeting. */
+export const mayChangeMeeting = (m: Pick<Who, "organizer" | "booked_by">, actor: string) => m.organizer === actor || m.booked_by === actor;
+
+/** The people IN the meeting — organiser, booker, attendees. The same rule the meeting page uses for adding files. */
+export const inMeeting = (m: Pick<Who, "organizer" | "booked_by" | "people">, actor: string) => mayChangeMeeting(m, actor) || m.people.includes(actor);
+
+/**
+ * May see the meeting at all. An online meeting (no room) is private to the people in it
+ * (owner 2026-11-24); a room booking stays visible to everyone so the room calendar works.
+ */
+export const maySeeMeeting = (m: Who, actor: string) => m.room_id !== null || inMeeting(m, actor);
+
+/**
+ * May read the meeting's CONTENT: its files, notes and history. Only the people in it.
+ * Before the 2026-11-28 audit fix this used maySeeMeeting, so the files of any meeting
+ * held in a room (an HR or disciplinary meeting included) could be downloaded by anyone
+ * in any connected system.
+ */
+export const mayReadMeetingContent = inMeeting;
+
+/** SQL twin of maySeeMeeting, for list reads (meetings aliased `m`). */
+export const meetingVisibleSql = (key: string): SQL =>
+  sql`(m.room_id IS NOT NULL OR m.organizer = ${key} OR m.booked_by = ${key} OR EXISTS (SELECT 1 FROM meeting_attendees a WHERE a.meeting_id = m.id AND a.person_key = ${key}))`;
+
+/** SQL twin of inMeeting / mayReadMeetingContent (meetings aliased `m`). */
+export const inMeetingSql = (key: string): SQL =>
+  sql`(m.organizer = ${key} OR m.booked_by = ${key} OR EXISTS (SELECT 1 FROM meeting_attendees a WHERE a.meeting_id = m.id AND a.person_key = ${key}))`;
+
+/** A meeting as someone outside it sees it on the room calendar: the slot, not its notes. */
+export function forViewer<T extends { notes: string | null }>(pub: T, inside: boolean): T {
+  return inside ? pub : { ...pub, notes: null };
+}
+
 export const hasConflict = (c: Conflict) => Boolean(c.room || c.people.length || c.rules.length);
 
 /** Other rooms that fit everyone and are free then, smallest first. */
@@ -265,6 +302,21 @@ export async function history(db: Exec, meetingId: number, who: string, text: st
 /** Holds the room's row until the transaction ends, so two people saving the same slot at once go one after the other. */
 export async function lockRoom(tx: Exec, roomId: number | null) {
   if (roomId) await tx.execute(sql`SELECT id FROM meeting_rooms WHERE id = ${roomId} FOR UPDATE`);
+}
+
+/** The advisory-lock keys for the people of a booking: each once, in one fixed order (no deadlock between two bookings). */
+export function personLockKeys(people: string[]): string[] {
+  return [...new Set(people.filter(Boolean))].sort().map((k) => `hub-meeting-person:${k}`);
+}
+
+/**
+ * Hold every person of a booking until the transaction ends (audit 2026-11-28, B2).
+ * lockRoom serialises two bookings of the same ROOM; nothing serialised two bookings that
+ * share a PERSON — an online meeting has no room at all — so both could pass the clash check
+ * and both be saved. Taken after lockRoom, always in personLockKeys order.
+ */
+export async function lockPeople(tx: Exec, people: string[]) {
+  for (const k of personLockKeys(people)) await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${k}))`);
 }
 
 export const toPgIntArray = (xs: number[]) => sql`string_to_array(${xs.map((x) => String(Math.trunc(x))).join(",")}, ',')::int[]`;

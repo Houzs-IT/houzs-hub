@@ -41,7 +41,8 @@ export type Meeting = {
   organizer: string;
   bookedBy: string;
   attendees: string[];
-  notes: string;
+  /** null when empty, and for someone outside a room booking (the server hides it, audit 2026-11-28). */
+  notes: string | null;
   video: { type: "none" | "meet" | "zoom" | "link"; url: string };
   /** null on meetings saved before reminders existed. */
   reminders: Reminder[] | null;
@@ -287,7 +288,7 @@ export function draftFrom(m: Meeting): Draft {
     attendees: m.attendees,
     videoType: m.video.type,
     videoUrl: m.video.url,
-    notes: m.notes,
+    notes: m.notes ?? "",
     guestEmails: m.guestEmails ?? [],
     reminders: m.reminders ?? [],
     repeat: "none",

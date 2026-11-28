@@ -194,3 +194,20 @@ staging (`hookka-erp-staging-sg`), feature PR goes to staging first.
       Procurement; assistant / agents / unknown → Others; a charge with no module = Infrastructure. The AI usage by
       workspace table groups features by the same modules. A new AI feature needs one line in `FEATURES`.
 - [ ] Email / WhatsApp notify on status change
+
+## 6. Audit fixes — 2026-11-28 (branch `fix/audit-2026-11-28`, owner: fix all)
+
+- [x] **B1 meeting files across systems.** Root cause: the download route and the meeting detail
+  used the "may see" rule (`room_id IS NOT NULL` = visible to everyone), so the files, notes and
+  history of any meeting held in a room — an HR or disciplinary meeting included — could be read
+  from any connected system. Fix: content (files list + download, notes, history) needs a person
+  IN the meeting (organiser, booker, attendee — `mayReadMeetingContent` / `inMeetingSql` in
+  `services/meetings.ts`, the same rule as adding files). The room slot stays on everyone's
+  calendar; outsiders get `notes: null`, `files: []`, `history: []`, and a 404 on download.
+- [x] **B2 double booking.** Same-room bookings were already serialised by `lockRoom`
+  (`SELECT … FOR UPDATE` on the room row) — the audit missed that. The real gap: nothing
+  serialised two bookings sharing a PERSON (an online meeting has no room). Fix: `lockPeople`
+  (one advisory xact lock per person, sorted) after `lockRoom` in book and change.
+- Tests: `backend/test/meeting-access.test.mjs` (now run in CI: `npm --prefix backend test` was
+  added to the PR check). `backend/scripts/meetings-e2e.mjs` gained an outsider check — UNTESTED
+  (needs a local wrangler dev + two system keys). No data changed; not deployed.

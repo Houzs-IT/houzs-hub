@@ -204,7 +204,8 @@ ok(r.j?.notifications?.some((n) => /booked .* through the link No hosts/.test(n.
 r = await call(HC, hana, "POST", `/meetings/${nid}/cancel`, {});
 ok(r.status === 200, `the link maker can cancel the guest booking (${r.status} ${r.j?.error ?? ""})`);
 
-// Attached files (owner 2026-11-24: make sure attaching works): a person in the meeting uploads, anyone who can see it downloads the same bytes.
+// Attached files (owner 2026-11-24: make sure attaching works): a person in the meeting uploads, the people in it download the same bytes.
+// Audit 2026-11-28 (B1): someone in another system who can see the room booking gets the slot, not the files, notes or history.
 {
   const dayF = new Date(Date.parse(day) + 9 * 86400e3).toISOString().slice(0, 10);
   r = await call(HC, lim, "POST", "/meetings", { title: "File check", start: `${dayF}T10:00:00+08:00`, end: `${dayF}T11:00:00+08:00`, roomId: boardroom, attendees: ["hana@example.com"] });
@@ -219,6 +220,10 @@ ok(r.status === 200, `the link maker can cancel the guest booking (${r.status} $
   ok(Boolean(f), "the meeting lists the file");
   const dl = await fetch(`${BASE}/meetings/${fid0}/files/${f?.id}`, { headers: { Authorization: `Bearer ${HC}`, "X-Reporter-Id": hana.id } });
   ok(dl.status === 200 && (await dl.text()) === "agenda line 1\nagenda line 2" && /attachment/.test(dl.headers.get("content-disposition") ?? ""), `the file downloads unchanged (${dl.status})`);
+  r = await call(HK, ivy, "GET", `/meetings/${fid0}`);
+  ok(r.status === 200 && r.j?.files?.length === 0 && r.j?.history?.length === 0 && r.j?.meeting?.notes === null, `outside the meeting: the room slot, no files / history / notes (${r.status})`);
+  const dlOut = await fetch(`${BASE}/meetings/${fid0}/files/${f?.id}`, { headers: { Authorization: `Bearer ${HK}`, "X-Reporter-Id": ivy.id } });
+  ok(dlOut.status === 404, `outside the meeting: the file does not download (${dlOut.status})`);
   const big = new FormData();
   big.append("files", new Blob([new Uint8Array(26 * 1024 * 1024)]), "too-big.bin");
   const bigUp = await fetch(`${BASE}/meetings/${fid0}/files`, { method: "POST", headers: { Authorization: `Bearer ${HC}`, "X-Reporter-Id": lim.id, "X-Person-Name": lim.name, "X-Person-Email": lim.email }, body: big });
