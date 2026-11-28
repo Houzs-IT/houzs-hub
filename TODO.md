@@ -209,5 +209,7 @@ staging (`hookka-erp-staging-sg`), feature PR goes to staging first.
   serialised two bookings sharing a PERSON (an online meeting has no room). Fix: `lockPeople`
   (one advisory xact lock per person, sorted) after `lockRoom` in book and change.
 - Tests: `backend/test/meeting-access.test.mjs` (now run in CI: `npm --prefix backend test` was
-  added to the PR check). `backend/scripts/meetings-e2e.mjs` gained an outsider check — UNTESTED
-  (needs a local wrangler dev + two system keys). No data changed; not deployed.
+  added to the PR check). `backend/scripts/meetings-e2e.mjs` gained an outsider check (and its
+  download calls now send the X-Person-* headers every ERP sends): run 2026-11-28 against
+  `wrangler dev` + a throwaway local Postgres — **82 PASS, ALL PASSED** (incl. "simultaneous
+  saves: one wins (201,409)", "outside the meeting: … (404)"). No data changed; not deployed.

@@ -218,11 +218,12 @@ ok(r.status === 200, `the link maker can cancel the guest booking (${r.status} $
   r = await call(HC, hana, "GET", `/meetings/${fid0}`);
   const f = r.j?.files?.find((x) => x.file_name === "agenda.txt");
   ok(Boolean(f), "the meeting lists the file");
-  const dl = await fetch(`${BASE}/meetings/${fid0}/files/${f?.id}`, { headers: { Authorization: `Bearer ${HC}`, "X-Reporter-Id": hana.id } });
+  // Every ERP sends the X-Person-* headers on every call (the person key is their email); so does this check.
+  const dl = await fetch(`${BASE}/meetings/${fid0}/files/${f?.id}`, { headers: { Authorization: `Bearer ${HC}`, "X-Reporter-Id": hana.id, "X-Person-Name": hana.name, "X-Person-Email": hana.email } });
   ok(dl.status === 200 && (await dl.text()) === "agenda line 1\nagenda line 2" && /attachment/.test(dl.headers.get("content-disposition") ?? ""), `the file downloads unchanged (${dl.status})`);
   r = await call(HK, ivy, "GET", `/meetings/${fid0}`);
   ok(r.status === 200 && r.j?.files?.length === 0 && r.j?.history?.length === 0 && r.j?.meeting?.notes === null, `outside the meeting: the room slot, no files / history / notes (${r.status})`);
-  const dlOut = await fetch(`${BASE}/meetings/${fid0}/files/${f?.id}`, { headers: { Authorization: `Bearer ${HK}`, "X-Reporter-Id": ivy.id } });
+  const dlOut = await fetch(`${BASE}/meetings/${fid0}/files/${f?.id}`, { headers: { Authorization: `Bearer ${HK}`, "X-Reporter-Id": ivy.id, "X-Person-Name": ivy.name, "X-Person-Email": ivy.email } });
   ok(dlOut.status === 404, `outside the meeting: the file does not download (${dlOut.status})`);
   const big = new FormData();
   big.append("files", new Blob([new Uint8Array(26 * 1024 * 1024)]), "too-big.bin");
