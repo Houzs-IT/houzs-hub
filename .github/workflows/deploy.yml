@@ -30,6 +30,8 @@ jobs:
       - run: npm --prefix backend ci
       - run: npm --prefix frontend ci
       - run: npm run typecheck
+      # Unit tests (pure, no DB) — incl. the meeting access rules (audit 2026-11-28).
+      - run: npm --prefix backend test
       - run: npm run build
       - uses: actions/upload-artifact@v4
         with:

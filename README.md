@@ -334,7 +334,12 @@ systems (their email, else `<system>:<id>`). Guest pages are proxied with
 Every rule lives in `backend/src/services/meetings.ts`: a person or room already booked,
 the room's gap between meetings, closed dates, longest booking and how far ahead. A save
 holds the room's row (`SELECT ... FOR UPDATE`), so two people taking the same slot at the
-same moment get one booking and one refusal. `PUT /directory` takes the ERP's whole staff
+same moment get one booking and one refusal; it also holds each person in it (`lockPeople`,
+an advisory lock per person in a fixed order), so two bookings that share a person — an online
+meeting has no room — cannot both pass the clash check. **Who sees what:** a room booking stays on
+everyone's room calendar (the slot), but its **files, notes and history are only for the people
+in it** — organiser, booker, attendees (`mayReadMeetingContent` / `inMeetingSql`, the same rule as
+adding files; audit 2026-11-28). Pinned by `backend/test/meeting-access.test.mjs`. `PUT /directory` takes the ERP's whole staff
 list. Check the whole flow locally with `node backend/scripts/meetings-e2e.mjs <HC key> <HK key>`
 (add `<IT login> <IT password>` to check IT Support's own page too).
 
